@@ -27,69 +27,69 @@ function makeCtx(overrides: Partial<ScanContext> = {}): ScanContext {
 }
 
 describe("largeFilesScanner", () => {
-	it("detects large markdown files exceeding threshold", () => {
+	it("detects large markdown files exceeding threshold", async () => {
 		const file = makeFile("notes/big.md", 200 * 1024);
 		const ctx = makeCtx({
 			allFiles: [file],
 			filePathIndex: new Set(["notes/big.md"]),
 		});
-		const issues = largeFilesScanner.scan(ctx);
+		const issues = await largeFilesScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].evidence.type).toBe("markdown");
 	});
 
-	it("does not report files below threshold", () => {
+	it("does not report files below threshold", async () => {
 		const file = makeFile("notes/small.md", 50 * 1024);
 		const ctx = makeCtx({
 			allFiles: [file],
 			filePathIndex: new Set(["notes/small.md"]),
 		});
-		const issues = largeFilesScanner.scan(ctx);
+		const issues = await largeFilesScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
 	});
 
-	it("uses separate threshold for attachments", () => {
+	it("uses separate threshold for attachments", async () => {
 		const file = makeFile("assets/image.png", 6 * 1024 * 1024);
 		const ctx = makeCtx({
 			allFiles: [file],
 			filePathIndex: new Set(["assets/image.png"]),
 		});
-		const issues = largeFilesScanner.scan(ctx);
+		const issues = await largeFilesScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].evidence.type).toBe("attachment");
 	});
 
-	it("does not report attachments below attachment threshold", () => {
+	it("does not report attachments below attachment threshold", async () => {
 		const file = makeFile("assets/image.png", 3 * 1024 * 1024);
 		const ctx = makeCtx({
 			allFiles: [file],
 			filePathIndex: new Set(["assets/image.png"]),
 		});
-		const issues = largeFilesScanner.scan(ctx);
+		const issues = await largeFilesScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
 	});
 
-	it("sorts issues largest first", () => {
+	it("sorts issues largest first", async () => {
 		const small = makeFile("notes/a.md", 150 * 1024);
 		const big = makeFile("notes/b.md", 300 * 1024);
 		const ctx = makeCtx({
 			allFiles: [small, big],
 			filePathIndex: new Set(["notes/a.md", "notes/b.md"]),
 		});
-		const issues = largeFilesScanner.scan(ctx);
+		const issues = await largeFilesScanner.scan(ctx);
 		expect(issues).toHaveLength(2);
 		expect(issues[0].evidence.size).toBe(300 * 1024);
 		expect(issues[1].evidence.size).toBe(150 * 1024);
 	});
 
-	it("skips files in ignored folders", () => {
+	it("skips files in ignored folders", async () => {
 		const file = makeFile("templates/big.md", 200 * 1024);
 		const ctx = makeCtx({
 			allFiles: [file],
 			filePathIndex: new Set(["templates/big.md"]),
 			ignoredFolders: ["templates"],
 		});
-		const issues = largeFilesScanner.scan(ctx);
+		const issues = await largeFilesScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
 	});
 });

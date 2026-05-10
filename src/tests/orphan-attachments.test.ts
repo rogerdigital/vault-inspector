@@ -27,7 +27,7 @@ function makeCtx(overrides: Partial<ScanContext> = {}): ScanContext {
 }
 
 describe("orphanAttachmentsScanner", () => {
-	it("detects attachments not referenced by any note", () => {
+	it("detects attachments not referenced by any note", async () => {
 		const md = { path: "notes/a.md" } as any;
 		const img = makeFile("assets/orphan.png", 1000);
 		const ctx = makeCtx({
@@ -38,12 +38,12 @@ describe("orphanAttachmentsScanner", () => {
 				getFileCache: () => ({ links: [], embeds: [] }),
 			} as any,
 		});
-		const issues = orphanAttachmentsScanner.scan(ctx);
+		const issues = await orphanAttachmentsScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].primaryPath).toBe("assets/orphan.png");
 	});
 
-	it("does not report attachments referenced by notes", () => {
+	it("does not report attachments referenced by notes", async () => {
 		const md = { path: "notes/a.md" } as any;
 		const img = makeFile("assets/used.png", 1000);
 		const ctx = makeCtx({
@@ -60,11 +60,11 @@ describe("orphanAttachmentsScanner", () => {
 				},
 			} as any,
 		});
-		const issues = orphanAttachmentsScanner.scan(ctx);
+		const issues = await orphanAttachmentsScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
 	});
 
-	it("downgrades recently modified orphans to info", () => {
+	it("downgrades recently modified orphans to info", async () => {
 		const img = makeFile("assets/recent.png", Date.now() - 1000);
 		const ctx = makeCtx({
 			markdownFiles: [],
@@ -74,12 +74,12 @@ describe("orphanAttachmentsScanner", () => {
 				getFileCache: () => null,
 			} as any,
 		});
-		const issues = orphanAttachmentsScanner.scan(ctx);
+		const issues = await orphanAttachmentsScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].severity).toBe("info");
 	});
 
-	it("uses warning severity for old orphans", () => {
+	it("uses warning severity for old orphans", async () => {
 		const oldTime = Date.now() - 30 * 24 * 60 * 60 * 1000;
 		const img = makeFile("assets/old.png", oldTime);
 		const ctx = makeCtx({
@@ -90,12 +90,12 @@ describe("orphanAttachmentsScanner", () => {
 				getFileCache: () => null,
 			} as any,
 		});
-		const issues = orphanAttachmentsScanner.scan(ctx);
+		const issues = await orphanAttachmentsScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].severity).toBe("warning");
 	});
 
-	it("skips non-attachment files", () => {
+	it("skips non-attachment files", async () => {
 		const md = { path: "notes/a.md", stat: { size: 100, mtime: 1000 } } as any;
 		const ctx = makeCtx({
 			markdownFiles: [],
@@ -105,11 +105,11 @@ describe("orphanAttachmentsScanner", () => {
 				getFileCache: () => null,
 			} as any,
 		});
-		const issues = orphanAttachmentsScanner.scan(ctx);
+		const issues = await orphanAttachmentsScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
 	});
 
-	it("skips files in ignored folders", () => {
+	it("skips files in ignored folders", async () => {
 		const img = makeFile("templates/bg.png", 1000);
 		const ctx = makeCtx({
 			markdownFiles: [],
@@ -120,7 +120,7 @@ describe("orphanAttachmentsScanner", () => {
 				getFileCache: () => null,
 			} as any,
 		});
-		const issues = orphanAttachmentsScanner.scan(ctx);
+		const issues = await orphanAttachmentsScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
 	});
 });
