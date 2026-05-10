@@ -5,6 +5,7 @@ import { brokenLinksScanner } from "./scanner/scanners/broken-links";
 import { largeFilesScanner } from "./scanner/scanners/large-files";
 import { orphanAttachmentsScanner } from "./scanner/scanners/orphan-attachments";
 import { duplicateFilesScanner } from "./scanner/scanners/duplicate-files";
+import { frontmatterTypesScanner } from "./scanner/scanners/frontmatter-types";
 import { DEFAULT_SETTINGS, type InspectorSettings } from "./settings/settings";
 import { InspectorSettingTab } from "./settings/settings-tab";
 
@@ -24,6 +25,7 @@ export default class VaultInspectorPlugin extends Plugin {
 		this.scanRunner.register(largeFilesScanner);
 		this.scanRunner.register(orphanAttachmentsScanner);
 		this.scanRunner.register(duplicateFilesScanner);
+		this.scanRunner.register(frontmatterTypesScanner);
 		this.addSettingTab(new InspectorSettingTab(this.app, this));
 	}
 
