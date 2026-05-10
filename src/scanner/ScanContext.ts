@@ -16,4 +16,5 @@ export type ScanContext = {
 	lowUsageTagThreshold: number;
 	watchedTags: string[];
 	ignoredFolders: string[];
+	ignoredProperties: string[];
 };

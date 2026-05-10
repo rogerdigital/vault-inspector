@@ -40,6 +40,7 @@ export class ScanRunner {
 			lowUsageTagThreshold: settings.lowUsageTagThreshold,
 			watchedTags: settings.watchedTags,
 			ignoredFolders: settings.ignoredFolders,
+			ignoredProperties: settings.ignoredProperties,
 		};
 
 		const scannersRun: ScannerId[] = [];

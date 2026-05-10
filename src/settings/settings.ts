@@ -10,6 +10,7 @@ export type InspectorSettings = {
 	watchedTags: string[];
 	ignoredIssueFingerprints: string[];
 	ignoredFolders: string[];
+	ignoredProperties: string[];
 	reportFolderPath: string;
 };
 
@@ -24,5 +25,6 @@ export const DEFAULT_SETTINGS: InspectorSettings = {
 	watchedTags: [],
 	ignoredIssueFingerprints: [],
 	ignoredFolders: [],
+	ignoredProperties: [],
 	reportFolderPath: "Vault Inspector Reports",
 };
