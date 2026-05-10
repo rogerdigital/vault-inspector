@@ -1,6 +1,7 @@
 import { Plugin } from "obsidian";
 import { InspectorView, VIEW_TYPE_INSPECTOR } from "./report/InspectorView";
 import { ScanRunner } from "./scanner/ScanRunner";
+import { brokenLinksScanner } from "./scanner/scanners/broken-links";
 import { DEFAULT_SETTINGS, type InspectorSettings } from "./settings/settings";
 import { InspectorSettingTab } from "./settings/settings-tab";
 
@@ -16,6 +17,7 @@ export default class VaultInspectorPlugin extends Plugin {
 			name: "Run scan",
 			callback: () => this.runScan(),
 		});
+		this.scanRunner.register(brokenLinksScanner);
 		this.addSettingTab(new InspectorSettingTab(this.app, this));
 	}
 
