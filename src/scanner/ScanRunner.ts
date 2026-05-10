@@ -5,7 +5,7 @@ import type { InspectorSettings } from "../settings/settings";
 
 export type Scanner = {
 	id: ScannerId;
-	scan(ctx: ScanContext): Issue[];
+	scan(ctx: ScanContext): Issue[] | Promise<Issue[]>;
 };
 
 export class ScanRunner {
@@ -48,7 +48,7 @@ export class ScanRunner {
 		for (const scanner of this.scanners) {
 			if (!ctx.enabledScanners.has(scanner.id)) continue;
 			scannersRun.push(scanner.id);
-			const result = scanner.scan(ctx);
+			const result = await scanner.scan(ctx);
 			for (const issue of result) {
 				if (!ctx.ignoredFingerprints.has(issue.fingerprint)) {
 					issues.push(issue);

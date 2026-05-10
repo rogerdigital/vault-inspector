@@ -23,7 +23,7 @@ function makeCtx(overrides: Partial<ScanContext> = {}): ScanContext {
 }
 
 describe("brokenLinksScanner", () => {
-	it("detects unresolved link to missing file", () => {
+	it("detects unresolved link to missing file", async () => {
 		const file = { path: "notes/a.md" } as any;
 		const ctx = makeCtx({
 			markdownFiles: [file],
@@ -36,13 +36,13 @@ describe("brokenLinksScanner", () => {
 				},
 			} as any,
 		});
-		const issues = brokenLinksScanner.scan(ctx);
+		const issues = await brokenLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].severity).toBe("error");
 		expect(issues[0].evidence.target).toBe("notes/missing");
 	});
 
-	it("does not report links that resolve to existing files", () => {
+	it("does not report links that resolve to existing files", async () => {
 		const file = { path: "notes/a.md" } as any;
 		const ctx = makeCtx({
 			markdownFiles: [file],
@@ -55,11 +55,11 @@ describe("brokenLinksScanner", () => {
 				},
 			} as any,
 		});
-		const issues = brokenLinksScanner.scan(ctx);
+		const issues = await brokenLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
 	});
 
-	it("detects broken heading link", () => {
+	it("detects broken heading link", async () => {
 		const file = { path: "notes/a.md" } as any;
 		const targetFile = { path: "notes/b.md" } as any;
 		const ctx = makeCtx({
@@ -78,13 +78,13 @@ describe("brokenLinksScanner", () => {
 				},
 			} as any,
 		});
-		const issues = brokenLinksScanner.scan(ctx);
+		const issues = await brokenLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].severity).toBe("warning");
 		expect(issues[0].message).toContain("Heading");
 	});
 
-	it("does not report valid heading links", () => {
+	it("does not report valid heading links", async () => {
 		const file = { path: "notes/a.md" } as any;
 		const targetFile = { path: "notes/b.md" } as any;
 		const ctx = makeCtx({
@@ -103,11 +103,11 @@ describe("brokenLinksScanner", () => {
 				},
 			} as any,
 		});
-		const issues = brokenLinksScanner.scan(ctx);
+		const issues = await brokenLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
 	});
 
-	it("handles aliased links", () => {
+	it("handles aliased links", async () => {
 		const file = { path: "notes/a.md" } as any;
 		const ctx = makeCtx({
 			markdownFiles: [file],
@@ -120,12 +120,12 @@ describe("brokenLinksScanner", () => {
 				},
 			} as any,
 		});
-		const issues = brokenLinksScanner.scan(ctx);
+		const issues = await brokenLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].evidence.target).toBe("notes/missing");
 	});
 
-	it("detects missing attachment links", () => {
+	it("detects missing attachment links", async () => {
 		const file = { path: "notes/a.md" } as any;
 		const ctx = makeCtx({
 			markdownFiles: [file],
@@ -138,13 +138,13 @@ describe("brokenLinksScanner", () => {
 				},
 			} as any,
 		});
-		const issues = brokenLinksScanner.scan(ctx);
+		const issues = await brokenLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].severity).toBe("error");
 		expect(issues[0].message).toContain("Attachment");
 	});
 
-	it("skips files in ignored folders", () => {
+	it("skips files in ignored folders", async () => {
 		const file = { path: "templates/a.md" } as any;
 		const ctx = makeCtx({
 			markdownFiles: [file],
@@ -158,11 +158,11 @@ describe("brokenLinksScanner", () => {
 				},
 			} as any,
 		});
-		const issues = brokenLinksScanner.scan(ctx);
+		const issues = await brokenLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
 	});
 
-	it("skips files with no cache", () => {
+	it("skips files with no cache", async () => {
 		const file = { path: "notes/a.md" } as any;
 		const ctx = makeCtx({
 			markdownFiles: [file],
@@ -173,11 +173,11 @@ describe("brokenLinksScanner", () => {
 				unresolvedLinks: {},
 			} as any,
 		});
-		const issues = brokenLinksScanner.scan(ctx);
+		const issues = await brokenLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
 	});
 
-	it("skips files with no unresolved links", () => {
+	it("skips files with no unresolved links", async () => {
 		const file = { path: "notes/a.md" } as any;
 		const ctx = makeCtx({
 			markdownFiles: [file],
@@ -188,11 +188,11 @@ describe("brokenLinksScanner", () => {
 				unresolvedLinks: {},
 			} as any,
 		});
-		const issues = brokenLinksScanner.scan(ctx);
+		const issues = await brokenLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
 	});
 
-	it("resolves links with .md extension appended", () => {
+	it("resolves links with .md extension appended", async () => {
 		const file = { path: "notes/a.md" } as any;
 		const targetFile = { path: "notes/b.md" } as any;
 		const ctx = makeCtx({
@@ -206,11 +206,11 @@ describe("brokenLinksScanner", () => {
 				},
 			} as any,
 		});
-		const issues = brokenLinksScanner.scan(ctx);
+		const issues = await brokenLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
 	});
 
-	it("produces stable fingerprints for the same issue", () => {
+	it("produces stable fingerprints for the same issue", async () => {
 		const file = { path: "notes/a.md" } as any;
 		const ctx = makeCtx({
 			markdownFiles: [file],
@@ -223,8 +223,8 @@ describe("brokenLinksScanner", () => {
 				},
 			} as any,
 		});
-		const issues1 = brokenLinksScanner.scan(ctx);
-		const issues2 = brokenLinksScanner.scan(ctx);
+		const issues1 = await brokenLinksScanner.scan(ctx);
+		const issues2 = await brokenLinksScanner.scan(ctx);
 		expect(issues1[0].fingerprint).toBe(issues2[0].fingerprint);
 	});
 });
