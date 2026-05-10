@@ -1,1 +1,36 @@
-/* Vault Inspector styles */
+/* Vault Inspector */
+
+.vault-inspector { padding: 16px; font-size: 14px; }
+
+.vi-progress, .vi-empty { padding: 32px; text-align: center; color: var(--text-muted); font-size: 15px; }
+
+.vi-summary h2 { margin: 0 0 12px; font-size: 18px; }
+
+.vi-stats { display: flex; gap: 16px; margin-bottom: 12px; }
+
+.vi-stat { display: flex; flex-direction: column; align-items: center; padding: 8px 16px; border-radius: 6px; background: var(--background-secondary); min-width: 80px; }
+.vi-stat-value { font-size: 22px; font-weight: 700; }
+.vi-stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+.vi-stat-error .vi-stat-value { color: var(--text-error); }
+.vi-stat-warning .vi-stat-value { color: #e5a100; }
+.vi-stat-info .vi-stat-value { color: var(--text-muted); }
+
+.vi-meta { display: flex; gap: 16px; color: var(--text-muted); font-size: 12px; margin-bottom: 16px; }
+
+.vi-scanner-section { margin-bottom: 16px; }
+.vi-scanner-header { font-size: 15px; margin: 12px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--background-modifier-border); }
+.vi-no-issues { color: var(--text-muted); font-style: italic; padding: 4px 0; }
+
+.vi-issue-list { list-style: none; padding: 0; margin: 0; }
+.vi-issue { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; }
+.vi-issue:hover { background: var(--background-secondary); }
+
+.vi-severity-badge { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
+.vi-severity-error .vi-severity-badge { background: rgba(255, 60, 60, 0.15); color: var(--text-error); }
+.vi-severity-warning .vi-severity-badge { background: rgba(229, 161, 0, 0.15); color: #e5a100; }
+.vi-severity-info .vi-severity-badge { background: var(--background-secondary); color: var(--text-muted); }
+
+.vi-issue-title { font-weight: 500; }
+.vi-issue-path { color: var(--text-muted); font-size: 12px; font-family: var(--font-monospace); }
+.vi-issue-message { width: 100%; color: var(--text-muted); font-size: 12px; padding-left: 4px; }
