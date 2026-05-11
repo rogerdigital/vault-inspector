@@ -35,6 +35,8 @@ export default class VaultInspectorPlugin extends Plugin {
 		this.scanRunner.register(frontmatterTypesScanner);
 		this.scanRunner.register(tagUsageScanner);
 		this.addSettingTab(new InspectorSettingTab(this.app, this));
+
+		this.addRibbonIcon("search", "Vault Inspector: Run scan", () => this.runScan());
 	}
 
 	onunload() {}
