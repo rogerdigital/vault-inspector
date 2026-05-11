@@ -2,47 +2,68 @@ import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { generateFingerprint } from "../issue-fingerprint";
 import { hashContent } from "../../utils/hash";
+import { getBasename, getExtension } from "../../utils/paths";
 
 export const duplicateFilesScanner = {
 	id: "duplicate-files" as const,
 
 	async scan(ctx: ScanContext): Promise<Issue[]> {
 		const issues: Issue[] = [];
+		const files = ctx.allFiles.filter(
+			(f) => f.stat.size > 0 && !isIgnored(f.path, ctx.ignoredFolders),
+		);
+
+		// Phase 1: group by basename + extension
+		const nameGroups = new Map<string, typeof files>();
+		for (const file of files) {
+			const key = `${getBasename(file.path)}.${getExtension(file.path)}`;
+			const group = nameGroups.get(key) ?? [];
+			group.push(file);
+			nameGroups.set(key, group);
+		}
+
+		// Phase 2: group by byte size
+		const sizeGroups = new Map<number, typeof files>();
+		for (const file of files) {
+			const group = sizeGroups.get(file.stat.size) ?? [];
+			group.push(file);
+			sizeGroups.set(file.stat.size, group);
+		}
+
+		// Collect candidate files (appear in a group of 2+)
+		const candidates = new Set<any>();
+		for (const [, group] of nameGroups) {
+			if (group.length >= 2) group.forEach((f) => candidates.add(f));
+		}
+		for (const [, group] of sizeGroups) {
+			if (group.length >= 2) group.forEach((f) => candidates.add(f));
+		}
+
+		// Phase 3: hash candidates below cap
 		const hashGroups = new Map<string, string[]>();
-
-		for (const file of ctx.allFiles) {
-			if (isIgnored(file.path, ctx.ignoredFolders)) continue;
-			if (file.stat.size === 0) continue;
-
-			let hash: string;
-
+		for (const file of candidates) {
 			if (file.stat.size <= ctx.duplicateHashMaxBytes) {
 				try {
 					const content = await ctx.vault.readBinary(file);
-					hash = await hashContent(content);
+					const hash = await hashContent(content);
+					const group = hashGroups.get(hash) ?? [];
+					group.push(file.path);
+					hashGroups.set(hash, group);
 				} catch {
 					continue;
 				}
-			} else {
-				// Use size as a rough fingerprint for oversized files
-				hash = `size:${file.stat.size}`;
-			}
-
-			const group = hashGroups.get(hash);
-			if (group) {
-				group.push(file.path);
-			} else {
-				hashGroups.set(hash, [file.path]);
 			}
 		}
 
+		// Report hash-identical as warning
+		const hashReportedPaths = new Set<string>();
 		for (const [, paths] of hashGroups) {
 			if (paths.length < 2) continue;
-
+			paths.forEach((p) => hashReportedPaths.add(p));
 			issues.push({
 				scannerId: "duplicate-files",
 				severity: "warning",
-				title: "Duplicate file candidates",
+				title: "Duplicate files (hash-identical)",
 				message: `${paths.length} files have identical content`,
 				relatedPaths: paths,
 				evidence: {
@@ -55,9 +76,60 @@ export const duplicateFilesScanner = {
 			});
 		}
 
+		// Report name candidates not covered by hash as info
+		for (const [name, group] of nameGroups) {
+			if (group.length < 2) continue;
+			const unreached = group.filter((f) => !hashReportedPaths.has(f.path));
+			if (unreached.length < 2) continue;
+			const paths = unreached.map((f) => f.path);
+			issues.push({
+				scannerId: "duplicate-files",
+				severity: "info",
+				title: "Duplicate file candidates (same name)",
+				message: `${paths.length} files share the name "${name}"`,
+				relatedPaths: paths,
+				evidence: {
+					count: paths.length,
+					paths: paths.join(", "),
+				},
+				fingerprint: generateFingerprint("duplicate-files", undefined, {
+					nameCandidates: paths.slice().sort().join(","),
+				}),
+			});
+		}
+
+		// Report size candidates not covered by hash as info
+		for (const [size, group] of sizeGroups) {
+			if (group.length < 2) continue;
+			const unreached = group.filter((f) => !hashReportedPaths.has(f.path));
+			if (unreached.length < 2) continue;
+			const paths = unreached.map((f) => f.path);
+			issues.push({
+				scannerId: "duplicate-files",
+				severity: "info",
+				title: "Duplicate file candidates (same size)",
+				message: `${paths.length} files share size ${formatSize(size)}`,
+				relatedPaths: paths,
+				evidence: {
+					count: paths.length,
+					size,
+					paths: paths.join(", "),
+				},
+				fingerprint: generateFingerprint("duplicate-files", undefined, {
+					sizeCandidates: paths.slice().sort().join(","),
+				}),
+			});
+		}
+
 		return issues;
 	},
 };
+
+function formatSize(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function isIgnored(path: string, ignoredFolders: string[]): boolean {
 	for (const folder of ignoredFolders) {
