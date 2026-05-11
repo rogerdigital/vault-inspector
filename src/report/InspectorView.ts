@@ -71,9 +71,17 @@ export class InspectorView extends ItemView {
 		}
 
 		if (!this.model.result) {
-			container.createEl("div", {
-				cls: "vi-empty",
-				text: 'Run "Vault Inspector: Run scan" to check your vault.',
+			const empty = container.createDiv({ cls: "vi-empty" });
+			empty.createEl("p", { text: "No scan results yet." });
+			const btn = empty.createEl("button", { cls: "vi-empty-btn", text: "Run scan now" });
+			btn.addEventListener("click", () => {
+				this.onRevealFile = null;
+				this.onIgnoreIssue = null;
+				this.setScanning(true);
+			});
+			empty.createEl("p", {
+				cls: "vi-empty-hint",
+				text: "You can also click the search icon in the left ribbon, or use the command palette (Cmd/Ctrl+P) → \"Vault Inspector: Run scan\".",
 			});
 			return;
 		}
