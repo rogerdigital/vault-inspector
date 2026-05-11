@@ -62,7 +62,7 @@ describe("tagUsageScanner", () => {
 		expect(lowUsage).toHaveLength(0);
 	});
 
-	it("reports watched tags with their counts", async () => {
+	it("does not report watched tags that exist in the vault", async () => {
 		const file = { path: "notes/a.md" } as any;
 		const ctx = makeCtx({
 			markdownFiles: [file],
@@ -76,13 +76,11 @@ describe("tagUsageScanner", () => {
 			} as any,
 		});
 		const issues = await tagUsageScanner.scan(ctx);
-		const watched = issues.filter((i) => i.title === "Watched tag");
-		expect(watched).toHaveLength(1);
-		expect(watched[0].evidence.tag).toBe("important");
-		expect(watched[0].evidence.count).toBe(1);
+		const watched = issues.filter((i) => i.title === "Missing watched tag");
+		expect(watched).toHaveLength(0);
 	});
 
-	it("reports watched tags even with zero uses", async () => {
+	it("reports watched tags that do not appear in the vault", async () => {
 		const ctx = makeCtx({
 			markdownFiles: [],
 			allFiles: [],
@@ -92,7 +90,7 @@ describe("tagUsageScanner", () => {
 			} as any,
 		});
 		const issues = await tagUsageScanner.scan(ctx);
-		const watched = issues.filter((i) => i.title === "Watched tag");
+		const watched = issues.filter((i) => i.title === "Missing watched tag");
 		expect(watched).toHaveLength(1);
 		expect(watched[0].evidence.count).toBe(0);
 	});
