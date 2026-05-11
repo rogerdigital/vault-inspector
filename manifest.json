@@ -3,7 +3,7 @@
 	"name": "Vault Inspector",
 	"version": "0.1.0",
 	"minAppVersion": "1.5.0",
-	"description": "Scan your Obsidian vault for maintenance problems: broken links, orphan attachments, duplicate files, frontmatter inconsistencies, unused tags, and large files.",
+	"description": "Scan your vault for maintenance problems: broken links, orphan attachments, duplicate files, frontmatter inconsistencies, unused tags, and large files.",
 	"author": "Roger Deng",
 	"isDesktopOnly": false
 }
