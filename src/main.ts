@@ -9,6 +9,7 @@ import { frontmatterTypesScanner } from "./scanner/scanners/frontmatter-types";
 import { tagUsageScanner } from "./scanner/scanners/tag-usage";
 import { DEFAULT_SETTINGS, type InspectorSettings } from "./settings/settings";
 import { InspectorSettingTab } from "./settings/settings-tab";
+import { generateMarkdownReport } from "./report/markdown-export";
 
 export default class VaultInspectorPlugin extends Plugin {
 	settings: InspectorSettings = DEFAULT_SETTINGS;
@@ -21,6 +22,11 @@ export default class VaultInspectorPlugin extends Plugin {
 			id: "run-scan",
 			name: "Run scan",
 			callback: () => this.runScan(),
+		});
+		this.addCommand({
+			id: "export-report",
+			name: "Export report",
+			callback: () => this.exportReport(),
 		});
 		this.scanRunner.register(brokenLinksScanner);
 		this.scanRunner.register(largeFilesScanner);
@@ -73,5 +79,25 @@ export default class VaultInspectorPlugin extends Plugin {
 		view.setScanning(true);
 		const result = await this.scanRunner.run(this.app, this.settings);
 		view.setResult(result);
+	}
+
+	private async exportReport() {
+		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_INSPECTOR);
+		const view = leaves[0]?.view as InspectorView | undefined;
+		if (!view || !view.hasResult()) {
+			new Notice("Run a scan first before exporting.");
+			return;
+		}
+
+		const result = view.getResult()!;
+		const report = generateMarkdownReport(result);
+		const folder = this.settings.reportFolderPath;
+		const now = new Date();
+		const filename = `Vault Inspector Report ${now.toISOString().replace(/[:.]/g, "-").slice(0, 19)}.md`;
+		const filepath = `${folder}/${filename}`;
+
+		await this.app.vault.createFolder(folder).catch(() => {});
+		await this.app.vault.create(filepath, report);
+		new Notice(`Report exported to ${filepath}`);
 	}
 }
