@@ -17,7 +17,7 @@ jobs:
           node-version: 20
           cache: npm
 
-      - run: npm install
+      - run: rm -f package-lock.json && npm install
 
       - name: Type check & build
         run: npm run build
