@@ -9,3 +9,6 @@ node_modules/
 .idea/
 .vscode/
 *.swp
+
+# Claude
+.claude/
