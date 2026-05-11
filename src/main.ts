@@ -1,4 +1,4 @@
-import { Plugin } from "obsidian";
+import { Plugin, Notice } from "obsidian";
 import { InspectorView, VIEW_TYPE_INSPECTOR } from "./report/InspectorView";
 import { ScanRunner } from "./scanner/ScanRunner";
 import { brokenLinksScanner } from "./scanner/scanners/broken-links";
@@ -50,7 +50,26 @@ export default class VaultInspectorPlugin extends Plugin {
 			await leaf.setViewState({ type: VIEW_TYPE_INSPECTOR, active: true });
 		}
 		await this.app.workspace.revealLeaf(leaf);
+
 		const view = leaf.view as InspectorView;
+		view.setCallbacks({
+			onIgnoreIssue: async (issue) => {
+				this.settings.ignoredIssueFingerprints.push(issue.fingerprint);
+				await this.saveSettings();
+				new Notice(`Ignored: ${issue.title}`);
+				view.setScanning(true);
+				const result = await this.scanRunner.run(this.app, this.settings);
+				view.setResult(result);
+			},
+			onRevealFile: async (path) => {
+				const file = this.app.vault.getAbstractFileByPath(path);
+				if (file) {
+					await this.app.workspace.getLeaf(false).openFile(file as any);
+				} else {
+					new Notice(`File not found: ${path}`);
+				}
+			},
+		});
 		view.setScanning(true);
 		const result = await this.scanRunner.run(this.app, this.settings);
 		view.setResult(result);

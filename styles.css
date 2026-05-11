@@ -18,10 +18,19 @@
 
 .vi-meta { display: flex; gap: 16px; color: var(--text-muted); font-size: 12px; margin-bottom: 16px; }
 
+/* Toolbar */
+.vi-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 8px; flex-wrap: wrap; }
+.vi-filter-group { display: flex; gap: 4px; }
+.vi-filter-btn { font-size: 11px; padding: 3px 10px; border-radius: 4px; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-muted); cursor: pointer; }
+.vi-filter-btn.vi-active { background: var(--interactive-accent); color: var(--text-on-accent); border-color: var(--interactive-accent); }
+.vi-filter-btn:hover { opacity: 0.85; }
+
+/* Scanner sections */
 .vi-scanner-section { margin-bottom: 16px; }
 .vi-scanner-header { font-size: 15px; margin: 12px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--background-modifier-border); }
 .vi-no-issues { color: var(--text-muted); font-style: italic; padding: 4px 0; }
 
+/* Issue list */
 .vi-issue-list { list-style: none; padding: 0; margin: 0; }
 .vi-issue { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 6px 8px; border-radius: 4px; cursor: pointer; }
 .vi-issue:hover { background: var(--background-secondary); }
@@ -34,3 +43,6 @@
 .vi-issue-title { font-weight: 500; }
 .vi-issue-path { color: var(--text-muted); font-size: 12px; font-family: var(--font-monospace); }
 .vi-issue-message { width: 100%; color: var(--text-muted); font-size: 12px; padding-left: 4px; }
+
+.vi-ignore-btn { font-size: 10px; padding: 1px 8px; border-radius: 3px; border: 1px solid var(--background-modifier-border); background: transparent; color: var(--text-muted); cursor: pointer; margin-left: auto; }
+.vi-ignore-btn:hover { background: var(--background-secondary); }

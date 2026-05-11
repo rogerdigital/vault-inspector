@@ -1,31 +1,40 @@
 import type { ScanResult, Issue } from "../scanner/Issue";
 import { SCANNER_LABELS } from "../scanner/Issue";
+import type { ReportModel } from "./report-model";
+
+type IssueActions = {
+	onOpenFile: (path: string) => void;
+	onCopyPath: (path: string) => void;
+	onIgnore: (issue: Issue) => void;
+};
 
 export function renderIssues(
 	container: HTMLElement,
 	result: ScanResult,
+	model: ReportModel,
+	actions: IssueActions,
 ) {
-	const grouped = groupByScanner(result.issues);
-	const scannerOrder = result.scannersRun;
+	let issues = result.issues;
+	if (model.filterSeverity) issues = issues.filter((i) => i.severity === model.filterSeverity);
+	if (model.filterScanner) issues = issues.filter((i) => i.scannerId === model.filterScanner);
 
-	for (const scannerId of scannerOrder) {
-		const issues = grouped[scannerId] ?? [];
+	const grouped = groupByScanner(issues);
+	for (const scannerId of result.scannersRun) {
+		const scannerIssues = grouped[scannerId] ?? [];
 		const section = container.createDiv({ cls: "vi-scanner-section" });
 		section.createEl("h3", {
 			cls: "vi-scanner-header",
-			text: `${SCANNER_LABELS[scannerId]} (${issues.length})`,
+			text: `${SCANNER_LABELS[scannerId]} (${scannerIssues.length})`,
 		});
 
-		if (issues.length === 0) {
+		if (scannerIssues.length === 0) {
 			section.createEl("div", { cls: "vi-no-issues", text: "No issues found." });
 			continue;
 		}
 
 		const list = section.createEl("ul", { cls: "vi-issue-list" });
-		for (const issue of issues) {
-			const li = list.createEl("li", {
-				cls: `vi-issue vi-severity-${issue.severity}`,
-			});
+		for (const issue of scannerIssues) {
+			const li = list.createEl("li", { cls: `vi-issue vi-severity-${issue.severity}` });
 			li.createEl("span", {
 				cls: `vi-severity-badge vi-severity-${issue.severity}`,
 				text: issue.severity.toUpperCase(),
@@ -33,16 +42,14 @@ export function renderIssues(
 			li.createEl("span", { cls: "vi-issue-title", text: issue.title });
 
 			if (issue.primaryPath) {
-				li.createEl("span", {
-					cls: "vi-issue-path",
-					text: issue.primaryPath,
-				});
+				const pathEl = li.createEl("span", { cls: "vi-issue-path", text: issue.primaryPath });
+				pathEl.addEventListener("click", (e) => { e.stopPropagation(); actions.onOpenFile(issue.primaryPath!); });
+				pathEl.addEventListener("contextmenu", (e) => { e.preventDefault(); actions.onCopyPath(issue.primaryPath!); });
 			}
 
-			li.createEl("div", {
-				cls: "vi-issue-message",
-				text: issue.message,
-			});
+			li.createEl("div", { cls: "vi-issue-message", text: issue.message });
+			li.createEl("button", { cls: "vi-ignore-btn", text: "Ignore" })
+				.addEventListener("click", (e) => { e.stopPropagation(); actions.onIgnore(issue); });
 		}
 	}
 }
