@@ -36,23 +36,34 @@ export const frontmatterTypesScanner = {
 		}
 
 		for (const [prop, typeMap] of propertyTypes) {
-			if (typeMap.size <= 1) continue;
+			const nonNullTypes = Array.from(typeMap.keys()).filter((t) => t !== "null");
+			if (nonNullTypes.length <= 1) continue;
 
-			const types = Array.from(typeMap.keys());
-			// Check if all types are mutually compatible
-			let hasDrift = false;
-			for (let i = 0; i < types.length - 1; i++) {
-				for (let j = i + 1; j < types.length; j++) {
-					if (!typesAreCompatible(types[i], types[j])) {
-						hasDrift = true;
-						break;
+			let hasIncompatible = false;
+			let hasDateAmbiguity = false;
+
+			for (let i = 0; i < nonNullTypes.length - 1; i++) {
+				for (let j = i + 1; j < nonNullTypes.length; j++) {
+					if (!typesAreCompatible(nonNullTypes[i], nonNullTypes[j])) {
+						hasIncompatible = true;
+					}
+					if (
+						(nonNullTypes[i] === "string" && nonNullTypes[j] === "date") ||
+						(nonNullTypes[i] === "date" && nonNullTypes[j] === "string")
+					) {
+						hasDateAmbiguity = true;
 					}
 				}
-				if (hasDrift) break;
 			}
 
-			if (!hasDrift) continue;
+			if (!hasIncompatible && !hasDateAmbiguity) continue;
 
+			const severity = hasIncompatible ? "warning" : "info";
+			const title = hasIncompatible
+				? "Frontmatter type drift"
+				: "Frontmatter type ambiguity";
+
+			const types = Array.from(typeMap.keys());
 			const typeSummary = types
 				.map((t) => {
 					const count = typeMap.get(t)?.length ?? 0;
@@ -67,8 +78,8 @@ export const frontmatterTypesScanner = {
 
 			issues.push({
 				scannerId: "frontmatter-types",
-				severity: "warning",
-				title: "Frontmatter type drift",
+				severity,
+				title,
 				message: `Property "${prop}" has mixed types: ${typeSummary}`,
 				relatedPaths: allPaths.slice(0, 10),
 				evidence: {
