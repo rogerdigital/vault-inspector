@@ -25,7 +25,7 @@ export class InspectorView extends ItemView {
 
 	getViewType(): string { return VIEW_TYPE_INSPECTOR; }
 	getDisplayText(): string { return "Vault Inspector"; }
-	getIcon(): string { return "search"; }
+	getIcon(): string { return "shield-check"; }
 
 	async onOpen() {
 		const container = this.containerEl.children[1];
