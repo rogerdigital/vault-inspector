@@ -18,6 +18,8 @@ export class InspectorSettingTab extends PluginSettingTab {
 		this.addScannersSection();
 		this.addThresholdsSection();
 		this.addTagsSection();
+		this.addIgnoredSection();
+		this.addExportSection();
 	}
 
 	private addScannersSection() {
@@ -61,6 +63,18 @@ export class InspectorSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}),
 			);
+		new Setting(containerEl)
+			.setName("Duplicate hash cap (MB)")
+			.setDesc("Files above this size are reported as candidates without content hashing.")
+			.addSlider((slider) =>
+				slider.setLimits(1, 10, 1)
+					.setValue(this.plugin.settings.duplicateHashMaxBytes / (1024 * 1024))
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.duplicateHashMaxBytes = value * 1024 * 1024;
+						await this.plugin.saveSettings();
+					}),
+			);
 	}
 
 	private addTagsSection() {
@@ -84,6 +98,49 @@ export class InspectorSettingTab extends PluginSettingTab {
 					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.lowUsageTagThreshold = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+	}
+
+	private addIgnoredSection() {
+		const { containerEl } = this;
+		containerEl.createEl("h3", { text: "Ignored Items" });
+		new Setting(containerEl)
+			.setName("Ignored folders (comma-separated)")
+			.setDesc("Files in these folders are excluded from scans.")
+			.addText((text) =>
+				text.setValue(this.plugin.settings.ignoredFolders.join(", "))
+					.setPlaceholder("e.g. templates, archive")
+					.onChange(async (value) => {
+						this.plugin.settings.ignoredFolders = value.split(",").map((f) => f.trim()).filter(Boolean);
+						await this.plugin.saveSettings();
+					}),
+			);
+		new Setting(containerEl)
+			.setName("Ignored frontmatter properties (comma-separated)")
+			.setDesc("These properties are excluded from type consistency checks.")
+			.addText((text) =>
+				text.setValue(this.plugin.settings.ignoredProperties.join(", "))
+					.setPlaceholder("e.g. cssclasses, aliases")
+					.onChange(async (value) => {
+						this.plugin.settings.ignoredProperties = value.split(",").map((p) => p.trim()).filter(Boolean);
+						await this.plugin.saveSettings();
+					}),
+			);
+	}
+
+	private addExportSection() {
+		const { containerEl } = this;
+		containerEl.createEl("h3", { text: "Export" });
+		new Setting(containerEl)
+			.setName("Report folder")
+			.setDesc("Folder for exported Markdown reports.")
+			.addText((text) =>
+				text.setValue(this.plugin.settings.reportFolderPath)
+					.setPlaceholder("Vault Inspector Reports")
+					.onChange(async (value) => {
+						this.plugin.settings.reportFolderPath = value.trim() || "Vault Inspector Reports";
 						await this.plugin.saveSettings();
 					}),
 			);
