@@ -1,1 +1,11 @@
+# Build
+main.js
+node_modules/
+
+# OS
 .DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
