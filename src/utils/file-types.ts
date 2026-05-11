@@ -5,19 +5,14 @@ const ATTACHMENT_EXTENSIONS = new Set([
 	"jpg",
 	"jpeg",
 	"gif",
-	"bmp",
 	"svg",
 	"webp",
-	"mp3",
-	"wav",
-	"ogg",
-	"mp4",
-	"webm",
 	"pdf",
+	"mp3",
+	"mp4",
+	"wav",
+	"mov",
 	"zip",
-	"docx",
-	"xlsx",
-	"pptx",
 ]);
 
 export function isAttachment(path: string): boolean {

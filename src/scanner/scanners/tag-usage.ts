@@ -42,16 +42,17 @@ export const tagUsageScanner = {
 			});
 		}
 
-		// Report watched tags with their counts
+		// Report watched tags that do not appear in the vault
 		for (const watchedTag of ctx.watchedTags) {
 			const count = tagCounts.get(watchedTag) ?? 0;
+			if (count > 0) continue;
 			issues.push({
 				scannerId: "tag-usage",
 				severity: "info",
-				title: "Watched tag",
-				message: `Watched tag "${watchedTag}" is used ${count} time(s)`,
+				title: "Missing watched tag",
+				message: `Watched tag "${watchedTag}" does not appear in the vault`,
 				relatedPaths: [],
-				evidence: { tag: watchedTag, count, watched: true },
+				evidence: { tag: watchedTag, count: 0, watched: true },
 				fingerprint: generateFingerprint("tag-usage", undefined, {
 					tag: watchedTag,
 					watched: true,

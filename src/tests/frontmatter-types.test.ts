@@ -95,6 +95,7 @@ describe("frontmatterTypesScanner", () => {
 		});
 		const issues = await frontmatterTypesScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
+		expect(issues[0].severity).toBe("warning");
 		expect(issues[0].evidence.property).toBe("priority");
 	});
 
@@ -156,5 +157,29 @@ describe("frontmatterTypesScanner", () => {
 		});
 		const issues = await frontmatterTypesScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
+	});
+
+	it("reports string/date ambiguity as info", async () => {
+		const fileA = { path: "notes/a.md" } as any;
+		const fileB = { path: "notes/b.md" } as any;
+		const ctx = makeCtx({
+			markdownFiles: [fileA, fileB],
+			allFiles: [fileA, fileB],
+			metadataCache: {
+				getFileCache: (f: any) => {
+					if (f.path === "notes/a.md") {
+						return { frontmatter: { date: "2024-01-15" } };
+					}
+					if (f.path === "notes/b.md") {
+						return { frontmatter: { date: "yesterday" } };
+					}
+					return null;
+				},
+			} as any,
+		});
+		const issues = await frontmatterTypesScanner.scan(ctx);
+		expect(issues).toHaveLength(1);
+		expect(issues[0].severity).toBe("info");
+		expect(issues[0].title).toBe("Frontmatter type ambiguity");
 	});
 });
