@@ -2,6 +2,10 @@
 
 An Obsidian plugin that scans your vault for long-term maintenance problems and presents a clear, navigable report — without modifying your files.
 
+## Screenshot
+
+![Vault Inspector report view](docs/screenshot.png)
+
 ## Scanners
 
 ### Broken Links
