@@ -1,3 +1,4 @@
+import type { CachedMetadata } from "obsidian";
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { generateFingerprint } from "../issue-fingerprint";
@@ -7,7 +8,7 @@ export const brokenLinksScanner = {
 
 	scan(ctx: ScanContext): Issue[] {
 		const issues: Issue[] = [];
-		const { markdownFiles, metadataCache, filePathIndex } = ctx;
+		const { markdownFiles, metadataCache } = ctx;
 
 		for (const file of markdownFiles) {
 			if (isIgnored(file.path, ctx.ignoredFolders)) continue;
@@ -15,9 +16,10 @@ export const brokenLinksScanner = {
 			const cache = metadataCache.getFileCache(file);
 			if (!cache) continue;
 
-			const linksForFile = (metadataCache as any).unresolvedLinks?.[file.path] as
-				| Record<string, number>
-				| undefined;
+			const meta = metadataCache as unknown as {
+				unresolvedLinks?: Record<string, Record<string, number>>;
+			};
+			const linksForFile = meta.unresolvedLinks?.[file.path];
 			if (!linksForFile) continue;
 
 			for (const linkText of Object.keys(linksForFile)) {
