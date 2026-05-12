@@ -1,7 +1,6 @@
 import { PluginSettingTab, App, Setting } from "obsidian";
 import type VaultInspectorPlugin from "../main";
 import { SCANNER_IDS, SCANNER_LABELS } from "../scanner/Issue";
-import type { ScannerId } from "../scanner/Issue";
 
 export class InspectorSettingTab extends PluginSettingTab {
 	plugin: VaultInspectorPlugin;
@@ -14,7 +13,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-		new Setting(containerEl).setName("Vault inspector settings").setHeading();
+		new Setting(containerEl).setName("General").setHeading();
 		this.addScannersSection();
 		this.addThresholdsSection();
 		this.addTagsSection();
@@ -138,9 +137,9 @@ export class InspectorSettingTab extends PluginSettingTab {
 			.setDesc("Folder for exported Markdown reports.")
 			.addText((text) =>
 				text.setValue(this.plugin.settings.reportFolderPath)
-					.setPlaceholder("Vault Inspector Reports")
+					.setPlaceholder("Inspector reports")
 					.onChange(async (value) => {
-						this.plugin.settings.reportFolderPath = value.trim() || "Vault Inspector Reports";
+						this.plugin.settings.reportFolderPath = value.trim() || "Inspector reports";
 						await this.plugin.saveSettings();
 					}),
 			);
