@@ -66,7 +66,10 @@ function collectReferencedPaths(ctx: ScanContext): Set<string> {
 		const embeds = cache.embeds ?? [];
 
 		for (const link of [...links, ...embeds]) {
-			const resolved = (ctx.metadataCache as any).resolvedLinks?.[file.path]?.[link.link];
+			const resolvedMeta = ctx.metadataCache as unknown as {
+				resolvedLinks?: Record<string, Record<string, string>>;
+			};
+			const resolved = resolvedMeta.resolvedLinks?.[file.path]?.[link.link];
 			if (typeof resolved === "string") {
 				paths.add(resolved);
 			} else {

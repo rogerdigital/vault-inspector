@@ -1,4 +1,4 @@
-import { Plugin, Notice } from "obsidian";
+import { Plugin, Notice, TFile } from "obsidian";
 import { InspectorView, VIEW_TYPE_INSPECTOR } from "./report/InspectorView";
 import { ScanRunner } from "./scanner/ScanRunner";
 import { brokenLinksScanner } from "./scanner/scanners/broken-links";
@@ -59,7 +59,7 @@ export default class VaultInspectorPlugin extends Plugin {
 		}
 		await this.app.workspace.revealLeaf(leaf);
 
-		const view = leaf.view as InspectorView;
+		const view = leaf.view as unknown as InspectorView;
 		view.setCallbacks({
 			onIgnoreIssue: async (issue) => {
 				this.settings.ignoredIssueFingerprints.push(issue.fingerprint);
@@ -72,7 +72,9 @@ export default class VaultInspectorPlugin extends Plugin {
 			onRevealFile: async (path) => {
 				const file = this.app.vault.getAbstractFileByPath(path);
 				if (file) {
-					await this.app.workspace.getLeaf(false).openFile(file as any);
+					if (file instanceof TFile) {
+						await this.app.workspace.getLeaf(false).openFile(file);
+					}
 				} else {
 					new Notice(`File not found: ${path}`);
 				}
@@ -85,7 +87,7 @@ export default class VaultInspectorPlugin extends Plugin {
 
 	private async exportReport() {
 		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_INSPECTOR);
-		const view = leaves[0]?.view as InspectorView | undefined;
+		const view = leaves[0]?.view as unknown as InspectorView | undefined;
 		if (!view || !view.hasResult()) {
 			new Notice("Run a scan first before exporting.");
 			return;

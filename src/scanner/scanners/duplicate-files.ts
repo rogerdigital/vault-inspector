@@ -31,7 +31,7 @@ export const duplicateFilesScanner = {
 		}
 
 		// Collect candidate files (appear in a group of 2+)
-		const candidates = new Set<any>();
+		const candidates = new Set<typeof files[number]>();
 		for (const [, group] of nameGroups) {
 			if (group.length >= 2) group.forEach((f) => candidates.add(f));
 		}
