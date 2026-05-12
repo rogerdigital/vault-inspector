@@ -7,7 +7,7 @@ export function renderSummary(container: HTMLElement, result: ScanResult) {
 	const duration = ((result.finishedAt - result.startedAt) / 1000).toFixed(1);
 
 	const summary = container.createDiv({ cls: "vi-summary" });
-	summary.createEl("h2", { text: "Scan Results" });
+	summary.createEl("h2", { text: "Scan results" });
 
 	const stats = summary.createDiv({ cls: "vi-stats" });
 	const items: Array<{ label: string; value: number; cls: string }> = [

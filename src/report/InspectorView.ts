@@ -16,15 +16,15 @@ export class InspectorView extends ItemView {
 		showIgnored: false,
 	};
 
-	private onIgnoreIssue: ((issue: Issue) => void) | null = null;
-	private onRevealFile: ((path: string) => void) | null = null;
+	private onIgnoreIssue: ((issue: Issue) => void | Promise<void>) | null = null;
+	private onRevealFile: ((path: string) => void | Promise<void>) | null = null;
 
 	constructor(leaf: WorkspaceLeaf) {
 		super(leaf);
 	}
 
 	getViewType(): string { return VIEW_TYPE_INSPECTOR; }
-	getDisplayText(): string { return "Vault Inspector"; }
+	getDisplayText(): string { return "Vault inspector"; }
 	getIcon(): string { return "shield-check"; }
 
 	async onOpen() {
@@ -93,7 +93,7 @@ export class InspectorView extends ItemView {
 
 		const issuesContainer = container.createDiv({ cls: "vi-issues" });
 		renderIssues(issuesContainer, this.model.result, this.model, {
-			onOpenFile: (path: string) => this.handleOpenFile(path),
+			onOpenFile: (path: string) => { void this.handleOpenFile(path); },
 			onCopyPath: (path: string) => this.handleCopyPath(path),
 			onIgnore: (issue: Issue) => this.handleIgnore(issue),
 		});
@@ -153,7 +153,7 @@ export class InspectorView extends ItemView {
 	}
 
 	private async handleOpenFile(path: string) {
-		if (this.onRevealFile) { this.onRevealFile(path); return; }
+		if (this.onRevealFile) { void this.onRevealFile(path); return; }
 		const file = this.app.vault.getAbstractFileByPath(path);
 		if (file instanceof TFile) await this.app.workspace.getLeaf(false).openFile(file);
 	}
@@ -164,6 +164,6 @@ export class InspectorView extends ItemView {
 	}
 
 	private handleIgnore(issue: Issue) {
-		if (this.onIgnoreIssue) this.onIgnoreIssue(issue);
+		if (this.onIgnoreIssue) void this.onIgnoreIssue(issue);
 	}
 }
