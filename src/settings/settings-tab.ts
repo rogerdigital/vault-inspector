@@ -14,7 +14,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-		containerEl.createEl("h2", { text: "Vault Inspector Settings" });
+		new Setting(containerEl).setName("Vault inspector settings").setHeading();
 		this.addScannersSection();
 		this.addThresholdsSection();
 		this.addTagsSection();
@@ -24,7 +24,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 
 	private addScannersSection() {
 		const { containerEl } = this;
-		containerEl.createEl("h3", { text: "Enabled Scanners" });
+		new Setting(containerEl).setName("Enabled scanners").setHeading();
 		for (const id of SCANNER_IDS) {
 			new Setting(containerEl)
 				.setName(SCANNER_LABELS[id])
@@ -40,7 +40,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 
 	private addThresholdsSection() {
 		const { containerEl } = this;
-		containerEl.createEl("h3", { text: "Thresholds" });
+		new Setting(containerEl).setName("Thresholds").setHeading();
 		new Setting(containerEl)
 			.setName("Large Markdown threshold (KB)")
 			.addSlider((slider) =>
@@ -79,7 +79,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 
 	private addTagsSection() {
 		const { containerEl } = this;
-		containerEl.createEl("h3", { text: "Tags" });
+		new Setting(containerEl).setName("Tags").setHeading();
 		new Setting(containerEl)
 			.setName("Watched tags (comma-separated)")
 			.addText((text) =>
@@ -105,7 +105,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 
 	private addIgnoredSection() {
 		const { containerEl } = this;
-		containerEl.createEl("h3", { text: "Ignored Items" });
+		new Setting(containerEl).setName("Ignored items").setHeading();
 		new Setting(containerEl)
 			.setName("Ignored folders (comma-separated)")
 			.setDesc("Files in these folders are excluded from scans.")
@@ -132,7 +132,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 
 	private addExportSection() {
 		const { containerEl } = this;
-		containerEl.createEl("h3", { text: "Export" });
+		new Setting(containerEl).setName("Export").setHeading();
 		new Setting(containerEl)
 			.setName("Report folder")
 			.setDesc("Folder for exported Markdown reports.")

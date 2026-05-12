@@ -1,5 +1,5 @@
-import { ItemView, WorkspaceLeaf, Notice } from "obsidian";
-import type { ScanResult, Issue, ScannerId } from "../scanner/Issue";
+import { ItemView, WorkspaceLeaf, Notice, TFile } from "obsidian";
+import type { ScanResult, Issue } from "../scanner/Issue";
 import { SCANNER_LABELS } from "../scanner/Issue";
 import type { ReportModel } from "./report-model";
 import { renderSummary } from "./render-summary";
@@ -28,6 +28,7 @@ export class InspectorView extends ItemView {
 	getIcon(): string { return "shield-check"; }
 
 	async onOpen() {
+		await Promise.resolve();
 		const container = this.containerEl.children[1];
 		container.empty();
 		container.classList.add("vault-inspector");
@@ -35,6 +36,7 @@ export class InspectorView extends ItemView {
 	}
 
 	async onClose() {
+		await Promise.resolve();
 		this.onIgnoreIssue = null;
 		this.onRevealFile = null;
 	}
@@ -51,8 +53,8 @@ export class InspectorView extends ItemView {
 	}
 
 	setCallbacks(callbacks: {
-		onIgnoreIssue: (issue: Issue) => void;
-		onRevealFile: (path: string) => void;
+		onIgnoreIssue: (issue: Issue) => void | Promise<void>;
+		onRevealFile: (path: string) => void | Promise<void>;
 	}) {
 		this.onIgnoreIssue = callbacks.onIgnoreIssue;
 		this.onRevealFile = callbacks.onRevealFile;
@@ -153,7 +155,7 @@ export class InspectorView extends ItemView {
 	private async handleOpenFile(path: string) {
 		if (this.onRevealFile) { this.onRevealFile(path); return; }
 		const file = this.app.vault.getAbstractFileByPath(path);
-		if (file) await this.app.workspace.getLeaf(false).openFile(file as any);
+		if (file instanceof TFile) await this.app.workspace.getLeaf(false).openFile(file);
 	}
 
 	private handleCopyPath(path: string) {

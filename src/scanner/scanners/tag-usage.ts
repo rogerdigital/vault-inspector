@@ -1,3 +1,4 @@
+import type { CachedMetadata } from "obsidian";
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { generateFingerprint } from "../issue-fingerprint";
@@ -64,7 +65,7 @@ export const tagUsageScanner = {
 	},
 };
 
-function collectTags(cache: any): string[] {
+function collectTags(cache: CachedMetadata): string[] {
 	const tags: string[] = [];
 
 	// Frontmatter tags (tags: [tag1, tag2] or tags: tag)
