@@ -13,7 +13,6 @@ export class InspectorSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-		new Setting(containerEl).setName("General").setHeading();
 		this.addScannersSection();
 		this.addThresholdsSection();
 		this.addTagsSection();
@@ -41,7 +40,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		new Setting(containerEl).setName("Thresholds").setHeading();
 		new Setting(containerEl)
-			.setName("Large Markdown threshold (KB)")
+			.setName("Large Markdown threshold (kb)")
 			.addSlider((slider) =>
 				slider.setLimits(50, 1000, 50)
 					.setValue(this.plugin.settings.largeMarkdownBytes / 1024)
@@ -52,7 +51,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 					}),
 			);
 		new Setting(containerEl)
-			.setName("Large attachment threshold (MB)")
+			.setName("Large attachment threshold (mb)")
 			.addSlider((slider) =>
 				slider.setLimits(1, 50, 1)
 					.setValue(this.plugin.settings.largeAttachmentBytes / (1024 * 1024))
@@ -63,7 +62,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 					}),
 			);
 		new Setting(containerEl)
-			.setName("Duplicate hash cap (MB)")
+			.setName("Duplicate hash cap (mb)")
 			.setDesc("Files above this size are reported as candidates without content hashing.")
 			.addSlider((slider) =>
 				slider.setLimits(1, 10, 1)
@@ -83,7 +82,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 			.setName("Watched tags (comma-separated)")
 			.addText((text) =>
 				text.setValue(this.plugin.settings.watchedTags.join(", "))
-					.setPlaceholder("e.g. todo, review, project")
+					.setPlaceholder("E.g. todo, review, project")
 					.onChange(async (value) => {
 						this.plugin.settings.watchedTags = value.split(",").map((t) => t.trim()).filter(Boolean);
 						await this.plugin.saveSettings();
@@ -110,7 +109,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 			.setDesc("Files in these folders are excluded from scans.")
 			.addText((text) =>
 				text.setValue(this.plugin.settings.ignoredFolders.join(", "))
-					.setPlaceholder("e.g. templates, archive")
+					.setPlaceholder("E.g. templates, archive")
 					.onChange(async (value) => {
 						this.plugin.settings.ignoredFolders = value.split(",").map((f) => f.trim()).filter(Boolean);
 						await this.plugin.saveSettings();
@@ -121,7 +120,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 			.setDesc("These properties are excluded from type consistency checks.")
 			.addText((text) =>
 				text.setValue(this.plugin.settings.ignoredProperties.join(", "))
-					.setPlaceholder("e.g. cssclasses, aliases")
+					.setPlaceholder("E.g. cssclasses, aliases")
 					.onChange(async (value) => {
 						this.plugin.settings.ignoredProperties = value.split(",").map((p) => p.trim()).filter(Boolean);
 						await this.plugin.saveSettings();
