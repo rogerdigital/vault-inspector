@@ -159,7 +159,7 @@ export class InspectorView extends ItemView {
 	}
 
 	private handleCopyPath(path: string) {
-		navigator.clipboard.writeText(path);
+		void navigator.clipboard.writeText(path);
 		new Notice(`Copied: ${path}`);
 	}
 
