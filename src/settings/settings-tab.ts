@@ -13,6 +13,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
+		new Setting(containerEl).setName("Scanning").setHeading();
 		this.addScannersSection();
 		this.addThresholdsSection();
 		this.addTagsSection();
@@ -82,7 +83,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 			.setName("Watched tags (comma-separated)")
 			.addText((text) =>
 				text.setValue(this.plugin.settings.watchedTags.join(", "))
-					.setPlaceholder("E.g. todo, review, project")
+					.setPlaceholder("E.g. Todo, review, project")
 					.onChange(async (value) => {
 						this.plugin.settings.watchedTags = value.split(",").map((t) => t.trim()).filter(Boolean);
 						await this.plugin.saveSettings();
@@ -109,7 +110,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 			.setDesc("Files in these folders are excluded from scans.")
 			.addText((text) =>
 				text.setValue(this.plugin.settings.ignoredFolders.join(", "))
-					.setPlaceholder("E.g. templates, archive")
+					.setPlaceholder("E.g. Templates, archive")
 					.onChange(async (value) => {
 						this.plugin.settings.ignoredFolders = value.split(",").map((f) => f.trim()).filter(Boolean);
 						await this.plugin.saveSettings();
@@ -120,7 +121,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 			.setDesc("These properties are excluded from type consistency checks.")
 			.addText((text) =>
 				text.setValue(this.plugin.settings.ignoredProperties.join(", "))
-					.setPlaceholder("E.g. cssclasses, aliases")
+					.setPlaceholder("E.g. Cssclasses, aliases")
 					.onChange(async (value) => {
 						this.plugin.settings.ignoredProperties = value.split(",").map((p) => p.trim()).filter(Boolean);
 						await this.plugin.saveSettings();
