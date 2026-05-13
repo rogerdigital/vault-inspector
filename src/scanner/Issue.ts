@@ -23,6 +23,7 @@ export type ScanResult = {
 	startedAt: number;
 	finishedAt: number;
 	issues: Issue[];
+	ignoredIssues: Issue[];
 	filesScanned: number;
 	scannersRun: ScannerId[];
 };

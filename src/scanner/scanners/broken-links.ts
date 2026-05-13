@@ -1,6 +1,7 @@
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { generateFingerprint } from "../issue-fingerprint";
+import { isIgnoredPath } from "../../utils/paths";
 
 export const brokenLinksScanner = {
 	id: "broken-links" as const,
@@ -10,7 +11,7 @@ export const brokenLinksScanner = {
 		const { markdownFiles, metadataCache } = ctx;
 
 		for (const file of markdownFiles) {
-			if (isIgnored(file.path, ctx.ignoredFolders)) continue;
+			if (isIgnoredPath(file.path, ctx.ignoredFolders)) continue;
 
 			const cache = metadataCache.getFileCache(file);
 			if (!cache) continue;
@@ -113,13 +114,6 @@ function slugifyHeading(heading: string): string {
 		.trim()
 		.replace(/[^\w\s-]/g, "")
 		.replace(/\s+/g, "-");
-}
-
-function isIgnored(path: string, ignoredFolders: string[]): boolean {
-	for (const folder of ignoredFolders) {
-		if (path.startsWith(folder + "/") || path === folder) return true;
-	}
-	return false;
 }
 
 function makeIssue(

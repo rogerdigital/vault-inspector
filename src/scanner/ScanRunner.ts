@@ -45,13 +45,16 @@ export class ScanRunner {
 
 		const scannersRun: ScannerId[] = [];
 		const issues: Issue[] = [];
+		const ignoredIssues: Issue[] = [];
 
 		for (const scanner of this.scanners) {
 			if (!ctx.enabledScanners.has(scanner.id)) continue;
 			scannersRun.push(scanner.id);
 			const result = await scanner.scan(ctx);
 			for (const issue of result) {
-				if (!ctx.ignoredFingerprints.has(issue.fingerprint)) {
+				if (ctx.ignoredFingerprints.has(issue.fingerprint)) {
+					ignoredIssues.push(issue);
+				} else {
 					issues.push(issue);
 				}
 			}
@@ -61,6 +64,7 @@ export class ScanRunner {
 			startedAt,
 			finishedAt: Date.now(),
 			issues,
+			ignoredIssues,
 			filesScanned: allFiles.length,
 			scannersRun,
 		};
