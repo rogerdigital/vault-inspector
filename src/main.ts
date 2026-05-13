@@ -79,6 +79,7 @@ export default class VaultInspectorPlugin extends Plugin {
 					new Notice(`File not found: ${path}`);
 				}
 			},
+			onRunScan: () => { void this.runScan(); },
 		});
 		view.setScanning(true);
 		const result = await this.scanRunner.run(this.app, this.settings);

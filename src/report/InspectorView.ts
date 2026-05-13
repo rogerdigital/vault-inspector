@@ -18,6 +18,7 @@ export class InspectorView extends ItemView {
 
 	private onIgnoreIssue: ((issue: Issue) => void | Promise<void>) | null = null;
 	private onRevealFile: ((path: string) => void | Promise<void>) | null = null;
+	private onRunScan: (() => void) | null = null;
 
 	constructor(leaf: WorkspaceLeaf) {
 		super(leaf);
@@ -39,6 +40,7 @@ export class InspectorView extends ItemView {
 		await Promise.resolve();
 		this.onIgnoreIssue = null;
 		this.onRevealFile = null;
+		this.onRunScan = null;
 	}
 
 	setScanning(scanning: boolean) {
@@ -55,9 +57,11 @@ export class InspectorView extends ItemView {
 	setCallbacks(callbacks: {
 		onIgnoreIssue: (issue: Issue) => void | Promise<void>;
 		onRevealFile: (path: string) => void | Promise<void>;
+		onRunScan: () => void;
 	}) {
 		this.onIgnoreIssue = callbacks.onIgnoreIssue;
 		this.onRevealFile = callbacks.onRevealFile;
+		this.onRunScan = callbacks.onRunScan;
 	}
 
 	hasResult(): boolean { return this.model.result !== null; }
@@ -77,9 +81,7 @@ export class InspectorView extends ItemView {
 			empty.createEl("p", { text: "No scan results yet." });
 			const btn = empty.createEl("button", { cls: "vi-empty-btn", text: "Run scan now" });
 			btn.addEventListener("click", () => {
-				this.onRevealFile = null;
-				this.onIgnoreIssue = null;
-				this.setScanning(true);
+				if (this.onRunScan) this.onRunScan();
 			});
 			empty.createEl("p", {
 				cls: "vi-empty-hint",
