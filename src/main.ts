@@ -42,7 +42,7 @@ export default class VaultInspectorPlugin extends Plugin {
 	onunload() {}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.settings = { ...DEFAULT_SETTINGS, ...await this.loadData() } as InspectorSettings;
 	}
 
 	async saveSettings() {
