@@ -2,21 +2,7 @@ import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { generateFingerprint } from "../issue-fingerprint";
 import { isAttachment } from "../../utils/file-types";
-
-const ATTACHMENT_EXTENSIONS = new Set([
-	"png",
-	"jpg",
-	"jpeg",
-	"gif",
-	"svg",
-	"webp",
-	"pdf",
-	"mp3",
-	"mp4",
-	"wav",
-	"mov",
-	"zip",
-]);
+import { isIgnoredPath } from "../../utils/paths";
 
 export const orphanAttachmentsScanner = {
 	id: "orphan-attachments" as const,
@@ -26,11 +12,8 @@ export const orphanAttachmentsScanner = {
 		const referencedPaths = collectReferencedPaths(ctx);
 
 		for (const file of ctx.allFiles) {
-			if (isIgnored(file.path, ctx.ignoredFolders)) continue;
+			if (isIgnoredPath(file.path, ctx.ignoredFolders)) continue;
 			if (!isAttachment(file.path)) continue;
-
-			const ext = file.path.split(".").pop()?.toLowerCase() ?? "";
-			if (!ATTACHMENT_EXTENSIONS.has(ext)) continue;
 
 			if (!referencedPaths.has(file.path)) {
 				const severity = isRecent(file.stat.mtime) ? "info" : "warning";
@@ -83,13 +66,6 @@ function collectReferencedPaths(ctx: ScanContext): Set<string> {
 	}
 
 	return paths;
-}
-
-function isIgnored(path: string, ignoredFolders: string[]): boolean {
-	for (const folder of ignoredFolders) {
-		if (path.startsWith(folder + "/") || path === folder) return true;
-	}
-	return false;
 }
 
 function isRecent(mtime: number): boolean {

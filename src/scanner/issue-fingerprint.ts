@@ -14,10 +14,12 @@ export function generateFingerprint(
 }
 
 function hashString(str: string): string {
-	let hash = 0;
+	let h1 = 0x811c9dc5;
+	let h2 = 0x01000193;
 	for (let i = 0; i < str.length; i++) {
-		const char = str.charCodeAt(i);
-		hash = ((hash << 5) - hash + char) | 0;
+		const c = str.charCodeAt(i);
+		h1 = ((h1 << 5) - h1 + c) | 0;
+		h2 = ((h2 << 5) - h2 + c) | 0;
 	}
-	return (hash >>> 0).toString(36);
+	return (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36);
 }
