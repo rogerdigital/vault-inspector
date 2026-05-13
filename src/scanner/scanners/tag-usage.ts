@@ -69,13 +69,13 @@ function collectTags(cache: CachedMetadata): string[] {
 	const tags: string[] = [];
 
 	// Frontmatter tags (tags: [tag1, tag2] or tags: tag)
-	const frontmatterTags = cache.frontmatter?.tags;
+	const frontmatterTags: unknown = cache.frontmatter?.tags;
 	if (frontmatterTags) {
 		if (Array.isArray(frontmatterTags)) {
 			for (const t of frontmatterTags) {
 				tags.push(String(t).replace(/^#/, ""));
 			}
-		} else {
+		} else if (typeof frontmatterTags === "string" || typeof frontmatterTags === "number") {
 			tags.push(String(frontmatterTags).replace(/^#/, ""));
 		}
 	}
