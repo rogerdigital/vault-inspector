@@ -3,6 +3,7 @@ import { defineConfig } from "eslint/config";
 import obsidianmd from "eslint-plugin-obsidianmd";
 
 export default defineConfig([
+	{ ignores: ["**/*.js", "**/*.mjs", "**/*.json"] },
 	...obsidianmd.configs.recommended,
 	{
 		files: ["**/*.ts"],

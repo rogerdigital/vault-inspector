@@ -53,6 +53,8 @@
 .vi-copy-btn { background: transparent; border: none; color: var(--text-faint); cursor: pointer; padding: 4px; border-radius: 3px; display: inline-flex; align-items: center; }
 .vi-copy-btn:hover, .vi-copy-btn:active { color: var(--text-muted); background: var(--background-secondary); }
 
+.vi-ignored { opacity: 0.5; }
+
 /* Narrow screens (Obsidian mobile, small tablets) */
 @media (max-width: 500px) {
 	.vault-inspector { padding: 10px; }

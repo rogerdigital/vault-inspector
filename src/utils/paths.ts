@@ -25,3 +25,7 @@ export function isInFolder(path: string, folder: string): boolean {
 		normalized.startsWith(normalizedFolder + "/")
 	);
 }
+
+export function isIgnoredPath(path: string, ignoredFolders: string[]): boolean {
+	return ignoredFolders.some((folder) => isInFolder(path, folder));
+}

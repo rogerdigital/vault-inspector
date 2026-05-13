@@ -3,6 +3,7 @@ import type { ScanContext } from "../ScanContext";
 import { generateFingerprint } from "../issue-fingerprint";
 import { inferType, typesAreCompatible } from "../../utils/frontmatter-type";
 import type { PropType } from "../../utils/frontmatter-type";
+import { isIgnoredPath } from "../../utils/paths";
 
 export const frontmatterTypesScanner = {
 	id: "frontmatter-types" as const,
@@ -13,7 +14,7 @@ export const frontmatterTypesScanner = {
 		const propertyTypes = new Map<string, Map<PropType, string[]>>();
 
 		for (const file of ctx.markdownFiles) {
-			if (isIgnored(file.path, ctx.ignoredFolders)) continue;
+			if (isIgnoredPath(file.path, ctx.ignoredFolders)) continue;
 
 			const cache = ctx.metadataCache.getFileCache(file);
 			const frontmatter = cache?.frontmatter;
@@ -97,10 +98,3 @@ export const frontmatterTypesScanner = {
 		return issues;
 	},
 };
-
-function isIgnored(path: string, ignoredFolders: string[]): boolean {
-	for (const folder of ignoredFolders) {
-		if (path.startsWith(folder + "/") || path === folder) return true;
-	}
-	return false;
-}
