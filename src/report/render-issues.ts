@@ -16,8 +16,11 @@ export function renderIssues(
 	actions: IssueActions,
 ) {
 	let issues = result.issues;
+	if (model.showIgnored) issues = [...issues, ...result.ignoredIssues];
 	if (model.filterSeverity) issues = issues.filter((i) => i.severity === model.filterSeverity);
 	if (model.filterScanner) issues = issues.filter((i) => i.scannerId === model.filterScanner);
+
+	const ignoredFingerprints = new Set(result.ignoredIssues.map((i) => i.fingerprint));
 
 	const grouped = groupByScanner(issues);
 	for (const scannerId of result.scannersRun) {
@@ -35,7 +38,9 @@ export function renderIssues(
 
 		const list = section.createEl("ul", { cls: "vi-issue-list" });
 		for (const issue of scannerIssues) {
-			const li = list.createEl("li", { cls: `vi-issue vi-severity-${issue.severity}` });
+			const isIgnored = ignoredFingerprints.has(issue.fingerprint);
+			const cls = `vi-issue vi-severity-${issue.severity}${isIgnored ? " vi-ignored" : ""}`;
+			const li = list.createEl("li", { cls });
 			li.createEl("span", {
 				cls: `vi-severity-badge vi-severity-${issue.severity}`,
 				text: issue.severity.toUpperCase(),
