@@ -2,6 +2,7 @@ import type { CachedMetadata } from "obsidian";
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { generateFingerprint } from "../issue-fingerprint";
+import { isIgnoredPath } from "../../utils/paths";
 
 export const tagUsageScanner = {
 	id: "tag-usage" as const,
@@ -13,7 +14,7 @@ export const tagUsageScanner = {
 
 		// Collect tags from metadata (tags frontmatter field and inline tags)
 		for (const file of ctx.markdownFiles) {
-			if (isIgnored(file.path, ctx.ignoredFolders)) continue;
+			if (isIgnoredPath(file.path, ctx.ignoredFolders)) continue;
 
 			const cache = ctx.metadataCache.getFileCache(file);
 			if (!cache) continue;
@@ -89,11 +90,4 @@ function collectTags(cache: CachedMetadata): string[] {
 	}
 
 	return tags;
-}
-
-function isIgnored(path: string, ignoredFolders: string[]): boolean {
-	for (const folder of ignoredFolders) {
-		if (path.startsWith(folder + "/") || path === folder) return true;
-	}
-	return false;
 }

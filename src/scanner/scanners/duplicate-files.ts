@@ -2,7 +2,8 @@ import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { generateFingerprint } from "../issue-fingerprint";
 import { hashContent } from "../../utils/hash";
-import { getBasename, getExtension } from "../../utils/paths";
+import { getBasename, getExtension, isIgnoredPath } from "../../utils/paths";
+import { formatSize } from "../../utils/format";
 
 export const duplicateFilesScanner = {
 	id: "duplicate-files" as const,
@@ -10,7 +11,7 @@ export const duplicateFilesScanner = {
 	async scan(ctx: ScanContext): Promise<Issue[]> {
 		const issues: Issue[] = [];
 		const files = ctx.allFiles.filter(
-			(f) => f.stat.size > 0 && !isIgnored(f.path, ctx.ignoredFolders),
+			(f) => f.stat.size > 0 && !isIgnoredPath(f.path, ctx.ignoredFolders),
 		);
 
 		// Phase 1: group by basename + extension
@@ -124,16 +125,3 @@ export const duplicateFilesScanner = {
 		return issues;
 	},
 };
-
-function formatSize(bytes: number): string {
-	if (bytes < 1024) return `${bytes} B`;
-	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function isIgnored(path: string, ignoredFolders: string[]): boolean {
-	for (const folder of ignoredFolders) {
-		if (path.startsWith(folder + "/") || path === folder) return true;
-	}
-	return false;
-}
