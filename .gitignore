@@ -1,6 +1,7 @@
 # Build
 main.js
 node_modules/
+coverage/
 
 # OS
 .DS_Store
