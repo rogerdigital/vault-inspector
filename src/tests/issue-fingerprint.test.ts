@@ -34,4 +34,14 @@ describe("generateFingerprint", () => {
 		const b = generateFingerprint("tag-usage", undefined, { tag: "bar" });
 		expect(a).not.toBe(b);
 	});
+
+	it("produces unique fingerprints across many inputs", () => {
+		const fingerprints = new Set<string>();
+		for (let i = 0; i < 1000; i++) {
+			fingerprints.add(
+				generateFingerprint("broken-links", `notes/file-${i}.md`, { link: `target-${i}` }),
+			);
+		}
+		expect(fingerprints.size).toBe(1000);
+	});
 });
