@@ -1,6 +1,7 @@
 import type { ScanResult, Issue } from "../scanner/Issue";
 import { SCANNER_LABELS } from "../scanner/Issue";
 import type { ReportModel } from "./report-model";
+import { setIcon } from "obsidian";
 
 type IssueActions = {
 	onOpenFile: (path: string) => void;
@@ -45,6 +46,9 @@ export function renderIssues(
 				const pathEl = li.createEl("span", { cls: "vi-issue-path", text: issue.primaryPath });
 				pathEl.addEventListener("click", (e) => { e.stopPropagation(); actions.onOpenFile(issue.primaryPath!); });
 				pathEl.addEventListener("contextmenu", (e) => { e.preventDefault(); actions.onCopyPath(issue.primaryPath!); });
+				const copyBtn = li.createEl("button", { cls: "vi-copy-btn", attr: { "aria-label": "Copy path" } });
+				setIcon(copyBtn, "copy");
+				copyBtn.addEventListener("click", (e) => { e.stopPropagation(); actions.onCopyPath(issue.primaryPath!); });
 			}
 
 			li.createEl("div", { cls: "vi-issue-message", text: issue.message });
