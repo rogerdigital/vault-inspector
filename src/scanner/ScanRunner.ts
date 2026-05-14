@@ -41,6 +41,7 @@ export class ScanRunner {
 			watchedTags: settings.watchedTags,
 			ignoredFolders: settings.ignoredFolders,
 			ignoredProperties: settings.ignoredProperties,
+			emptyNoteWordThreshold: settings.emptyNoteWordThreshold,
 		};
 
 		const scannersRun: ScannerId[] = [];
