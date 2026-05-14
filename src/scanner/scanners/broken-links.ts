@@ -47,7 +47,7 @@ function resolveLinkIssues(
 	if (isAttachmentLink(rawTarget)) {
 		if (!ctx.filePathIndex.has(rawTarget)) {
 			issues.push(
-				makeIssue(ctx, sourcePath, linkText, rawTarget, "error", "Attachment not found"),
+				makeIssue(ctx, sourcePath, linkText, rawTarget, "error", `Attachment not found: ${rawTarget}`),
 			);
 		}
 		return issues;
@@ -60,7 +60,7 @@ function resolveLinkIssues(
 
 	if (!resolvedPath) {
 		issues.push(
-			makeIssue(ctx, sourcePath, linkText, rawTarget, "error", "Linked file not found"),
+			makeIssue(ctx, sourcePath, linkText, rawTarget, "error", `Linked file not found: ${rawTarget}`),
 		);
 		return issues;
 	}
@@ -83,7 +83,7 @@ function resolveLinkIssues(
 					linkText,
 					resolvedPath,
 					"warning",
-					`Heading "#${headingPart}" not found`,
+					`Heading "#${headingPart}" not found in ${resolvedPath}`,
 				),
 			);
 		}
