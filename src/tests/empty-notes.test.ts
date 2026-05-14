@@ -49,22 +49,21 @@ describe("emptyNotesScanner", () => {
 		expect(issues[0].title).toBe("Empty note");
 	});
 
-	it("detects stub notes below word threshold", async () => {
-		const file = { path: "stub.md", stat: { size: 30, mtime: 1000 } } as any;
-		const content = "---\ntags: test\n---\nHello world";
+	it("detects notes with only frontmatter and title", async () => {
+		const file = { path: "title-only.md", stat: { size: 50, mtime: 1000 } } as any;
+		const content = "---\ntags: test\n---\n# My Title\n";
 		const ctx = makeCtx({
 			markdownFiles: [file],
 			vault: { cachedRead: async () => content } as any,
 		});
 		const issues = await emptyNotesScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
-		expect(issues[0].title).toBe("Stub note");
-		expect(issues[0].severity).toBe("info");
+		expect(issues[0].title).toBe("Empty note");
 	});
 
-	it("does not flag notes above word threshold", async () => {
+	it("does not flag notes with content beyond title", async () => {
 		const file = { path: "normal.md", stat: { size: 200, mtime: 1000 } } as any;
-		const content = "This is a note with enough words to pass the threshold easily today";
+		const content = "# Title\nSome actual content here.";
 		const ctx = makeCtx({
 			markdownFiles: [file],
 			vault: { cachedRead: async () => content } as any,
@@ -84,7 +83,7 @@ describe("emptyNotesScanner", () => {
 		expect(issues).toHaveLength(0);
 	});
 
-	it("includes fix action for empty notes", async () => {
+	it("includes fix action", async () => {
 		const file = { path: "empty.md", stat: { size: 0, mtime: 1000 } } as any;
 		const ctx = makeCtx({
 			markdownFiles: [file],
