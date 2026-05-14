@@ -27,6 +27,7 @@ export class InspectorView extends ItemView {
 	private onFixAllIssues: ((issues: Issue[]) => void | Promise<void>) | null = null;
 	private onRevealFile: ((path: string) => void | Promise<void>) | null = null;
 	private onRunScan: (() => void) | null = null;
+	private backToTopHandler: (() => void) | null = null;
 
 	constructor(leaf: WorkspaceLeaf) {
 		super(leaf);
@@ -46,6 +47,11 @@ export class InspectorView extends ItemView {
 
 	async onClose() {
 		await Promise.resolve();
+		if (this.backToTopHandler) {
+			const container = this.containerEl.children[1] as HTMLElement;
+			container.removeEventListener("scroll", this.backToTopHandler);
+			this.backToTopHandler = null;
+		}
 		this.onIgnoreAllIssues = null;
 		this.onRestoreIssues = null;
 		this.onFixAllIssues = null;
@@ -93,6 +99,10 @@ export class InspectorView extends ItemView {
 
 	private render() {
 		const container = this.containerEl.children[1] as HTMLElement;
+		if (this.backToTopHandler) {
+			container.removeEventListener("scroll", this.backToTopHandler);
+			this.backToTopHandler = null;
+		}
 		container.empty();
 
 		if (this.model.isScanning) {
@@ -139,6 +149,7 @@ export class InspectorView extends ItemView {
 		});
 
 		this.renderIgnoredSection(container);
+		this.addBackToTop(container);
 	}
 
 	// ─── Toolbar ─────────────────────────────────────────────
@@ -353,6 +364,22 @@ export class InspectorView extends ItemView {
 	}
 
 	// ─── Helpers ─────────────────────────────────────────────
+
+	private addBackToTop(container: HTMLElement) {
+		const anchor = container.createDiv({ cls: "vi-back-to-top-anchor" });
+		const btn = anchor.createEl("button", { cls: "vi-back-to-top" });
+		setIcon(btn, "arrow-up");
+		setTooltip(btn, "Back to top");
+		btn.addEventListener("click", () => {
+			container.scrollTo({ top: 0, behavior: "smooth" });
+		});
+		const updateVisibility = () => {
+			btn.style.display = container.scrollTop > 200 ? "" : "none";
+		};
+		container.addEventListener("scroll", updateVisibility);
+		this.backToTopHandler = updateVisibility;
+		updateVisibility();
+	}
 
 	private getVisibleIssues(): Issue[] {
 		if (!this.model.result) return [];

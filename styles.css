@@ -86,6 +86,11 @@
 	.vi-action-bar { flex-direction: column; gap: 8px; }
 }
 
+/* Back to top */
+.vi-back-to-top-anchor { position: sticky; bottom: 24px; height: 0; pointer-events: none; z-index: 10; }
+.vi-back-to-top { pointer-events: auto; position: absolute; right: 16px; bottom: 0; transform: translateY(-100%); width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); }
+.vi-back-to-top:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+
 /* Confirm modal */
 .vi-confirm-modal h3 { margin: 0 0 12px; }
 .vi-confirm-modal p { margin: 0 0 12px; color: var(--text-muted); }
