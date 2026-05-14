@@ -136,5 +136,12 @@ function makeIssue(
 			link: linkText,
 			target: targetPath,
 		}),
+		fixAction: {
+			kind: "remove-link-text",
+			label: "Remove link",
+			description: `Remove "[[${linkText}]]" from "${sourcePath}"`,
+			targetPaths: [sourcePath],
+			linkText,
+		},
 	};
 }

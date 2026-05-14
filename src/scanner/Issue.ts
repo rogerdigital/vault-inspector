@@ -8,6 +8,16 @@ export type ScannerId =
 
 export type IssueSeverity = "info" | "warning" | "error";
 
+export type FixActionKind = "trash-file" | "remove-link-text";
+
+export type FixAction = {
+	kind: FixActionKind;
+	label: string;
+	description: string;
+	targetPaths: string[];
+	linkText?: string;
+};
+
 export type Issue = {
 	scannerId: ScannerId;
 	severity: IssueSeverity;
@@ -17,6 +27,7 @@ export type Issue = {
 	relatedPaths: string[];
 	evidence: Record<string, string | number | boolean>;
 	fingerprint: string;
+	fixAction?: FixAction;
 };
 
 export type ScanResult = {

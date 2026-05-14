@@ -61,6 +61,9 @@ export const duplicateFilesScanner = {
 		for (const [, paths] of hashGroups) {
 			if (paths.length < 2) continue;
 			paths.forEach((p) => hashReportedPaths.add(p));
+			const sorted = paths.slice().sort();
+			const kept = sorted[0];
+			const duplicates = sorted.slice(1);
 			issues.push({
 				scannerId: "duplicate-files",
 				severity: "warning",
@@ -72,8 +75,14 @@ export const duplicateFilesScanner = {
 					paths: paths.join(", "),
 				},
 				fingerprint: generateFingerprint("duplicate-files", undefined, {
-					paths: paths.slice().sort().join(","),
+					paths: sorted.join(","),
 				}),
+				fixAction: {
+					kind: "trash-file",
+					label: "Delete duplicates",
+					description: `Keep "${kept}" and move ${duplicates.length} duplicate(s) to trash`,
+					targetPaths: duplicates,
+				},
 			});
 		}
 

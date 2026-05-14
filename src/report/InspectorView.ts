@@ -14,9 +14,12 @@ export class InspectorView extends ItemView {
 		filterScanner: null,
 		filterSeverity: null,
 		showIgnored: false,
+		enableFixActions: true,
 	};
 
 	private onIgnoreIssue: ((issue: Issue) => void | Promise<void>) | null = null;
+	private onFixIssue: ((issue: Issue) => void | Promise<void>) | null = null;
+	private onFixAllIssues: ((issues: Issue[]) => void | Promise<void>) | null = null;
 	private onRevealFile: ((path: string) => void | Promise<void>) | null = null;
 	private onRunScan: (() => void) | null = null;
 
@@ -39,6 +42,8 @@ export class InspectorView extends ItemView {
 	async onClose() {
 		await Promise.resolve();
 		this.onIgnoreIssue = null;
+		this.onFixIssue = null;
+		this.onFixAllIssues = null;
 		this.onRevealFile = null;
 		this.onRunScan = null;
 	}
@@ -54,12 +59,20 @@ export class InspectorView extends ItemView {
 		this.render();
 	}
 
+	setEnableFixActions(enabled: boolean) {
+		this.model.enableFixActions = enabled;
+	}
+
 	setCallbacks(callbacks: {
 		onIgnoreIssue: (issue: Issue) => void | Promise<void>;
+		onFixIssue: (issue: Issue) => void | Promise<void>;
+		onFixAllIssues: (issues: Issue[]) => void | Promise<void>;
 		onRevealFile: (path: string) => void | Promise<void>;
 		onRunScan: () => void;
 	}) {
 		this.onIgnoreIssue = callbacks.onIgnoreIssue;
+		this.onFixIssue = callbacks.onFixIssue;
+		this.onFixAllIssues = callbacks.onFixAllIssues;
 		this.onRevealFile = callbacks.onRevealFile;
 		this.onRunScan = callbacks.onRunScan;
 	}
@@ -98,6 +111,8 @@ export class InspectorView extends ItemView {
 			onOpenFile: (path: string) => { void this.handleOpenFile(path); },
 			onCopyPath: (path: string) => this.handleCopyPath(path),
 			onIgnore: (issue: Issue) => this.handleIgnore(issue),
+			onFix: (issue: Issue) => this.handleFix(issue),
+			onFixAll: (issues: Issue[]) => this.handleFixAll(issues),
 		});
 	}
 
@@ -167,5 +182,13 @@ export class InspectorView extends ItemView {
 
 	private handleIgnore(issue: Issue) {
 		if (this.onIgnoreIssue) void this.onIgnoreIssue(issue);
+	}
+
+	private handleFix(issue: Issue) {
+		if (this.onFixIssue) void this.onFixIssue(issue);
+	}
+
+	private handleFixAll(issues: Issue[]) {
+		if (this.onFixAllIssues) void this.onFixAllIssues(issues);
 	}
 }
