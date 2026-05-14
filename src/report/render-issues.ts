@@ -64,7 +64,7 @@ export function renderIssues(
 			li.createEl("span", { cls: "vi-issue-title", text: issue.title });
 
 			if (issue.primaryPath) {
-				const pathEl = li.createEl("span", { cls: "vi-issue-path", text: issue.primaryPath });
+				const pathEl = li.createEl("span", { cls: "vi-issue-path", text: issue.primaryPath, attr: { "data-tooltip": "Click to open, right-click to copy" } });
 				pathEl.addEventListener("click", (e) => { e.stopPropagation(); actions.onOpenFile(issue.primaryPath!); });
 				pathEl.addEventListener("contextmenu", (e) => { e.preventDefault(); actions.onCopyPath(issue.primaryPath!); });
 			}
