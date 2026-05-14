@@ -1,14 +1,11 @@
 import type { ScanResult, Issue } from "../scanner/Issue";
 import { SCANNER_LABELS } from "../scanner/Issue";
 import type { ReportModel } from "./report-model";
-import { setIcon } from "obsidian";
 
 type IssueActions = {
 	onOpenFile: (path: string) => void;
 	onCopyPath: (path: string) => void;
-	onIgnore: (issue: Issue) => void;
-	onFix: (issue: Issue) => void;
-	onFixAll: (issues: Issue[]) => void;
+	onToggleSelect: (issue: Issue) => void;
 };
 
 export function renderIssues(
@@ -29,23 +26,10 @@ export function renderIssues(
 		const scannerIssues = grouped[scannerId] ?? [];
 		const section = container.createDiv({ cls: "vi-scanner-section" });
 
-		const headerRow = section.createDiv({ cls: "vi-scanner-header-row" });
-		headerRow.createEl("h3", {
+		section.createEl("h3", {
 			cls: "vi-scanner-header",
 			text: `${SCANNER_LABELS[scannerId]} (${scannerIssues.length})`,
 		});
-
-		const fixableIssues = scannerIssues.filter(
-			(i) => i.fixAction && !ignoredFingerprints.has(i.fingerprint),
-		);
-		if (model.enableFixActions && fixableIssues.length > 1) {
-			const batchBtn = headerRow.createEl("button", {
-				cls: "vi-fix-all-btn",
-				text: `Clean all (${fixableIssues.length})`,
-			});
-			setIcon(batchBtn, "trash-2");
-			batchBtn.addEventListener("click", () => actions.onFixAll(fixableIssues));
-		}
 
 		if (scannerIssues.length === 0) {
 			section.createEl("div", { cls: "vi-no-issues", text: "No issues found." });
@@ -55,8 +39,24 @@ export function renderIssues(
 		const list = section.createEl("ul", { cls: "vi-issue-list" });
 		for (const issue of scannerIssues) {
 			const isIgnored = ignoredFingerprints.has(issue.fingerprint);
-			const cls = `vi-issue vi-severity-${issue.severity}${isIgnored ? " vi-ignored" : ""}`;
+			const isSelected = model.selectedFingerprints.has(issue.fingerprint);
+			const cls = [
+				"vi-issue",
+				`vi-severity-${issue.severity}`,
+				isIgnored ? "vi-ignored" : "",
+				model.selectionMode ? "vi-selectable" : "",
+				isSelected ? "vi-selected" : "",
+			].filter(Boolean).join(" ");
+
 			const li = list.createEl("li", { cls });
+
+			if (model.selectionMode) {
+				const checkbox = li.createEl("input", { cls: "vi-issue-checkbox", type: "checkbox" });
+				(checkbox as HTMLInputElement).checked = isSelected;
+				checkbox.addEventListener("click", (e) => { e.stopPropagation(); actions.onToggleSelect(issue); });
+				li.addEventListener("click", () => actions.onToggleSelect(issue));
+			}
+
 			li.createEl("span", {
 				cls: `vi-severity-badge vi-severity-${issue.severity}`,
 				text: issue.severity.toUpperCase(),
@@ -67,21 +67,9 @@ export function renderIssues(
 				const pathEl = li.createEl("span", { cls: "vi-issue-path", text: issue.primaryPath });
 				pathEl.addEventListener("click", (e) => { e.stopPropagation(); actions.onOpenFile(issue.primaryPath!); });
 				pathEl.addEventListener("contextmenu", (e) => { e.preventDefault(); actions.onCopyPath(issue.primaryPath!); });
-				const copyBtn = li.createEl("button", { cls: "vi-copy-btn", attr: { "aria-label": "Copy path" } });
-				setIcon(copyBtn, "copy");
-				copyBtn.addEventListener("click", (e) => { e.stopPropagation(); actions.onCopyPath(issue.primaryPath!); });
 			}
 
 			li.createEl("div", { cls: "vi-issue-message", text: issue.message });
-
-			if (model.enableFixActions && issue.fixAction && !isIgnored) {
-				const fixBtn = li.createEl("button", { cls: "vi-fix-btn", text: issue.fixAction.label });
-				setIcon(fixBtn, issue.fixAction.kind === "trash-file" ? "trash-2" : "eraser");
-				fixBtn.addEventListener("click", (e) => { e.stopPropagation(); actions.onFix(issue); });
-			}
-
-			li.createEl("button", { cls: "vi-ignore-btn", text: "Ignore" })
-				.addEventListener("click", (e) => { e.stopPropagation(); actions.onIgnore(issue); });
 		}
 	}
 }

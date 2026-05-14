@@ -7,4 +7,6 @@ export type ReportModel = {
 	filterSeverity: string | null;
 	showIgnored: boolean;
 	enableFixActions: boolean;
+	selectionMode: boolean;
+	selectedFingerprints: Set<string>;
 };

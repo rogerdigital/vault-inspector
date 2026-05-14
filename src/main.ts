@@ -4,7 +4,6 @@ import { ScanRunner } from "./scanner/ScanRunner";
 import { brokenLinksScanner } from "./scanner/scanners/broken-links";
 import { largeFilesScanner } from "./scanner/scanners/large-files";
 import { orphanAttachmentsScanner } from "./scanner/scanners/orphan-attachments";
-import { orphanNotesScanner } from "./scanner/scanners/orphan-notes";
 import { emptyNotesScanner } from "./scanner/scanners/empty-notes";
 import { externalLinksScanner } from "./scanner/scanners/external-links";
 import { duplicateFilesScanner } from "./scanner/scanners/duplicate-files";
@@ -36,7 +35,6 @@ export default class VaultInspectorPlugin extends Plugin {
 		this.scanRunner.register(brokenLinksScanner);
 		this.scanRunner.register(largeFilesScanner);
 		this.scanRunner.register(orphanAttachmentsScanner);
-		this.scanRunner.register(orphanNotesScanner);
 		this.scanRunner.register(emptyNotesScanner);
 		this.scanRunner.register(externalLinksScanner);
 		this.scanRunner.register(duplicateFilesScanner);
@@ -69,20 +67,23 @@ export default class VaultInspectorPlugin extends Plugin {
 
 		const view = leaf.view as unknown as InspectorView;
 		view.setCallbacks({
-			onIgnoreIssue: async (issue) => {
-				this.settings.ignoredIssueFingerprints.push(issue.fingerprint);
+			onIgnoreAllIssues: async (issues) => {
+				for (const issue of issues) {
+					this.settings.ignoredIssueFingerprints.push(issue.fingerprint);
+				}
 				await this.saveSettings();
-				new Notice(`Ignored: ${issue.title}`);
+				new Notice(`Ignored ${issues.length} issue(s)`);
 				view.setScanning(true);
 				const result = await this.scanRunner.run(this.app, this.settings);
 				view.setResult(result);
 			},
-			onFixIssue: async (issue) => {
-				if (!issue.fixAction) return;
-				const confirmed = await showConfirmModal(this.app, [issue.fixAction]);
-				if (!confirmed) return;
-				await executeFixAction(this.app, issue.fixAction);
-				new Notice(`Fixed: ${issue.title}`);
+			onRestoreIssues: async (issues) => {
+				const toRestore = new Set(issues.map((i) => i.fingerprint));
+				this.settings.ignoredIssueFingerprints = this.settings.ignoredIssueFingerprints.filter(
+					(fp) => !toRestore.has(fp),
+				);
+				await this.saveSettings();
+				new Notice(`Restored ${issues.length} issue(s)`);
 				view.setScanning(true);
 				const result = await this.scanRunner.run(this.app, this.settings);
 				view.setResult(result);

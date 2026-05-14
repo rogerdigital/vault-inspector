@@ -13,27 +13,18 @@ export const emptyNotesScanner = {
 			if (isIgnoredPath(file.path, ctx.ignoredFolders)) continue;
 
 			const content = await ctx.vault.cachedRead(file);
-			const bodyText = stripFrontmatter(content);
-			const wordCount = countWords(bodyText);
+			const body = stripFrontmatterAndTitle(content);
 
-			if (wordCount <= ctx.emptyNoteWordThreshold) {
-				const isEmpty = wordCount === 0;
+			if (body.trim().length === 0) {
 				issues.push({
 					scannerId: "empty-notes",
-					severity: isEmpty ? "warning" : "info",
-					title: isEmpty ? "Empty note" : "Stub note",
-					message: isEmpty
-						? "This note has no content (or only frontmatter)"
-						: `This note has only ${wordCount} word(s)`,
+					severity: "warning",
+					title: "Empty note",
+					message: "This note has no content besides a title",
 					primaryPath: file.path,
 					relatedPaths: [],
-					evidence: {
-						wordCount,
-						size: file.stat.size,
-					},
-					fingerprint: generateFingerprint("empty-notes", file.path, {
-						empty: isEmpty,
-					}),
+					evidence: { size: file.stat.size },
+					fingerprint: generateFingerprint("empty-notes", file.path, {}),
 					fixAction: {
 						kind: "trash-file",
 						label: "Delete",
@@ -48,18 +39,14 @@ export const emptyNotesScanner = {
 	},
 };
 
-function stripFrontmatter(content: string): string {
-	if (content.startsWith("---")) {
-		const end = content.indexOf("\n---", 3);
+function stripFrontmatterAndTitle(content: string): string {
+	let text = content;
+	if (text.startsWith("---")) {
+		const end = text.indexOf("\n---", 3);
 		if (end !== -1) {
-			return content.slice(end + 4);
+			text = text.slice(end + 4);
 		}
 	}
-	return content;
-}
-
-function countWords(text: string): number {
-	const trimmed = text.trim();
-	if (!trimmed) return 0;
-	return trimmed.split(/\s+/).length;
+	text = text.replace(/^#+\s+.*$/m, "");
+	return text;
 }
