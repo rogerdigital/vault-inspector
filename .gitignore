@@ -3,6 +3,9 @@ main.js
 node_modules/
 coverage/
 
+# Obsidian runtime
+data.json
+
 # OS
 .DS_Store
 
