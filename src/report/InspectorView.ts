@@ -146,7 +146,7 @@ export class InspectorView extends ItemView {
 
 	private renderToggleIgnored(toolbar: HTMLElement) {
 		toolbar.createEl("button", {
-			cls: `vi-filter-btn ${this.model.showIgnored ? "vi-active" : ""}`,
+			cls: `vi-filter-btn vi-toggle-ignored ${this.model.showIgnored ? "vi-active" : ""}`,
 			text: this.model.showIgnored ? "Hide ignored" : "Show ignored",
 		}).addEventListener("click", () => {
 			this.model.showIgnored = !this.model.showIgnored;
