@@ -17,4 +17,5 @@ export type ScanContext = {
 	watchedTags: string[];
 	ignoredFolders: string[];
 	ignoredProperties: string[];
+	emptyNoteWordThreshold: number;
 };

@@ -8,6 +8,7 @@ export type InspectorSettings = {
 	largeAttachmentBytes: number;
 	duplicateHashMaxBytes: number;
 	lowUsageTagThreshold: number;
+	emptyNoteWordThreshold: number;
 	watchedTags: string[];
 	ignoredIssueFingerprints: string[];
 	ignoredFolders: string[];
@@ -24,6 +25,7 @@ export const DEFAULT_SETTINGS: InspectorSettings = {
 	largeAttachmentBytes: 5 * 1024 * 1024,
 	duplicateHashMaxBytes: 1024 * 1024,
 	lowUsageTagThreshold: 2,
+	emptyNoteWordThreshold: 5,
 	watchedTags: [],
 	ignoredIssueFingerprints: [],
 	ignoredFolders: [],

@@ -90,6 +90,18 @@ export class InspectorSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}),
 			);
+		new Setting(containerEl)
+			.setName("Empty note word threshold")
+			.setDesc("Notes with this many words or fewer are flagged as empty/stub.")
+			.addSlider((slider) =>
+				slider.setLimits(0, 20, 1)
+					.setValue(this.plugin.settings.emptyNoteWordThreshold)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.emptyNoteWordThreshold = value;
+						await this.plugin.saveSettings();
+					}),
+			);
 	}
 
 	private addTagsSection() {

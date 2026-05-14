@@ -1,6 +1,9 @@
 export type ScannerId =
 	| "broken-links"
 	| "orphan-attachments"
+	| "orphan-notes"
+	| "empty-notes"
+	| "external-links"
 	| "duplicate-files"
 	| "frontmatter-types"
 	| "tag-usage"
@@ -42,6 +45,9 @@ export type ScanResult = {
 export const SCANNER_IDS: ScannerId[] = [
 	"broken-links",
 	"orphan-attachments",
+	"orphan-notes",
+	"empty-notes",
+	"external-links",
 	"duplicate-files",
 	"frontmatter-types",
 	"tag-usage",
@@ -51,6 +57,9 @@ export const SCANNER_IDS: ScannerId[] = [
 export const SCANNER_LABELS: Record<ScannerId, string> = {
 	"broken-links": "Broken Links",
 	"orphan-attachments": "Orphan Attachments",
+	"orphan-notes": "Orphan Notes",
+	"empty-notes": "Empty Notes",
+	"external-links": "External Links",
 	"duplicate-files": "Duplicate Files",
 	"frontmatter-types": "Frontmatter Types",
 	"tag-usage": "Tag Usage",
