@@ -58,6 +58,17 @@
 
 .vi-ignored { opacity: 0.5; }
 
+/* Ignored section */
+.vi-ignored-section { margin-top: 24px; border-top: 1px solid var(--background-modifier-border); padding-top: 12px; }
+.vi-ignored-header { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 0; color: var(--text-muted); font-size: 14px; font-weight: 500; }
+.vi-ignored-header .vi-filter-btn { flex: 0 0 auto; }
+.vi-ignored-header-left { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.vi-ignored-header-left:hover { color: var(--text-normal); }
+.vi-ignored-chevron { display: inline-flex; width: 16px; height: 16px; }
+.vi-ignored-body { padding-top: 8px; }
+.vi-ignored-list .vi-issue { opacity: 0.7; }
+.vi-ignored-list .vi-issue.vi-selected { opacity: 1; }
+
 /* Selection action bar */
 .vi-action-bar { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; margin-bottom: 12px; border-radius: 6px; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); }
 .vi-action-bar-left, .vi-action-bar-right { display: flex; align-items: center; gap: 6px; }
@@ -74,11 +85,6 @@
 	.vi-meta { flex-wrap: wrap; gap: 8px; }
 	.vi-action-bar { flex-direction: column; gap: 8px; }
 }
-
-/* Tooltips */
-[data-tooltip] { position: relative; }
-[data-tooltip]::after { content: attr(data-tooltip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); padding: 4px 8px; border-radius: 4px; background: var(--background-primary); color: var(--text-normal); font-size: 11px; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 100; border: 1px solid var(--background-modifier-border); }
-[data-tooltip]:hover::after { opacity: 1; }
 
 /* Confirm modal */
 .vi-confirm-modal h3 { margin: 0 0 12px; }

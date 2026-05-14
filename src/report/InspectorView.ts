@@ -1,9 +1,9 @@
-import { ItemView, WorkspaceLeaf, Notice, TFile } from "obsidian";
+import { ItemView, WorkspaceLeaf, Notice, TFile, setTooltip } from "obsidian";
 import type { ScanResult, Issue } from "../scanner/Issue";
 import { SCANNER_LABELS } from "../scanner/Issue";
 import type { ReportModel } from "./report-model";
 import { renderSummary } from "./render-summary";
-import { renderIssues } from "./render-issues";
+import { renderIssueList } from "./render-issues";
 import { setIcon } from "obsidian";
 
 export const VIEW_TYPE_INSPECTOR = "vault-inspector";
@@ -14,10 +14,12 @@ export class InspectorView extends ItemView {
 		isScanning: false,
 		filterScanner: null,
 		filterSeverity: null,
-		showIgnored: false,
 		enableFixActions: true,
 		selectionMode: false,
 		selectedFingerprints: new Set(),
+		ignoredExpanded: false,
+		ignoredSelectionMode: false,
+		ignoredSelectedFingerprints: new Set(),
 	};
 
 	private onIgnoreAllIssues: ((issues: Issue[]) => void | Promise<void>) | null = null;
@@ -61,6 +63,8 @@ export class InspectorView extends ItemView {
 		this.model.isScanning = false;
 		this.model.selectionMode = false;
 		this.model.selectedFingerprints = new Set();
+		this.model.ignoredSelectionMode = false;
+		this.model.ignoredSelectedFingerprints = new Set();
 		this.render();
 	}
 
@@ -84,6 +88,8 @@ export class InspectorView extends ItemView {
 
 	hasResult(): boolean { return this.model.result !== null; }
 	getResult(): ScanResult | null { return this.model.result; }
+
+	// ─── Render ──────────────────────────────────────────────
 
 	private render() {
 		const container = this.containerEl.children[1] as HTMLElement;
@@ -117,119 +123,44 @@ export class InspectorView extends ItemView {
 		});
 
 		if (this.model.selectionMode) {
-			this.renderActionBar(container);
+			this.renderMainActionBar(container);
 		}
 
 		const issuesContainer = container.createDiv({ cls: "vi-issues" });
-		renderIssues(issuesContainer, this.model.result, this.model, {
-			onOpenFile: (path: string) => { void this.handleOpenFile(path); },
-			onCopyPath: (path: string) => this.handleCopyPath(path),
-			onToggleSelect: (issue: Issue) => this.handleToggleSelect(issue),
+		const visibleIssues = this.getVisibleIssues();
+		renderIssueList(issuesContainer, {
+			issues: visibleIssues,
+			scannersRun: this.model.result.scannersRun,
+			selectionMode: this.model.selectionMode,
+			selectedFingerprints: this.model.selectedFingerprints,
+			onOpenFile: (path) => { void this.handleOpenFile(path); },
+			onCopyPath: (path) => this.handleCopyPath(path),
+			onToggleSelect: (issue) => this.handleToggleSelect(issue),
 		});
+
+		this.renderIgnoredSection(container);
 	}
+
+	// ─── Toolbar ─────────────────────────────────────────────
 
 	private renderToolbar(container: HTMLElement) {
 		const toolbar = container.createDiv({ cls: "vi-toolbar" });
 		this.renderScannerFilter(toolbar);
 		this.renderSeverityFilter(toolbar);
-		this.renderToggleIgnored(toolbar);
 
-		const hasVisibleIssues = this.model.result && this.getVisibleIssues().length > 0;
-		if (hasVisibleIssues) {
+		const visibleIssues = this.getVisibleIssues();
+		if (visibleIssues.length > 0) {
 			const selectBtn = toolbar.createEl("button", {
 				cls: `vi-filter-btn vi-select-btn ${this.model.selectionMode ? "vi-active" : ""}`,
-				text: this.model.selectionMode ? "Selecting..." : "Select",
-				attr: { "data-tooltip": "Enter selection mode" },
+				text: this.model.selectionMode ? "Done" : "Select",
 			});
-			setIcon(selectBtn, "check-square");
+			setTooltip(selectBtn, this.model.selectionMode ? "Exit selection mode" : "Enter selection mode");
 			selectBtn.addEventListener("click", () => {
 				this.model.selectionMode = !this.model.selectionMode;
 				if (!this.model.selectionMode) this.model.selectedFingerprints = new Set();
 				this.render();
 			});
 		}
-	}
-
-	private renderActionBar(container: HTMLElement) {
-		if (!this.model.result) return;
-
-		const visibleIssues = this.getVisibleIssues();
-		const selectedIssues = visibleIssues.filter((i) => this.model.selectedFingerprints.has(i.fingerprint));
-		const ignoredFingerprints = new Set(this.model.result.ignoredIssues.map((i) => i.fingerprint));
-		const selectedIgnored = selectedIssues.filter((i) => ignoredFingerprints.has(i.fingerprint));
-		const selectedNonIgnored = selectedIssues.filter((i) => !ignoredFingerprints.has(i.fingerprint));
-		const selectedFixable = selectedNonIgnored.filter((i) => i.fixAction);
-
-		const bar = container.createDiv({ cls: "vi-action-bar" });
-		const left = bar.createDiv({ cls: "vi-action-bar-left" });
-		const right = bar.createDiv({ cls: "vi-action-bar-right" });
-
-		const allSelected = visibleIssues.length > 0 && visibleIssues.every((i) => this.model.selectedFingerprints.has(i.fingerprint));
-		const toggleWrap = left.createEl("label", { cls: "vi-toggle-all", attr: { "data-tooltip": allSelected ? "Deselect all" : "Select all" } });
-		const toggleAll = toggleWrap.createEl("input", { cls: "vi-issue-checkbox", type: "checkbox" });
-		(toggleAll as HTMLInputElement).checked = allSelected;
-		toggleWrap.addEventListener("click", (e) => {
-			e.preventDefault();
-			if (allSelected) {
-				this.model.selectedFingerprints = new Set();
-			} else {
-				for (const issue of visibleIssues) this.model.selectedFingerprints.add(issue.fingerprint);
-			}
-			this.render();
-		});
-
-		if (this.model.enableFixActions && selectedFixable.length > 0) {
-			const deleteBtn = right.createEl("button", {
-				cls: "vi-action-btn vi-action-delete",
-				text: `Delete (${selectedFixable.length})`,
-				attr: { "data-tooltip": "Move selected files to trash" },
-			});
-			setIcon(deleteBtn, "trash-2");
-			deleteBtn.addEventListener("click", () => {
-				if (this.onFixAllIssues) void this.onFixAllIssues(selectedFixable);
-			});
-		}
-
-		if (selectedNonIgnored.length > 0) {
-			const ignoreBtn = right.createEl("button", {
-				cls: "vi-action-btn vi-action-ignore",
-				text: `Ignore (${selectedNonIgnored.length})`,
-				attr: { "data-tooltip": "Hide selected issues from future scans" },
-			});
-			setIcon(ignoreBtn, "eye-off");
-			ignoreBtn.addEventListener("click", () => {
-				if (this.onIgnoreAllIssues) void this.onIgnoreAllIssues(selectedNonIgnored);
-			});
-		}
-
-		if (selectedIgnored.length > 0) {
-			const restoreBtn = right.createEl("button", {
-				cls: "vi-action-btn",
-				text: `Restore (${selectedIgnored.length})`,
-				attr: { "data-tooltip": "Stop ignoring selected issues" },
-			});
-			setIcon(restoreBtn, "eye");
-			restoreBtn.addEventListener("click", () => {
-				if (this.onRestoreIssues) void this.onRestoreIssues(selectedIgnored);
-			});
-		}
-
-		const cancelBtn = right.createEl("button", { cls: "vi-action-btn", text: "Cancel", attr: { "data-tooltip": "Exit selection mode" } });
-		setIcon(cancelBtn, "x");
-		cancelBtn.addEventListener("click", () => {
-			this.model.selectionMode = false;
-			this.model.selectedFingerprints = new Set();
-			this.render();
-		});
-	}
-
-	private getVisibleIssues(): Issue[] {
-		if (!this.model.result) return [];
-		let issues: Issue[] = this.model.result.issues;
-		if (this.model.showIgnored) issues = [...issues, ...this.model.result.ignoredIssues];
-		if (this.model.filterSeverity) issues = issues.filter((i) => i.severity === this.model.filterSeverity);
-		if (this.model.filterScanner) issues = issues.filter((i) => i.scannerId === this.model.filterScanner);
-		return issues;
 	}
 
 	private renderScannerFilter(toolbar: HTMLElement) {
@@ -268,15 +199,167 @@ export class InspectorView extends ItemView {
 		}
 	}
 
-	private renderToggleIgnored(toolbar: HTMLElement) {
-		toolbar.createEl("button", {
-			cls: `vi-filter-btn vi-toggle-ignored ${this.model.showIgnored ? "vi-active" : ""}`,
-			text: this.model.showIgnored ? "Hide ignored" : "Show ignored",
-			attr: { "data-tooltip": "Toggle display of ignored issues" },
-		}).addEventListener("click", () => {
-			this.model.showIgnored = !this.model.showIgnored;
+	// ─── Main Action Bar ─────────────────────────────────────
+
+	private renderMainActionBar(container: HTMLElement) {
+		if (!this.model.result) return;
+
+		const visibleIssues = this.getVisibleIssues();
+		const selectedIssues = visibleIssues.filter((i) => this.model.selectedFingerprints.has(i.fingerprint));
+		const selectedFixable = selectedIssues.filter((i) => i.fixAction);
+
+		const bar = container.createDiv({ cls: "vi-action-bar" });
+		const left = bar.createDiv({ cls: "vi-action-bar-left" });
+		const right = bar.createDiv({ cls: "vi-action-bar-right" });
+
+		const allSelected = visibleIssues.length > 0 && visibleIssues.every((i) => this.model.selectedFingerprints.has(i.fingerprint));
+		const toggleAll = left.createEl("input", { cls: "vi-issue-checkbox", type: "checkbox" });
+		(toggleAll as HTMLInputElement).checked = allSelected;
+		setTooltip(toggleAll, allSelected ? "Deselect all" : "Select all");
+		toggleAll.addEventListener("click", () => {
+			if (allSelected) {
+				this.model.selectedFingerprints = new Set();
+			} else {
+				for (const issue of visibleIssues) this.model.selectedFingerprints.add(issue.fingerprint);
+			}
 			this.render();
 		});
+
+		if (this.model.enableFixActions && selectedFixable.length > 0) {
+			const deleteBtn = right.createEl("button", { cls: "vi-action-btn vi-action-delete" });
+			setIcon(deleteBtn, "trash-2");
+			deleteBtn.createEl("span", { text: `(${selectedFixable.length})` });
+			setTooltip(deleteBtn, "Move selected files to trash");
+			deleteBtn.addEventListener("click", () => {
+				if (this.onFixAllIssues) void this.onFixAllIssues(selectedFixable);
+			});
+		}
+
+		if (selectedIssues.length > 0) {
+			const ignoreBtn = right.createEl("button", { cls: "vi-action-btn vi-action-ignore" });
+			setIcon(ignoreBtn, "eye-off");
+			ignoreBtn.createEl("span", { text: `(${selectedIssues.length})` });
+			setTooltip(ignoreBtn, "Hide selected issues from future scans");
+			ignoreBtn.addEventListener("click", () => {
+				if (this.onIgnoreAllIssues) void this.onIgnoreAllIssues(selectedIssues);
+			});
+		}
+
+		const cancelBtn = right.createEl("button", { cls: "vi-action-btn" });
+		setIcon(cancelBtn, "x");
+		setTooltip(cancelBtn, "Exit selection mode");
+		cancelBtn.addEventListener("click", () => {
+			this.model.selectionMode = false;
+			this.model.selectedFingerprints = new Set();
+			this.render();
+		});
+	}
+
+	// ─── Ignored Section ─────────────────────────────────────
+
+	private renderIgnoredSection(container: HTMLElement) {
+		if (!this.model.result) return;
+		const ignoredIssues = this.model.result.ignoredIssues;
+		if (ignoredIssues.length === 0) return;
+
+		const section = container.createDiv({ cls: "vi-ignored-section" });
+
+		const header = section.createDiv({ cls: "vi-ignored-header" });
+		const headerLeft = header.createDiv({ cls: "vi-ignored-header-left" });
+		const chevron = headerLeft.createEl("span", { cls: "vi-ignored-chevron" });
+		setIcon(chevron, this.model.ignoredExpanded ? "chevron-down" : "chevron-right");
+		headerLeft.createEl("span", { text: `Ignored items (${ignoredIssues.length})` });
+		headerLeft.addEventListener("click", () => {
+			this.model.ignoredExpanded = !this.model.ignoredExpanded;
+			if (!this.model.ignoredExpanded) {
+				this.model.ignoredSelectionMode = false;
+				this.model.ignoredSelectedFingerprints = new Set();
+			}
+			this.render();
+		});
+
+		if (this.model.ignoredExpanded) {
+			const selectBtn = header.createEl("button", {
+				cls: `vi-filter-btn vi-select-btn ${this.model.ignoredSelectionMode ? "vi-active" : ""}`,
+				text: this.model.ignoredSelectionMode ? "Done" : "Select",
+			});
+			setTooltip(selectBtn, this.model.ignoredSelectionMode ? "Exit selection mode" : "Select to restore");
+			selectBtn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				this.model.ignoredSelectionMode = !this.model.ignoredSelectionMode;
+				if (!this.model.ignoredSelectionMode) this.model.ignoredSelectedFingerprints = new Set();
+				this.render();
+			});
+		}
+
+		if (!this.model.ignoredExpanded) return;
+
+		const body = section.createDiv({ cls: "vi-ignored-body" });
+
+		if (this.model.ignoredSelectionMode) {
+			this.renderIgnoredActionBar(body, ignoredIssues);
+		}
+
+		const listContainer = body.createDiv({ cls: "vi-ignored-list" });
+		renderIssueList(listContainer, {
+			issues: ignoredIssues,
+			scannersRun: this.model.result.scannersRun,
+			selectionMode: this.model.ignoredSelectionMode,
+			selectedFingerprints: this.model.ignoredSelectedFingerprints,
+			onOpenFile: (path) => { void this.handleOpenFile(path); },
+			onCopyPath: (path) => this.handleCopyPath(path),
+			onToggleSelect: (issue) => this.handleIgnoredToggleSelect(issue),
+		});
+	}
+
+	private renderIgnoredActionBar(container: HTMLElement, ignoredIssues: Issue[]) {
+		const selectedIssues = ignoredIssues.filter((i) => this.model.ignoredSelectedFingerprints.has(i.fingerprint));
+
+		const bar = container.createDiv({ cls: "vi-action-bar" });
+		const left = bar.createDiv({ cls: "vi-action-bar-left" });
+		const right = bar.createDiv({ cls: "vi-action-bar-right" });
+
+		const allSelected = ignoredIssues.length > 0 && ignoredIssues.every((i) => this.model.ignoredSelectedFingerprints.has(i.fingerprint));
+		const toggleAll = left.createEl("input", { cls: "vi-issue-checkbox", type: "checkbox" });
+		(toggleAll as HTMLInputElement).checked = allSelected;
+		setTooltip(toggleAll, allSelected ? "Deselect all" : "Select all");
+		toggleAll.addEventListener("click", () => {
+			if (allSelected) {
+				this.model.ignoredSelectedFingerprints = new Set();
+			} else {
+				for (const issue of ignoredIssues) this.model.ignoredSelectedFingerprints.add(issue.fingerprint);
+			}
+			this.render();
+		});
+
+		if (selectedIssues.length > 0) {
+			const restoreBtn = right.createEl("button", { cls: "vi-action-btn" });
+			setIcon(restoreBtn, "eye");
+			restoreBtn.createEl("span", { text: `(${selectedIssues.length})` });
+			setTooltip(restoreBtn, "Stop ignoring selected issues");
+			restoreBtn.addEventListener("click", () => {
+				if (this.onRestoreIssues) void this.onRestoreIssues(selectedIssues);
+			});
+		}
+
+		const cancelBtn = right.createEl("button", { cls: "vi-action-btn" });
+		setIcon(cancelBtn, "x");
+		setTooltip(cancelBtn, "Exit selection mode");
+		cancelBtn.addEventListener("click", () => {
+			this.model.ignoredSelectionMode = false;
+			this.model.ignoredSelectedFingerprints = new Set();
+			this.render();
+		});
+	}
+
+	// ─── Helpers ─────────────────────────────────────────────
+
+	private getVisibleIssues(): Issue[] {
+		if (!this.model.result) return [];
+		let issues = this.model.result.issues;
+		if (this.model.filterSeverity) issues = issues.filter((i) => i.severity === this.model.filterSeverity);
+		if (this.model.filterScanner) issues = issues.filter((i) => i.scannerId === this.model.filterScanner);
+		return issues;
 	}
 
 	private async handleOpenFile(path: string) {
@@ -295,6 +378,15 @@ export class InspectorView extends ItemView {
 			this.model.selectedFingerprints.delete(issue.fingerprint);
 		} else {
 			this.model.selectedFingerprints.add(issue.fingerprint);
+		}
+		this.render();
+	}
+
+	private handleIgnoredToggleSelect(issue: Issue) {
+		if (this.model.ignoredSelectedFingerprints.has(issue.fingerprint)) {
+			this.model.ignoredSelectedFingerprints.delete(issue.fingerprint);
+		} else {
+			this.model.ignoredSelectedFingerprints.add(issue.fingerprint);
 		}
 		this.render();
 	}

@@ -5,8 +5,10 @@ export type ReportModel = {
 	isScanning: boolean;
 	filterScanner: string | null;
 	filterSeverity: string | null;
-	showIgnored: boolean;
 	enableFixActions: boolean;
 	selectionMode: boolean;
 	selectedFingerprints: Set<string>;
+	ignoredExpanded: boolean;
+	ignoredSelectionMode: boolean;
+	ignoredSelectedFingerprints: Set<string>;
 };
