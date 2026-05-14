@@ -6,4 +6,5 @@ export type ReportModel = {
 	filterScanner: string | null;
 	filterSeverity: string | null;
 	showIgnored: boolean;
+	enableFixActions: boolean;
 };

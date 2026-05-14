@@ -3,6 +3,7 @@ import { SCANNER_IDS } from "../scanner/Issue";
 
 export type InspectorSettings = {
 	enabledScanners: Record<ScannerId, boolean>;
+	enableFixActions: boolean;
 	largeMarkdownBytes: number;
 	largeAttachmentBytes: number;
 	duplicateHashMaxBytes: number;
@@ -18,6 +19,7 @@ export const DEFAULT_SETTINGS: InspectorSettings = {
 	enabledScanners: Object.fromEntries(
 		SCANNER_IDS.map((id) => [id, true]),
 	) as Record<ScannerId, boolean>,
+	enableFixActions: true,
 	largeMarkdownBytes: 100 * 1024,
 	largeAttachmentBytes: 5 * 1024 * 1024,
 	duplicateHashMaxBytes: 1024 * 1024,

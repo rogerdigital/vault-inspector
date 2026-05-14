@@ -7,6 +7,8 @@ type IssueActions = {
 	onOpenFile: (path: string) => void;
 	onCopyPath: (path: string) => void;
 	onIgnore: (issue: Issue) => void;
+	onFix: (issue: Issue) => void;
+	onFixAll: (issues: Issue[]) => void;
 };
 
 export function renderIssues(
@@ -26,10 +28,24 @@ export function renderIssues(
 	for (const scannerId of result.scannersRun) {
 		const scannerIssues = grouped[scannerId] ?? [];
 		const section = container.createDiv({ cls: "vi-scanner-section" });
-		section.createEl("h3", {
+
+		const headerRow = section.createDiv({ cls: "vi-scanner-header-row" });
+		headerRow.createEl("h3", {
 			cls: "vi-scanner-header",
 			text: `${SCANNER_LABELS[scannerId]} (${scannerIssues.length})`,
 		});
+
+		const fixableIssues = scannerIssues.filter(
+			(i) => i.fixAction && !ignoredFingerprints.has(i.fingerprint),
+		);
+		if (model.enableFixActions && fixableIssues.length > 1) {
+			const batchBtn = headerRow.createEl("button", {
+				cls: "vi-fix-all-btn",
+				text: `Clean all (${fixableIssues.length})`,
+			});
+			setIcon(batchBtn, "trash-2");
+			batchBtn.addEventListener("click", () => actions.onFixAll(fixableIssues));
+		}
 
 		if (scannerIssues.length === 0) {
 			section.createEl("div", { cls: "vi-no-issues", text: "No issues found." });
@@ -57,6 +73,13 @@ export function renderIssues(
 			}
 
 			li.createEl("div", { cls: "vi-issue-message", text: issue.message });
+
+			if (model.enableFixActions && issue.fixAction && !isIgnored) {
+				const fixBtn = li.createEl("button", { cls: "vi-fix-btn", text: issue.fixAction.label });
+				setIcon(fixBtn, issue.fixAction.kind === "trash-file" ? "trash-2" : "eraser");
+				fixBtn.addEventListener("click", (e) => { e.stopPropagation(); actions.onFix(issue); });
+			}
+
 			li.createEl("button", { cls: "vi-ignore-btn", text: "Ignore" })
 				.addEventListener("click", (e) => { e.stopPropagation(); actions.onIgnore(issue); });
 		}

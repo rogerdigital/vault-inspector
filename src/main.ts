@@ -10,6 +10,8 @@ import { tagUsageScanner } from "./scanner/scanners/tag-usage";
 import { DEFAULT_SETTINGS, type InspectorSettings } from "./settings/settings";
 import { InspectorSettingTab } from "./settings/settings-tab";
 import { generateMarkdownReport } from "./report/markdown-export";
+import { executeFixAction } from "./fix/fix-executor";
+import { showConfirmModal } from "./fix/confirm-modal";
 
 export default class VaultInspectorPlugin extends Plugin {
 	settings: InspectorSettings = DEFAULT_SETTINGS;
@@ -69,6 +71,35 @@ export default class VaultInspectorPlugin extends Plugin {
 				const result = await this.scanRunner.run(this.app, this.settings);
 				view.setResult(result);
 			},
+			onFixIssue: async (issue) => {
+				if (!issue.fixAction) return;
+				const confirmed = await showConfirmModal(this.app, [issue.fixAction]);
+				if (!confirmed) return;
+				await executeFixAction(this.app, issue.fixAction);
+				new Notice(`Fixed: ${issue.title}`);
+				view.setScanning(true);
+				const result = await this.scanRunner.run(this.app, this.settings);
+				view.setResult(result);
+			},
+			onFixAllIssues: async (issues) => {
+				const actions = issues.map((i) => i.fixAction!).filter(Boolean);
+				if (actions.length === 0) return;
+				const confirmed = await showConfirmModal(this.app, actions);
+				if (!confirmed) return;
+				let fixed = 0;
+				for (const action of actions) {
+					try {
+						await executeFixAction(this.app, action);
+						fixed++;
+					} catch {
+						// continue on individual failures
+					}
+				}
+				new Notice(`Fixed ${fixed} issue(s)`);
+				view.setScanning(true);
+				const result = await this.scanRunner.run(this.app, this.settings);
+				view.setResult(result);
+			},
 			onRevealFile: async (path) => {
 				const file = this.app.vault.getAbstractFileByPath(path);
 				if (file) {
@@ -81,6 +112,7 @@ export default class VaultInspectorPlugin extends Plugin {
 			},
 			onRunScan: () => { void this.runScan(); },
 		});
+		view.setEnableFixActions(this.settings.enableFixActions);
 		view.setScanning(true);
 		const result = await this.scanRunner.run(this.app, this.settings);
 		view.setResult(result);

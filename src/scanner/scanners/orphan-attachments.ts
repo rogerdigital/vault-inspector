@@ -30,6 +30,12 @@ export const orphanAttachmentsScanner = {
 					fingerprint: generateFingerprint("orphan-attachments", file.path, {
 						orphan: true,
 					}),
+					fixAction: {
+						kind: "trash-file",
+						label: "Delete",
+						description: `Move "${file.path}" to trash`,
+						targetPaths: [file.path],
+					},
 				});
 			}
 		}

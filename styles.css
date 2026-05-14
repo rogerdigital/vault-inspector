@@ -30,7 +30,8 @@
 
 /* Scanner sections */
 .vi-scanner-section { margin-bottom: 16px; }
-.vi-scanner-header { font-size: 15px; margin: 12px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--background-modifier-border); }
+.vi-scanner-header-row { display: flex; align-items: center; justify-content: space-between; padding-bottom: 4px; border-bottom: 1px solid var(--background-modifier-border); margin: 12px 0 6px; }
+.vi-scanner-header { font-size: 15px; margin: 0; padding: 0; border: none; }
 .vi-no-issues { color: var(--text-muted); font-style: italic; padding: 4px 0; }
 
 /* Issue list */
@@ -62,3 +63,18 @@
 	.vi-stat { min-width: 60px; flex: 1 1 calc(50% - 4px); padding: 6px 10px; }
 	.vi-meta { flex-wrap: wrap; gap: 8px; }
 }
+
+/* Fix actions */
+.vi-fix-btn { font-size: 11px; padding: 6px 10px; border-radius: 3px; border: 1px solid var(--text-error); background: transparent; color: var(--text-error); cursor: pointer; margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+.vi-fix-btn:hover, .vi-fix-btn:active { background: rgba(255, 60, 60, 0.1); }
+.vi-fix-all-btn { font-size: 11px; padding: 4px 10px; border-radius: 3px; border: 1px solid var(--text-error); background: transparent; color: var(--text-error); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.vi-fix-all-btn:hover, .vi-fix-all-btn:active { background: rgba(255, 60, 60, 0.1); }
+
+/* Confirm modal */
+.vi-confirm-modal h3 { margin: 0 0 12px; }
+.vi-confirm-modal p { margin: 0 0 12px; color: var(--text-muted); }
+.vi-file-list { max-height: 300px; overflow-y: auto; margin-bottom: 16px; border: 1px solid var(--background-modifier-border); border-radius: 4px; padding: 8px; }
+.vi-file-list-item { font-size: 12px; font-family: var(--font-monospace); padding: 2px 0; color: var(--text-muted); }
+.vi-confirm-buttons { display: flex; justify-content: flex-end; gap: 8px; }
+.vi-confirm-destructive { background: var(--text-error); color: white; border: none; padding: 6px 16px; border-radius: 4px; cursor: pointer; }
+.vi-confirm-destructive:hover { opacity: 0.85; }
