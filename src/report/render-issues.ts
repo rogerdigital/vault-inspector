@@ -39,7 +39,7 @@ export function renderIssueList(container: HTMLElement, config: IssueListConfig)
 
 			if (config.selectionMode) {
 				const checkbox = li.createEl("input", { cls: "vi-issue-checkbox", type: "checkbox" });
-				(checkbox as HTMLInputElement).checked = isSelected;
+				checkbox.checked = isSelected;
 				checkbox.addEventListener("click", (e) => { e.stopPropagation(); config.onToggleSelect(issue); });
 				li.addEventListener("click", () => config.onToggleSelect(issue));
 			}

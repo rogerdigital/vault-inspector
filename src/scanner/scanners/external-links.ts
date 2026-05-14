@@ -1,3 +1,4 @@
+import { requestUrl } from "obsidian";
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { generateFingerprint } from "../issue-fingerprint";
@@ -95,14 +96,7 @@ async function checkUrls(entries: UrlEntry[]): Promise<CheckResult[]> {
 
 async function checkUrl(url: string): Promise<number> {
 	try {
-		const controller = new AbortController();
-		const timeout = setTimeout(() => controller.abort(), 10000);
-		const response = await fetch(url, {
-			method: "HEAD",
-			signal: controller.signal,
-			redirect: "follow",
-		});
-		clearTimeout(timeout);
+		const response = await requestUrl({ url, method: "HEAD" });
 		return response.status;
 	} catch {
 		return 0;

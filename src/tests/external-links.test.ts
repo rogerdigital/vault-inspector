@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { requestUrl } from "obsidian";
 import { externalLinksScanner } from "../scanner/scanners/external-links";
 import type { ScanContext } from "../scanner/ScanContext";
 
@@ -26,7 +27,7 @@ function makeCtx(overrides: Partial<ScanContext> = {}): ScanContext {
 
 describe("externalLinksScanner", () => {
 	it("reports dead external links (HTTP 404)", async () => {
-		vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 404 }));
+		vi.mocked(requestUrl).mockResolvedValue({ status: 404 } as any);
 		const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
 		const ctx = makeCtx({
 			markdownFiles: [file],
@@ -40,11 +41,10 @@ describe("externalLinksScanner", () => {
 		const issues = await externalLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].evidence.status).toBe(404);
-		vi.unstubAllGlobals();
 	});
 
 	it("does not report healthy links (HTTP 200)", async () => {
-		vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 200 }));
+		vi.mocked(requestUrl).mockResolvedValue({ status: 200 } as any);
 		const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
 		const ctx = makeCtx({
 			markdownFiles: [file],
@@ -57,7 +57,6 @@ describe("externalLinksScanner", () => {
 		});
 		const issues = await externalLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
-		vi.unstubAllGlobals();
 	});
 
 	it("skips internal links", async () => {
@@ -92,7 +91,7 @@ describe("externalLinksScanner", () => {
 	});
 
 	it("deduplicates same URL across multiple notes", async () => {
-		vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ status: 404 }));
+		vi.mocked(requestUrl).mockResolvedValue({ status: 404 } as any);
 		const file1 = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
 		const file2 = { path: "b.md", stat: { size: 100, mtime: 1000 } } as any;
 		const ctx = makeCtx({
@@ -106,6 +105,5 @@ describe("externalLinksScanner", () => {
 		});
 		const issues = await externalLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
-		vi.unstubAllGlobals();
 	});
 });

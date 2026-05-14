@@ -13,12 +13,11 @@ export async function executeFixAction(app: App, action: FixAction): Promise<num
 }
 
 async function trashFiles(app: App, paths: string[]): Promise<number> {
-	const useSystemTrash = getTrashOption(app) !== "local";
 	let count = 0;
 	for (const path of paths) {
 		const file = app.vault.getAbstractFileByPath(path);
 		if (file) {
-			await app.vault.trash(file, useSystemTrash);
+			await app.fileManager.trashFile(file);
 			count++;
 		}
 	}
@@ -42,11 +41,6 @@ async function removeLinkText(app: App, sourcePath: string, linkText: string): P
 
 	await app.vault.modify(file, updated);
 	return 1;
-}
-
-function getTrashOption(app: App): string {
-	const config = (app.vault as unknown as { config?: { trashOption?: string } }).config;
-	return config?.trashOption ?? "system";
 }
 
 function escapeRegex(str: string): string {

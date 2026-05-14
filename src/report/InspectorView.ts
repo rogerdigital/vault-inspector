@@ -214,7 +214,7 @@ export class InspectorView extends ItemView {
 
 		const allSelected = visibleIssues.length > 0 && visibleIssues.every((i) => this.model.selectedFingerprints.has(i.fingerprint));
 		const toggleAll = left.createEl("input", { cls: "vi-issue-checkbox", type: "checkbox" });
-		(toggleAll as HTMLInputElement).checked = allSelected;
+		toggleAll.checked = allSelected;
 		setTooltip(toggleAll, allSelected ? "Deselect all" : "Select all");
 		toggleAll.addEventListener("click", () => {
 			if (allSelected) {
@@ -321,7 +321,7 @@ export class InspectorView extends ItemView {
 
 		const allSelected = ignoredIssues.length > 0 && ignoredIssues.every((i) => this.model.ignoredSelectedFingerprints.has(i.fingerprint));
 		const toggleAll = left.createEl("input", { cls: "vi-issue-checkbox", type: "checkbox" });
-		(toggleAll as HTMLInputElement).checked = allSelected;
+		toggleAll.checked = allSelected;
 		setTooltip(toggleAll, allSelected ? "Deselect all" : "Select all");
 		toggleAll.addEventListener("click", () => {
 			if (allSelected) {
