@@ -2,7 +2,7 @@
 
 Scan your Obsidian vault for maintenance problems — broken links, orphan attachments, empty notes, duplicate files, external link issues, frontmatter inconsistencies, unused tags, and large files — without modifying anything.
 
-<img src="docs/screenshots/vault-inspector-right-panel.png" />
+<img src="docs/screenshots/vault-inspector-right-panel.png" width="360" />
 
 ## Features
 
