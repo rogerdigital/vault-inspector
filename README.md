@@ -1,13 +1,15 @@
 # Vault Inspector
 
-Scan your Obsidian vault for maintenance problems — broken links, orphan attachments, duplicate files, frontmatter inconsistencies, unused tags, and large files — without modifying anything.
+Scan your Obsidian vault for maintenance problems — broken links, orphan attachments, empty notes, duplicate files, external link issues, frontmatter inconsistencies, unused tags, and large files — without modifying anything.
 
-![Vault Inspector report view](docs/screenshots/vault-inspector-right-panel.png)
+<img src="docs/screenshots/vault-inspector-right-panel.png" />
 
 ## Features
 
 - **Broken Links** — Detect wiki links, markdown links, and embeds pointing to non-existent notes or headings.
 - **Orphan Attachments** — Find images, PDFs, audio/video, and archives not referenced by any note.
+- **Empty Notes** — Flag notes with no meaningful content beyond frontmatter and title.
+- **External Links** — Check external URLs for availability (HTTP status).
 - **Duplicate Files** — Identify duplicates by name, size, and optional SHA-256 content hash.
 - **Frontmatter Types** — Report properties used with inconsistent value types across notes.
 - **Tag Usage** — Watch for missing or underused tags from a configurable watchlist.
@@ -28,8 +30,9 @@ Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](
 1. Open the command palette and run **Vault Inspector: Run scan**.
 2. The Inspector view opens in the right sidebar.
 3. Filter results by scanner or severity. Click a file path to open it.
-4. Click **Ignore** to suppress a specific issue in future scans.
-5. Run **Vault Inspector: Export report** to save results as Markdown.
+4. Click **Select** to enter selection mode, then batch delete or ignore issues.
+5. Expand **Ignored items** at the bottom to restore previously ignored issues.
+6. Run **Vault Inspector: Export report** to save results as Markdown.
 
 ## Scanners
 
@@ -47,6 +50,18 @@ Scans for attachment files not referenced by any Markdown file.
 - `warning` — unreferenced file older than 24 hours
 - `info` — unreferenced file modified within 24 hours
 - Supported: png, jpg, jpeg, gif, webp, svg, pdf, mp3, mp4, wav, mov, zip
+
+### Empty Notes
+
+Flags notes that have no content beyond frontmatter and a title heading.
+
+- `warning` — empty note
+
+### External Links
+
+Checks HTTP/HTTPS URLs found in notes for availability.
+
+- `warning` — unreachable URL or non-2xx status
 
 ### Duplicate Files
 
@@ -79,9 +94,11 @@ Flags files exceeding configurable size thresholds.
 | Setting | Default | Description |
 |---|---|---|
 | Enabled Scanners | All on | Toggle individual scanners |
+| Enable fix actions | On | Allow batch delete of fixable issues |
 | Large Markdown threshold | 100 KB | Markdown files above this size are flagged |
 | Large attachment threshold | 5 MB | Attachments above this size are flagged |
 | Duplicate hash cap | 1 MB | Max file size for content hash comparison |
+| Empty note word threshold | 5 | Notes with fewer words (excluding frontmatter/title) are flagged |
 | Watched tags | (none) | Tags to watch for missing usage |
 | Low usage tag threshold | 2 | Tags below this count are flagged |
 | Ignored folders | (none) | Folders excluded from all scans |
@@ -90,11 +107,11 @@ Flags files exceeding configurable size thresholds.
 
 ## Privacy
 
-Vault Inspector does not make network requests. All processing happens locally using Obsidian APIs. No data leaves your device.
+Vault Inspector does not make network requests (except the External Links scanner, which checks URLs you explicitly have in your notes). All processing happens locally using Obsidian APIs. No data leaves your device beyond those HTTP HEAD requests.
 
 ## Limitations
 
-- Read-only — does not modify, move, or delete vault files (except exported reports).
+- Read-only — does not modify, move, or delete vault files (except exported reports and optional batch-delete via trash).
 - Broken link detection relies on Obsidian's metadata cache; links inside code blocks or comments may be missed.
 - Orphan detection cannot account for references from CSS, Canvas, Dataview queries, or external tools.
 - Duplicate detection above the hash cap reports candidates only (no content verification).
