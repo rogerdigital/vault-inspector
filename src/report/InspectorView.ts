@@ -152,10 +152,9 @@ export class InspectorView extends ItemView {
 		if (visibleIssues.length > 0) {
 			const selectBtn = toolbar.createEl("button", {
 				cls: `vi-filter-btn vi-select-btn ${this.model.selectionMode ? "vi-active" : ""}`,
-				text: this.model.selectionMode ? "Selecting..." : "Select",
+				text: this.model.selectionMode ? "Done" : "Select",
 			});
-			setIcon(selectBtn, "check-square");
-			setTooltip(selectBtn, "Enter selection mode");
+			setTooltip(selectBtn, this.model.selectionMode ? "Exit selection mode" : "Enter selection mode");
 			selectBtn.addEventListener("click", () => {
 				this.model.selectionMode = !this.model.selectionMode;
 				if (!this.model.selectionMode) this.model.selectedFingerprints = new Set();
@@ -214,12 +213,10 @@ export class InspectorView extends ItemView {
 		const right = bar.createDiv({ cls: "vi-action-bar-right" });
 
 		const allSelected = visibleIssues.length > 0 && visibleIssues.every((i) => this.model.selectedFingerprints.has(i.fingerprint));
-		const toggleWrap = left.createEl("label", { cls: "vi-toggle-all" });
-		const toggleAll = toggleWrap.createEl("input", { cls: "vi-issue-checkbox", type: "checkbox" });
+		const toggleAll = left.createEl("input", { cls: "vi-issue-checkbox", type: "checkbox" });
 		(toggleAll as HTMLInputElement).checked = allSelected;
-		setTooltip(toggleWrap, allSelected ? "Deselect all" : "Select all");
-		toggleWrap.addEventListener("click", (e) => {
-			e.preventDefault();
+		setTooltip(toggleAll, allSelected ? "Deselect all" : "Select all");
+		toggleAll.addEventListener("click", () => {
 			if (allSelected) {
 				this.model.selectedFingerprints = new Set();
 			} else {
@@ -229,11 +226,9 @@ export class InspectorView extends ItemView {
 		});
 
 		if (this.model.enableFixActions && selectedFixable.length > 0) {
-			const deleteBtn = right.createEl("button", {
-				cls: "vi-action-btn vi-action-delete",
-				text: `Delete (${selectedFixable.length})`,
-			});
+			const deleteBtn = right.createEl("button", { cls: "vi-action-btn vi-action-delete" });
 			setIcon(deleteBtn, "trash-2");
+			deleteBtn.createEl("span", { text: `(${selectedFixable.length})` });
 			setTooltip(deleteBtn, "Move selected files to trash");
 			deleteBtn.addEventListener("click", () => {
 				if (this.onFixAllIssues) void this.onFixAllIssues(selectedFixable);
@@ -241,18 +236,16 @@ export class InspectorView extends ItemView {
 		}
 
 		if (selectedIssues.length > 0) {
-			const ignoreBtn = right.createEl("button", {
-				cls: "vi-action-btn vi-action-ignore",
-				text: `Ignore (${selectedIssues.length})`,
-			});
+			const ignoreBtn = right.createEl("button", { cls: "vi-action-btn vi-action-ignore" });
 			setIcon(ignoreBtn, "eye-off");
+			ignoreBtn.createEl("span", { text: `(${selectedIssues.length})` });
 			setTooltip(ignoreBtn, "Hide selected issues from future scans");
 			ignoreBtn.addEventListener("click", () => {
 				if (this.onIgnoreAllIssues) void this.onIgnoreAllIssues(selectedIssues);
 			});
 		}
 
-		const cancelBtn = right.createEl("button", { cls: "vi-action-btn", text: "Cancel" });
+		const cancelBtn = right.createEl("button", { cls: "vi-action-btn" });
 		setIcon(cancelBtn, "x");
 		setTooltip(cancelBtn, "Exit selection mode");
 		cancelBtn.addEventListener("click", () => {
@@ -272,10 +265,11 @@ export class InspectorView extends ItemView {
 		const section = container.createDiv({ cls: "vi-ignored-section" });
 
 		const header = section.createDiv({ cls: "vi-ignored-header" });
-		const chevron = header.createEl("span", { cls: "vi-ignored-chevron" });
+		const headerLeft = header.createDiv({ cls: "vi-ignored-header-left" });
+		const chevron = headerLeft.createEl("span", { cls: "vi-ignored-chevron" });
 		setIcon(chevron, this.model.ignoredExpanded ? "chevron-down" : "chevron-right");
-		header.createEl("span", { text: `Ignored items (${ignoredIssues.length})` });
-		header.addEventListener("click", () => {
+		headerLeft.createEl("span", { text: `Ignored items (${ignoredIssues.length})` });
+		headerLeft.addEventListener("click", () => {
 			this.model.ignoredExpanded = !this.model.ignoredExpanded;
 			if (!this.model.ignoredExpanded) {
 				this.model.ignoredSelectionMode = false;
@@ -284,23 +278,23 @@ export class InspectorView extends ItemView {
 			this.render();
 		});
 
+		if (this.model.ignoredExpanded) {
+			const selectBtn = header.createEl("button", {
+				cls: `vi-filter-btn vi-select-btn ${this.model.ignoredSelectionMode ? "vi-active" : ""}`,
+				text: this.model.ignoredSelectionMode ? "Done" : "Select",
+			});
+			setTooltip(selectBtn, this.model.ignoredSelectionMode ? "Exit selection mode" : "Select to restore");
+			selectBtn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				this.model.ignoredSelectionMode = !this.model.ignoredSelectionMode;
+				if (!this.model.ignoredSelectionMode) this.model.ignoredSelectedFingerprints = new Set();
+				this.render();
+			});
+		}
+
 		if (!this.model.ignoredExpanded) return;
 
 		const body = section.createDiv({ cls: "vi-ignored-body" });
-
-		// Select button for ignored section
-		const toolbar = body.createDiv({ cls: "vi-ignored-toolbar" });
-		const selectBtn = toolbar.createEl("button", {
-			cls: `vi-filter-btn vi-select-btn ${this.model.ignoredSelectionMode ? "vi-active" : ""}`,
-			text: this.model.ignoredSelectionMode ? "Selecting..." : "Select",
-		});
-		setIcon(selectBtn, "check-square");
-		setTooltip(selectBtn, "Select to restore");
-		selectBtn.addEventListener("click", () => {
-			this.model.ignoredSelectionMode = !this.model.ignoredSelectionMode;
-			if (!this.model.ignoredSelectionMode) this.model.ignoredSelectedFingerprints = new Set();
-			this.render();
-		});
 
 		if (this.model.ignoredSelectionMode) {
 			this.renderIgnoredActionBar(body, ignoredIssues);
@@ -326,12 +320,10 @@ export class InspectorView extends ItemView {
 		const right = bar.createDiv({ cls: "vi-action-bar-right" });
 
 		const allSelected = ignoredIssues.length > 0 && ignoredIssues.every((i) => this.model.ignoredSelectedFingerprints.has(i.fingerprint));
-		const toggleWrap = left.createEl("label", { cls: "vi-toggle-all" });
-		const toggleAll = toggleWrap.createEl("input", { cls: "vi-issue-checkbox", type: "checkbox" });
+		const toggleAll = left.createEl("input", { cls: "vi-issue-checkbox", type: "checkbox" });
 		(toggleAll as HTMLInputElement).checked = allSelected;
-		setTooltip(toggleWrap, allSelected ? "Deselect all" : "Select all");
-		toggleWrap.addEventListener("click", (e) => {
-			e.preventDefault();
+		setTooltip(toggleAll, allSelected ? "Deselect all" : "Select all");
+		toggleAll.addEventListener("click", () => {
 			if (allSelected) {
 				this.model.ignoredSelectedFingerprints = new Set();
 			} else {
@@ -341,18 +333,16 @@ export class InspectorView extends ItemView {
 		});
 
 		if (selectedIssues.length > 0) {
-			const restoreBtn = right.createEl("button", {
-				cls: "vi-action-btn",
-				text: `Restore (${selectedIssues.length})`,
-			});
+			const restoreBtn = right.createEl("button", { cls: "vi-action-btn" });
 			setIcon(restoreBtn, "eye");
+			restoreBtn.createEl("span", { text: `(${selectedIssues.length})` });
 			setTooltip(restoreBtn, "Stop ignoring selected issues");
 			restoreBtn.addEventListener("click", () => {
 				if (this.onRestoreIssues) void this.onRestoreIssues(selectedIssues);
 			});
 		}
 
-		const cancelBtn = right.createEl("button", { cls: "vi-action-btn", text: "Cancel" });
+		const cancelBtn = right.createEl("button", { cls: "vi-action-btn" });
 		setIcon(cancelBtn, "x");
 		setTooltip(cancelBtn, "Exit selection mode");
 		cancelBtn.addEventListener("click", () => {
