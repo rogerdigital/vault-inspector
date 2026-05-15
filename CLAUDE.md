@@ -2,13 +2,18 @@
 
 Obsidian plugin that scans a vault for maintenance problems. Read-only by design — no file mutation except exported reports.
 
+- Plugin ID: `vault-inspector`
+- Current version: `0.3.2`
+- Min Obsidian version: `1.7.2`
+
 ## Commands
 
 ```bash
-npm run dev       # watch mode
-npm run build     # tsc + esbuild production
-npm test          # vitest run
-npm run test:watch
+npm run dev          # watch mode
+npm run build        # tsc + esbuild production
+npm test             # vitest run
+npm run test:watch   # vitest watch
+npm run test:coverage # vitest with v8 coverage
 ```
 
 Always run `npm run build && npm test` before committing. CI enforces this.
@@ -17,23 +22,35 @@ Always run `npm run build && npm test` before committing. CI enforces this.
 
 ```
 src/
-  main.ts                  # Plugin entry, registers scanners/views/commands
+  main.ts                  Plugin entry, registers scanners/views/commands
   settings/
-    settings.ts            # InspectorSettings type + defaults
-    settings-tab.ts        # Obsidian PluginSettingTab UI
+    settings.ts            InspectorSettings type + defaults
+    settings-tab.ts        Obsidian PluginSettingTab UI
   scanner/
-    Issue.ts               # Issue, ScanResult, ScannerId types
-    ScanContext.ts          # Read-only snapshot passed to scanners
-    ScanRunner.ts           # Orchestrates enabled scanners
-    issue-fingerprint.ts    # Deterministic issue IDs
-    scanners/               # One file per scanner, pure logic
+    Issue.ts               Issue, ScanResult, ScannerId, FixAction types
+    ScanContext.ts          Read-only snapshot passed to scanners
+    ScanRunner.ts           Orchestrates enabled scanners
+    issue-fingerprint.ts    Deterministic issue IDs
+    scanners/               One file per scanner, pure logic
+      broken-links.ts       Broken link detection
+      duplicate-files.ts    Duplicate file detection
+      empty-notes.ts        Empty note detection
+      external-links.ts     External URL validation
+      frontmatter-types.ts  Frontmatter type consistency
+      large-files.ts        Large file detection
+      orphan-attachments.ts Unreferenced attachments
+      tag-usage.ts          Tag usage monitoring
   report/
-    InspectorView.ts        # ItemView — dashboard + interactions
-    render-summary.ts       # Summary stats
-    render-issues.ts        # Issue list with actions
-    markdown-export.ts      # Report → Markdown
-  utils/                    # Shared helpers (paths, file-types, hash, frontmatter-type)
-  tests/                    # Unit tests per scanner
+    InspectorView.ts        ItemView — dashboard + interactions
+    ReportModel.ts          View state management
+    render-summary.ts       Summary stats
+    render-issues.ts        Issue list with actions
+    markdown-export.ts      Report → Markdown
+  fix/
+    confirm-modal.ts        Fix confirmation modal
+    fix-executor.ts         Executes fix actions (trash-file, remove-link-text)
+  utils/                    Shared helpers (paths, file-types, format, hash, frontmatter-type)
+  tests/                    Unit tests per scanner + utils
 ```
 
 ## Key conventions
@@ -44,6 +61,7 @@ src/
 - `Issue.fingerprint` must be deterministic: same evidence + scanner ID + primary path = same fingerprint.
 - Report rendering is in `src/report/`. View state lives in `ReportModel`.
 - Settings live in `src/settings/settings.ts`. New settings need: type + default + ScanContext field + ScanRunner propagation + settings-tab UI.
+- Tests live in `src/tests/`. Coverage thresholds: 40% lines, 40% functions, 50% branches.
 
 ## Git workflow
 
@@ -52,6 +70,8 @@ src/
 - Commit messages: conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `ci:`).
 - No co-author footers or AI attribution in commits.
 
-## Release assets
+## Release
 
-`main.js`, `manifest.json`, `styles.css` — built by `npm run build`, published via GitHub Releases.
+- Release assets: `main.js`, `manifest.json`, `styles.css`
+- Release steps: bump version in `manifest.json` + `versions.json` → PR → merge → tag → push tag → CI creates release
+- Do NOT manually `gh release create` — CI auto-creates on tag push
