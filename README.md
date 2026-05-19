@@ -1,8 +1,10 @@
 # Vault Inspector
 
-Scan your Obsidian vault for maintenance problems — broken links, orphan attachments, empty notes, duplicate files, external link issues, frontmatter inconsistencies, unused tags, and large files — without modifying anything.
+Scan your Obsidian vault for maintenance problems: broken links, missing attachments, orphan files, duplicate files, empty notes, tag issues, and large files.
 
-<img src="docs/screenshots/vault-inspector-right-panel.png" width="360" />
+Use it before publishing, exporting, migrating, or cleaning up a long-lived vault.
+
+![Vault Inspector scan results](docs/images/vault-inspector-errors-orphans.gif)
 
 ## Features
 
