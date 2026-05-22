@@ -68,6 +68,7 @@ src/
 - Settings live in `src/settings/settings.ts`. New settings need: type + default + ScanContext field + ScanRunner propagation + settings-tab UI.
 - Tests live in `src/tests/`. Coverage thresholds: 40% lines, 40% functions, 50% branches.
 - CLI scan mode is read-only. Keep mutation/fix execution behind a separate explicit opt-in command.
+- CLI accepts both `vault-inspector <vault-path>` and `vault-inspector scan <vault-path>`; prefer the shorter form in user-facing docs.
 - Stable CLI automation fields include `schemaVersion`, `toolVersion`, `summary`, issue `fingerprint`, `scannerId`, `severity`, paths, evidence, and fix-action metadata.
 
 ## Git workflow

@@ -93,11 +93,12 @@ export async function runCli(args: string[]): Promise<CliResult> {
 }
 
 function parseArgs(args: string[]): ParsedArgs | { error: string } {
-	if (args[0] !== "scan") {
-		return { error: usage("Expected command: scan") };
+	const hasScanCommand = args[0] === "scan";
+	if (args[0]?.startsWith("-")) {
+		return { error: usage("Missing vault path") };
 	}
 
-	const vaultPath = args[1];
+	const vaultPath = hasScanCommand ? args[1] : args[0];
 	if (!vaultPath || vaultPath.startsWith("-")) {
 		return { error: usage("Missing vault path") };
 	}
@@ -113,7 +114,7 @@ function parseArgs(args: string[]): ParsedArgs | { error: string } {
 		fix: false,
 	};
 
-	for (let index = 2; index < args.length; index++) {
+	for (let index = hasScanCommand ? 2 : 1; index < args.length; index++) {
 		const arg = args[index];
 		if (arg === "--format") {
 			const value = args[++index];
@@ -393,6 +394,7 @@ function usage(message: string): string {
 	return `${message}
 
 Usage:
+  vault-inspector <vault-path> [--format json|markdown] [--output <path>]
   vault-inspector scan <vault-path> [--format json|markdown] [--output <path>]
 
 Options:
