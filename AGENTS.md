@@ -14,6 +14,7 @@ npm run build        # tsc + esbuild production
 npm test             # vitest run
 npm run test:watch   # vitest watch
 npm run test:coverage # vitest with v8 coverage
+npm pack --dry-run   # inspect npm package contents before publishing
 ```
 
 Always run `npm run build && npm test` before committing. CI enforces this.
@@ -49,6 +50,10 @@ src/
   fix/
     confirm-modal.ts        Fix confirmation modal
     fix-executor.ts         Executes fix actions (trash-file, remove-link-text)
+  cli/
+    bin.ts                  CLI process entrypoint
+    cli.ts                  CLI argument/config handling and JSON/Markdown output
+    local-vault.ts          Local filesystem adapter for scanner reuse
   utils/                    Shared helpers (paths, file-types, format, hash, frontmatter-type)
   tests/                    Unit tests per scanner + utils
 ```
@@ -62,6 +67,8 @@ src/
 - Report rendering is in `src/report/`. View state lives in `ReportModel`.
 - Settings live in `src/settings/settings.ts`. New settings need: type + default + ScanContext field + ScanRunner propagation + settings-tab UI.
 - Tests live in `src/tests/`. Coverage thresholds: 40% lines, 40% functions, 50% branches.
+- CLI scan mode is read-only. Keep mutation/fix execution behind a separate explicit opt-in command.
+- Stable CLI automation fields include `schemaVersion`, `toolVersion`, `summary`, issue `fingerprint`, `scannerId`, `severity`, paths, evidence, and fix-action metadata.
 
 ## Git workflow
 
@@ -73,5 +80,7 @@ src/
 ## Release
 
 - Release assets: `main.js`, `manifest.json`, `styles.css`
+- npm package assets: `main.js`, `cli.js`, `manifest.json`, `styles.css`, `versions.json`, `README.md`, `LICENSE`
 - Release steps: bump version in `manifest.json` + `versions.json` → PR → merge → tag → push tag → CI creates release
+- Before npm publish, run `npm run build && npm test && npm pack --dry-run`.
 - Do NOT manually `gh release create` — CI auto-creates on tag push
