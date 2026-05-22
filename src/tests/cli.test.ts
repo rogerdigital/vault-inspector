@@ -46,6 +46,19 @@ describe("runCli", () => {
 		});
 	});
 
+	it("treats a vault path as the default scan command", async () => {
+		await withVault({ "empty.md": "" }, async (vaultPath) => {
+			const result = await runCli([vaultPath, "--scanner", "empty-notes"]);
+
+			expect(result.exitCode).toBe(1);
+			expect(result.stderr).toBe("");
+			const payload = JSON.parse(result.stdout);
+			expect(payload.vaultPath).toBe(vaultPath);
+			expect(payload.summary.scannersRun).toEqual(["empty-notes"]);
+			expect(payload.issues[0].primaryPath).toBe("empty.md");
+		});
+	});
+
 	it("writes markdown output when an output path is provided", async () => {
 		await withVault({ "empty.md": "" }, async (vaultPath) => {
 			const outputPath = join(vaultPath, "report.md");
