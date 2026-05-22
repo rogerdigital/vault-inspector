@@ -1,4 +1,3 @@
-import { requestUrl } from "obsidian";
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { generateFingerprint } from "../issue-fingerprint";
@@ -10,7 +9,7 @@ export const externalLinksScanner = {
 	async scan(ctx: ScanContext): Promise<Issue[]> {
 		const issues: Issue[] = [];
 		const urlMap = collectExternalUrls(ctx);
-		const results = await checkUrls(urlMap);
+		const results = await checkUrls(urlMap, ctx);
 
 		for (const result of results) {
 			issues.push({
@@ -76,14 +75,14 @@ function isExternalUrl(text: string): boolean {
 	return /^https?:\/\//i.test(text);
 }
 
-async function checkUrls(entries: UrlEntry[]): Promise<CheckResult[]> {
+async function checkUrls(urlMap: UrlEntry[], ctx?: ScanContext): Promise<CheckResult[]> {
 	const results: CheckResult[] = [];
 	const batchSize = 5;
 
-	for (let i = 0; i < entries.length; i += batchSize) {
-		const batch = entries.slice(i, i + batchSize);
+	for (let i = 0; i < urlMap.length; i += batchSize) {
+		const batch = urlMap.slice(i, i + batchSize);
 		const checks = batch.map(async (entry) => {
-			const status = await checkUrl(entry.url);
+			const status = await checkUrl(entry.url, ctx);
 			if (status >= 400) {
 				results.push({ ...entry, status });
 			}
@@ -94,9 +93,10 @@ async function checkUrls(entries: UrlEntry[]): Promise<CheckResult[]> {
 	return results;
 }
 
-async function checkUrl(url: string): Promise<number> {
+async function checkUrl(url: string, ctx?: ScanContext): Promise<number> {
 	try {
-		const response = await requestUrl({ url, method: "HEAD" });
+		if (ctx?.requestUrl) return await ctx.requestUrl(url);
+		const response = await fetch(url, { method: "HEAD" });
 		return response.status;
 	} catch {
 		return 0;

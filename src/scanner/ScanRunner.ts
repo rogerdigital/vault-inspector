@@ -11,6 +11,8 @@ export type Scanner = {
 export class ScanRunner {
 	private scanners: Scanner[] = [];
 
+	constructor(private requestUrl?: (url: string) => Promise<number>) {}
+
 	register(scanner: Scanner): void {
 		this.scanners.push(scanner);
 	}
@@ -25,6 +27,7 @@ export class ScanRunner {
 			app,
 			metadataCache: app.metadataCache,
 			vault: app.vault,
+			requestUrl: this.requestUrl,
 			markdownFiles,
 			allFiles,
 			filePathIndex,

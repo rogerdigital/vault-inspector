@@ -1,14 +1,7 @@
-import { Plugin, Notice, TFile } from "obsidian";
+import { Plugin, Notice, TFile, requestUrl } from "obsidian";
 import { InspectorView, VIEW_TYPE_INSPECTOR } from "./report/InspectorView";
 import { ScanRunner } from "./scanner/ScanRunner";
-import { brokenLinksScanner } from "./scanner/scanners/broken-links";
-import { largeFilesScanner } from "./scanner/scanners/large-files";
-import { orphanAttachmentsScanner } from "./scanner/scanners/orphan-attachments";
-import { emptyNotesScanner } from "./scanner/scanners/empty-notes";
-import { externalLinksScanner } from "./scanner/scanners/external-links";
-import { duplicateFilesScanner } from "./scanner/scanners/duplicate-files";
-import { frontmatterTypesScanner } from "./scanner/scanners/frontmatter-types";
-import { tagUsageScanner } from "./scanner/scanners/tag-usage";
+import { registerDefaultScanners } from "./scanner/register-scanners";
 import { DEFAULT_SETTINGS, type InspectorSettings } from "./settings/settings";
 import { InspectorSettingTab } from "./settings/settings-tab";
 import { generateMarkdownReport } from "./report/markdown-export";
@@ -17,7 +10,10 @@ import { showConfirmModal } from "./fix/confirm-modal";
 
 export default class VaultInspectorPlugin extends Plugin {
 	settings: InspectorSettings = DEFAULT_SETTINGS;
-	scanRunner = new ScanRunner();
+	scanRunner = new ScanRunner(async (url) => {
+		const response = await requestUrl({ url, method: "HEAD" });
+		return response.status;
+	});
 
 	async onload() {
 		await this.loadSettings();
@@ -32,14 +28,7 @@ export default class VaultInspectorPlugin extends Plugin {
 			name: "Export report",
 			callback: () => this.exportReport(),
 		});
-		this.scanRunner.register(brokenLinksScanner);
-		this.scanRunner.register(largeFilesScanner);
-		this.scanRunner.register(orphanAttachmentsScanner);
-		this.scanRunner.register(emptyNotesScanner);
-		this.scanRunner.register(externalLinksScanner);
-		this.scanRunner.register(duplicateFilesScanner);
-		this.scanRunner.register(frontmatterTypesScanner);
-		this.scanRunner.register(tagUsageScanner);
+		registerDefaultScanners(this.scanRunner);
 		this.addSettingTab(new InspectorSettingTab(this.app, this));
 
 		this.addRibbonIcon("shield-check", "Run scan", () => this.runScan());

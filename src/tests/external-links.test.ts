@@ -8,6 +8,10 @@ function makeCtx(overrides: Partial<ScanContext> = {}): ScanContext {
 		app: {} as any,
 		metadataCache: {} as any,
 		vault: {} as any,
+		requestUrl: async (url) => {
+			const response = await requestUrl({ url, method: "HEAD" });
+			return response.status;
+		},
 		markdownFiles: [],
 		allFiles: [],
 		filePathIndex: new Set(),
