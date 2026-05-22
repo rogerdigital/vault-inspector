@@ -36,6 +36,20 @@ const context = await esbuild.context({
 
 if (prod) {
 	await context.rebuild();
+	await esbuild.build({
+		banner: {
+			js: "#!/usr/bin/env node\n/* eslint-disable */",
+		},
+		entryPoints: ["src/cli/bin.ts"],
+		bundle: true,
+		external: ["obsidian", ...builtinModules],
+		format: "cjs",
+		platform: "node",
+		target: "node18",
+		logLevel: "info",
+		treeShaking: true,
+		outfile: "cli.js",
+	});
 	process.exit(0);
 } else {
 	await context.watch();

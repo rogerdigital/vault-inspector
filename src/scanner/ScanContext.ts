@@ -5,6 +5,7 @@ export type ScanContext = {
 	app: App;
 	metadataCache: MetadataCache;
 	vault: Vault;
+	requestUrl?: (url: string) => Promise<number>;
 	markdownFiles: TFile[];
 	allFiles: TFile[];
 	filePathIndex: Set<string>;

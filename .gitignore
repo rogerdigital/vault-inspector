@@ -1,5 +1,6 @@
 # Build
 main.js
+cli.js
 node_modules/
 coverage/
 

@@ -36,6 +36,31 @@ Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](
 5. Expand **Ignored items** at the bottom to restore previously ignored issues.
 6. Run **Vault Inspector: Export report** to save results as Markdown.
 
+## CLI
+
+Vault Inspector also exposes a read-only CLI for generated or agent-managed vaults.
+
+```bash
+vault-inspector scan /path/to/vault --format json
+vault-inspector scan /path/to/vault --format markdown --output report.md
+vault-inspector scan /path/to/vault --scanner broken-links,empty-notes
+```
+
+The default output format is JSON. It includes summary counts, scanners run, issues,
+ignored issues, fingerprints, evidence, and available fix-action metadata so other
+tools can decide what to do next.
+
+Exit codes:
+
+- `0` — scan completed with no active issues.
+- `1` — scan completed and found one or more active issues.
+- `2` — invalid CLI usage or scan setup failure.
+
+CLI scan mode is read-only. `--fix` is reserved for a future explicit opt-in fix
+command and currently exits with an error instead of modifying files. This keeps
+automated agents from deleting or rewriting vault content unless fix execution is
+implemented as a deliberate, separately documented workflow.
+
 ## Scanners
 
 ### Broken Links
