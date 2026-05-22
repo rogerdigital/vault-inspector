@@ -1,11 +1,20 @@
 {
 	"name": "vault-inspector",
-	"version": "0.3.2",
+	"version": "0.4.0",
 	"description": "Scan an Obsidian vault for long-term maintenance problems.",
 	"main": "main.js",
 	"bin": {
 		"vault-inspector": "cli.js"
 	},
+	"files": [
+		"main.js",
+		"cli.js",
+		"manifest.json",
+		"styles.css",
+		"versions.json",
+		"README.md",
+		"LICENSE"
+	],
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",

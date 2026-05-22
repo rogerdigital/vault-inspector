@@ -27,6 +27,20 @@ Search **Vault Inspector** in Obsidian → Settings → Community plugins → Br
 
 Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/rogerdigital/vault-inspector/releases) and place them in `.obsidian/plugins/vault-inspector/`.
 
+### CLI
+
+Install the npm package for terminal, CI, or agent workflows:
+
+```bash
+npx vault-inspector@0.4.0 scan /path/to/vault --format json
+npm install -g vault-inspector
+vault-inspector scan /path/to/vault --format json
+```
+
+The CLI package is separate from Obsidian's Community Plugins install path. Updating
+the Obsidian plugin affects the in-app plugin; installing from npm provides the
+`vault-inspector` terminal command.
+
 ## Usage
 
 1. Open the command palette and run **Vault Inspector: Run scan**.
@@ -44,17 +58,64 @@ Vault Inspector also exposes a read-only CLI for generated or agent-managed vaul
 vault-inspector scan /path/to/vault --format json
 vault-inspector scan /path/to/vault --format markdown --output report.md
 vault-inspector scan /path/to/vault --scanner broken-links,empty-notes
+vault-inspector scan /path/to/vault --config vault-inspector.config.json
 ```
 
 The default output format is JSON. It includes summary counts, scanners run, issues,
 ignored issues, fingerprints, evidence, and available fix-action metadata so other
 tools can decide what to do next.
 
+Useful automation options:
+
+```bash
+vault-inspector scan /path/to/vault \
+  --scanner broken-links,empty-notes \
+  --severity error,warning \
+  --include "notes/**" \
+  --exclude "templates/**" \
+  --fail-on warning
+
+vault-inspector scan /path/to/vault \
+  --baseline .vault-inspector-baseline.json \
+  --fail-on new
+```
+
+Config files are JSON and use the same option names:
+
+```json
+{
+  "scanners": ["broken-links", "empty-notes", "large-files"],
+  "severity": ["error", "warning"],
+  "include": ["notes/**"],
+  "exclude": ["templates/**"],
+  "ignoredFolders": [".trash"],
+  "failOn": "warning",
+  "largeMarkdownBytes": 102400
+}
+```
+
+CLI flags override config file values.
+
+JSON output has a stable top-level protocol for automation:
+
+- `schemaVersion` — currently `1`
+- `tool` — always `vault-inspector`
+- `toolVersion` — package version
+- `summary` — stable counts and scanner metadata
+- `issues` / `ignoredIssues` — issue records with stable `scannerId`, `severity`, `primaryPath`, `relatedPaths`, `evidence`, `fingerprint`, and `fixAction` fields
+- `generatedAt`, `durationMs`, titles, and messages are informational and should not be used as stable identifiers
+
+Baseline comparison uses issue `fingerprint` values from a previous JSON report.
+When `--baseline` is provided, each issue includes `isNew`, and `summary.newIssues`
+counts issues not found in the baseline.
+
 Exit codes:
 
-- `0` — scan completed with no active issues.
-- `1` — scan completed and found one or more active issues.
+- `0` — scan completed and did not match the configured `--fail-on` threshold.
+- `1` — scan completed and matched the configured `--fail-on` threshold.
 - `2` — invalid CLI usage or scan setup failure.
+
+`--fail-on` accepts `any` (default), `warning`, `error`, `new`, and `none`.
 
 CLI scan mode is read-only. `--fix` is reserved for a future explicit opt-in fix
 command and currently exits with an error instead of modifying files. This keeps
