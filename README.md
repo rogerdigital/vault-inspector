@@ -219,6 +219,10 @@ Flags files exceeding configurable size thresholds.
 
 Vault Inspector does not make network requests (except the External Links scanner, which checks URLs you explicitly have in your notes). All processing happens locally using Obsidian APIs. No data leaves your device beyond those HTTP HEAD requests.
 
+Vault Inspector enumerates vault files and Markdown metadata so scanners can detect
+broken links, orphan attachments, duplicate files, large files, tag usage, and
+frontmatter type drift. This access is local and read-only during scans.
+
 ## Limitations
 
 - Read-only — does not modify, move, or delete vault files (except exported reports and optional batch-delete via trash).

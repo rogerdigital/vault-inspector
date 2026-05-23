@@ -8,7 +8,6 @@ export type IssueListConfig = {
 	selectionMode: boolean;
 	selectedFingerprints: Set<string>;
 	onOpenFile: (path: string) => void;
-	onCopyPath: (path: string) => void;
 	onToggleSelect: (issue: Issue) => void;
 };
 
@@ -55,9 +54,8 @@ export function renderIssueList(container: HTMLElement, config: IssueListConfig)
 					cls: "vi-issue-path",
 					text: issue.primaryPath,
 				});
-				setTooltip(pathEl, "Click to open, right-click to copy");
+				setTooltip(pathEl, "Click to open");
 				pathEl.addEventListener("click", (e) => { e.stopPropagation(); config.onOpenFile(issue.primaryPath!); });
-				pathEl.addEventListener("contextmenu", (e) => { e.preventDefault(); config.onCopyPath(issue.primaryPath!); });
 			}
 
 			li.createEl("div", { cls: "vi-issue-message", text: issue.message });
