@@ -144,7 +144,6 @@ export class InspectorView extends ItemView {
 			selectionMode: this.model.selectionMode,
 			selectedFingerprints: this.model.selectedFingerprints,
 			onOpenFile: (path) => { void this.handleOpenFile(path); },
-			onCopyPath: (path) => this.handleCopyPath(path),
 			onToggleSelect: (issue) => this.handleToggleSelect(issue),
 		});
 
@@ -318,7 +317,6 @@ export class InspectorView extends ItemView {
 			selectionMode: this.model.ignoredSelectionMode,
 			selectedFingerprints: this.model.ignoredSelectedFingerprints,
 			onOpenFile: (path) => { void this.handleOpenFile(path); },
-			onCopyPath: (path) => this.handleCopyPath(path),
 			onToggleSelect: (issue) => this.handleIgnoredToggleSelect(issue),
 		});
 	}
@@ -393,11 +391,6 @@ export class InspectorView extends ItemView {
 		if (this.onRevealFile) { void this.onRevealFile(path); return; }
 		const file = this.app.vault.getAbstractFileByPath(path);
 		if (file instanceof TFile) await this.app.workspace.getLeaf(false).openFile(file);
-	}
-
-	private handleCopyPath(path: string) {
-		void navigator.clipboard.writeText(path);
-		new Notice(`Copied: ${path}`);
 	}
 
 	private handleToggleSelect(issue: Issue) {
