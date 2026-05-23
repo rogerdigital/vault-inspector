@@ -32,9 +32,11 @@ Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](
 Install the npm package for terminal, CI, or agent workflows:
 
 ```bash
-npx vault-inspector@0.4.1 /path/to/vault
+npx vault-inspector .
+npx vault-inspector /path/to/vault
+npx vault-inspector@0.4.1 .
 npm install -g vault-inspector
-vault-inspector /path/to/vault
+vault-inspector .
 ```
 
 The CLI package is separate from Obsidian's Community Plugins install path. Updating
@@ -54,12 +56,31 @@ the Obsidian plugin affects the in-app plugin; installing from npm provides the
 
 Vault Inspector also exposes a read-only CLI for generated or agent-managed vaults.
 
+Short forms:
+
+```bash
+npx vault-inspector .              # scan the current vault with the latest version
+npx vault-inspector /path/to/vault # scan another vault with the latest version
+npx vault-inspector@0.4.1 .        # scan with a pinned version
+```
+
+After a global install:
+
+```bash
+npm install -g vault-inspector
+vault-inspector .
+vault-inspector /path/to/vault
+```
+
+Local command forms:
+
 ```bash
 vault-inspector /path/to/vault
+vault-inspector scan /path/to/vault
+vault-inspector . --format json
 vault-inspector . --format markdown --output report.md
 vault-inspector /path/to/vault --scanner broken-links,empty-notes
 vault-inspector /path/to/vault --config vault-inspector.config.json
-vault-inspector scan /path/to/vault
 ```
 
 The default output format is JSON. It includes summary counts, scanners run, issues,
