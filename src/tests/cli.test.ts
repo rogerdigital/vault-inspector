@@ -25,6 +25,14 @@ describe("runCli", () => {
 		vi.restoreAllMocks();
 	});
 
+	it("shows the short command alias in usage output", async () => {
+		const result = await runCli([]);
+
+		expect(result.exitCode).toBe(2);
+		expect(result.stderr).toContain("vinspect <vault-path>");
+		expect(result.stderr).toContain("vault-inspector <vault-path>");
+	});
+
 	it("prints machine-readable JSON scan results", async () => {
 		await withVault({ "empty.md": "# Empty\n" }, async (vaultPath) => {
 			const result = await runCli(["scan", vaultPath, "--format", "json"]);

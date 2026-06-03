@@ -4,7 +4,8 @@
 	"description": "Scan an Obsidian vault for long-term maintenance problems.",
 	"main": "main.js",
 	"bin": {
-		"vault-inspector": "cli.js"
+		"vault-inspector": "cli.js",
+		"vinspect": "cli.js"
 	},
 	"files": [
 		"main.js",

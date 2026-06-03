@@ -394,6 +394,7 @@ function usage(message: string): string {
 	return `${message}
 
 Usage:
+  vinspect <vault-path> [--format json|markdown] [--output <path>]
   vault-inspector <vault-path> [--format json|markdown] [--output <path>]
   vault-inspector scan <vault-path> [--format json|markdown] [--output <path>]
 
