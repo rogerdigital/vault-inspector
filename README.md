@@ -31,17 +31,22 @@ Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](
 
 Install the npm package for terminal, CI, or agent workflows:
 
+Run without installing:
+
 ```bash
-npx vault-inspector .
-npx vault-inspector /path/to/vault
-npx vault-inspector@0.4.2 .
+npx vault-inspector /path/to/your/vault
+```
+
+Or install globally and use the short command:
+
+```bash
 npm install -g vault-inspector
-vault-inspector .
+vinspect /path/to/your/vault
 ```
 
 The CLI package is separate from Obsidian's Community Plugins install path. Updating
 the Obsidian plugin affects the in-app plugin; installing from npm provides the
-`vault-inspector` terminal command.
+`vault-inspector` terminal command and its short alias, `vinspect`.
 
 ## Usage
 
@@ -56,50 +61,56 @@ the Obsidian plugin affects the in-app plugin; installing from npm provides the
 
 Vault Inspector also exposes a read-only CLI for generated or agent-managed vaults.
 
-Short forms:
+Scan a vault:
 
 ```bash
-npx vault-inspector .              # scan the current vault with the latest version
-npx vault-inspector /path/to/vault # scan another vault with the latest version
-npx vault-inspector@0.4.2 .        # scan with a pinned version
+vinspect /path/to/your/vault
 ```
 
-After a global install:
+From inside a vault, `.` means the current directory:
 
 ```bash
-npm install -g vault-inspector
-vault-inspector .
-vault-inspector /path/to/vault
+cd /path/to/your/vault
+vinspect .
 ```
 
-Local command forms:
+Use `npx` without installing globally:
 
 ```bash
-vault-inspector /path/to/vault
-vault-inspector scan /path/to/vault
-vault-inspector . --format json
-vault-inspector . --format markdown --output report.md
-vault-inspector /path/to/vault --scanner broken-links,empty-notes
-vault-inspector /path/to/vault --config vault-inspector.config.json
+npx vault-inspector /path/to/your/vault
 ```
+
+The full command also remains available:
+
+```bash
+vault-inspector /path/to/your/vault
+```
+
+Pin a specific npm version when repeatability matters:
+
+```bash
+npx vault-inspector@0.4.2 /path/to/your/vault
+```
+
+`vault-inspector scan /path/to/vault` is also supported for scripts that prefer
+an explicit subcommand.
 
 The default output format is JSON. It includes summary counts, scanners run, issues,
 ignored issues, fingerprints, evidence, and available fix-action metadata so other
 tools can decide what to do next.
 
-Useful automation options:
+Common options:
 
 ```bash
-vault-inspector /path/to/vault \
-  --scanner broken-links,empty-notes \
-  --severity error,warning \
-  --include "notes/**" \
-  --exclude "templates/**" \
-  --fail-on warning
+vinspect . --format markdown --output report.md
+vinspect . --scanner broken-links,empty-notes
+vinspect . --config vault-inspector.config.json
+```
 
-vault-inspector /path/to/vault \
-  --baseline .vault-inspector-baseline.json \
-  --fail-on new
+For CI baseline checks:
+
+```bash
+vinspect . --baseline .vault-inspector-baseline.json --fail-on new
 ```
 
 Config files are JSON and use the same option names:
