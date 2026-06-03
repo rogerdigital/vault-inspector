@@ -2,6 +2,7 @@ import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { generateFingerprint } from "../issue-fingerprint";
 import { isIgnoredPath } from "../../utils/paths";
+import { getLinkTarget, resolveVaultLinkTargets } from "../../utils/vault-links";
 
 export const brokenLinksScanner = {
 	id: "broken-links" as const,
@@ -38,14 +39,13 @@ function resolveLinkIssues(
 ): Issue[] {
 	const issues: Issue[] = [];
 
-	// Handle aliased links: [[target|alias]] -> extract "target"
-	const rawTarget = linkText.split("|")[0].split("#")[0];
+	const rawTarget = getLinkTarget(linkText);
 
 	if (!rawTarget) return issues;
 
 	// Attachment link (has a known non-md extension)
 	if (isAttachmentLink(rawTarget)) {
-		if (!ctx.filePathIndex.has(rawTarget)) {
+		if (resolveVaultLinkTargets(ctx, linkText).length === 0) {
 			issues.push(
 				makeIssue(ctx, sourcePath, linkText, rawTarget, "error", `Attachment not found: ${rawTarget}`),
 			);
@@ -56,7 +56,7 @@ function resolveLinkIssues(
 	// Markdown or heading link
 	const headingPart = linkText.includes("#") ? linkText.split("#").slice(1).join("#") : null;
 
-	const resolvedPath = findMarkdownPath(ctx, rawTarget);
+	const resolvedPath = findMarkdownPath(ctx, linkText);
 
 	if (!resolvedPath) {
 		issues.push(
@@ -100,12 +100,10 @@ function isAttachmentLink(target: string): boolean {
 	return ext !== "md";
 }
 
-function findMarkdownPath(ctx: ScanContext, target: string): string | null {
-	const candidates = [target, target + ".md"];
-	for (const candidate of candidates) {
-		if (ctx.filePathIndex.has(candidate)) return candidate;
-	}
-	return null;
+function findMarkdownPath(ctx: ScanContext, linkText: string): string | null {
+	const resolvedTargets = resolveVaultLinkTargets(ctx, linkText)
+		.filter((path) => path.endsWith(".md"));
+	return resolvedTargets[0] ?? null;
 }
 
 function slugifyHeading(heading: string): string {

@@ -171,6 +171,28 @@ describe("runCli", () => {
 		});
 	});
 
+	it("resolves short wiki embeds to attachment files in subfolders", async () => {
+		await withVault(
+			{
+				"note.md": "![[image.png]]\n\nEnough content to avoid empty note warnings.\n",
+				"attachments/image.png": "fake image bytes",
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"broken-links,orphan-attachments",
+				]);
+
+				expect(result.exitCode).toBe(0);
+				const payload = JSON.parse(result.stdout);
+				expect(payload.summary.issues).toBe(0);
+				expect(payload.issues).toEqual([]);
+			},
+		);
+	});
+
 	it("marks baseline issues and fails only on new issues", async () => {
 		await withVault({ "empty.md": "" }, async (vaultPath) => {
 			const first = await runCli([

@@ -144,6 +144,42 @@ describe("brokenLinksScanner", () => {
 		expect(issues[0].message).toContain("Attachment");
 	});
 
+	it("does not report short wiki attachment links that match files in attachment folders", async () => {
+		const file = { path: "notes/a.md" } as any;
+		const image = { path: "attachments/image.png" } as any;
+		const ctx = makeCtx({
+			markdownFiles: [file],
+			allFiles: [file, image],
+			filePathIndex: new Set(["notes/a.md", "attachments/image.png"]),
+			metadataCache: {
+				getFileCache: () => ({}),
+				unresolvedLinks: {
+					"notes/a.md": { "image.png": 1 },
+				},
+			} as any,
+		});
+		const issues = await brokenLinksScanner.scan(ctx);
+		expect(issues).toHaveLength(0);
+	});
+
+	it("does not report short wiki note links that match files outside the current folder", async () => {
+		const file = { path: "notes/a.md" } as any;
+		const targetFile = { path: "articles/Linked Note.md" } as any;
+		const ctx = makeCtx({
+			markdownFiles: [file, targetFile],
+			allFiles: [file, targetFile],
+			filePathIndex: new Set(["notes/a.md", "articles/Linked Note.md"]),
+			metadataCache: {
+				getFileCache: () => ({}),
+				unresolvedLinks: {
+					"notes/a.md": { "Linked Note": 1 },
+				},
+			} as any,
+		});
+		const issues = await brokenLinksScanner.scan(ctx);
+		expect(issues).toHaveLength(0);
+	});
+
 	it("skips files in ignored folders", async () => {
 		const file = { path: "templates/a.md" } as any;
 		const ctx = makeCtx({
