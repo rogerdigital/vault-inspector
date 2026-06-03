@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCli } from "../cli/cli";
 
 async function withVault(
@@ -21,6 +21,10 @@ async function withVault(
 }
 
 describe("runCli", () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
 	it("prints machine-readable JSON scan results", async () => {
 		await withVault({ "empty.md": "# Empty\n" }, async (vaultPath) => {
 			const result = await runCli(["scan", vaultPath, "--format", "json"]);
@@ -189,6 +193,43 @@ describe("runCli", () => {
 				const payload = JSON.parse(result.stdout);
 				expect(payload.summary.issues).toBe(0);
 				expect(payload.issues).toEqual([]);
+			},
+		);
+	});
+
+	it("checks external links in CLI scans with fetch HEAD requests", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+			status: 404,
+		} as Response);
+
+		await withVault(
+			{
+				"note.md": "[Dead link](https://example.com/dead)\n\nEnough content to avoid empty note warnings.\n",
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"external-links",
+				]);
+
+				expect(fetchMock).toHaveBeenCalledWith("https://example.com/dead", {
+					method: "HEAD",
+				});
+				expect(result.exitCode).toBe(1);
+				const payload = JSON.parse(result.stdout);
+				expect(payload.issues).toEqual([
+					expect.objectContaining({
+						scannerId: "external-links",
+						severity: "warning",
+						primaryPath: "note.md",
+						evidence: expect.objectContaining({
+							url: "https://example.com/dead",
+							status: 404,
+						}),
+					}),
+				]);
 			},
 		);
 	});

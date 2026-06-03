@@ -34,7 +34,7 @@ Install the npm package for terminal, CI, or agent workflows:
 ```bash
 npx vault-inspector .
 npx vault-inspector /path/to/vault
-npx vault-inspector@0.4.1 .
+npx vault-inspector@0.4.2 .
 npm install -g vault-inspector
 vault-inspector .
 ```
@@ -61,7 +61,7 @@ Short forms:
 ```bash
 npx vault-inspector .              # scan the current vault with the latest version
 npx vault-inspector /path/to/vault # scan another vault with the latest version
-npx vault-inspector@0.4.1 .        # scan with a pinned version
+npx vault-inspector@0.4.2 .        # scan with a pinned version
 ```
 
 After a global install:
@@ -217,7 +217,7 @@ Flags files exceeding configurable size thresholds.
 
 ## Privacy
 
-Vault Inspector does not make network requests (except the External Links scanner, which checks URLs you explicitly have in your notes). All processing happens locally using Obsidian APIs. No data leaves your device beyond those HTTP HEAD requests.
+Vault Inspector does not make network requests except the External Links scanner, which checks URLs you explicitly have in your notes. In Obsidian this uses Obsidian's `requestUrl`; in the CLI it uses HTTP HEAD requests through the runtime `fetch` API. No vault content leaves your device beyond those link-check requests.
 
 Vault Inspector enumerates vault files and Markdown metadata so scanners can detect
 broken links, orphan attachments, duplicate files, large files, tag usage, and
