@@ -3,6 +3,7 @@ import type { ScanContext } from "../ScanContext";
 import { generateFingerprint } from "../issue-fingerprint";
 import { isAttachment } from "../../utils/file-types";
 import { isIgnoredPath } from "../../utils/paths";
+import { resolveVaultLinkTargets } from "../../utils/vault-links";
 
 export const orphanAttachmentsScanner = {
 	id: "orphan-attachments" as const,
@@ -62,11 +63,8 @@ function collectReferencedPaths(ctx: ScanContext): Set<string> {
 			if (typeof resolved === "string") {
 				paths.add(resolved);
 			} else {
-				// Try direct path match
-				const linkPath = link.link.split("#")[0].split("|")[0];
-				if (ctx.filePathIndex.has(linkPath)) {
-					paths.add(linkPath);
-				}
+				const resolvedTargets = resolveVaultLinkTargets(ctx, link.link);
+				for (const resolvedTarget of resolvedTargets) paths.add(resolvedTarget);
 			}
 		}
 	}

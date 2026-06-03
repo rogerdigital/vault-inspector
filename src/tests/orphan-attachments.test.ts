@@ -64,6 +64,47 @@ describe("orphanAttachmentsScanner", () => {
 		expect(issues).toHaveLength(0);
 	});
 
+	it("does not report attachments referenced by short wiki embed names", async () => {
+		const md = { path: "notes/a.md" } as any;
+		const img = makeFile("attachments/image.png", 1000);
+		const ctx = makeCtx({
+			markdownFiles: [md],
+			allFiles: [md, img],
+			filePathIndex: new Set(["notes/a.md", "attachments/image.png"]),
+			metadataCache: {
+				getFileCache: () => ({
+					links: [],
+					embeds: [{ link: "image.png" }],
+				}),
+			} as any,
+		});
+		const issues = await orphanAttachmentsScanner.scan(ctx);
+		expect(issues).toHaveLength(0);
+	});
+
+	it("does not report ambiguous same-name attachments as orphan when short wiki embeds reference them", async () => {
+		const md = { path: "notes/a.md" } as any;
+		const first = makeFile("attachments/image.png", 1000);
+		const second = makeFile("archive/image.png", 1000);
+		const ctx = makeCtx({
+			markdownFiles: [md],
+			allFiles: [md, first, second],
+			filePathIndex: new Set([
+				"notes/a.md",
+				"attachments/image.png",
+				"archive/image.png",
+			]),
+			metadataCache: {
+				getFileCache: () => ({
+					links: [],
+					embeds: [{ link: "image.png" }],
+				}),
+			} as any,
+		});
+		const issues = await orphanAttachmentsScanner.scan(ctx);
+		expect(issues).toHaveLength(0);
+	});
+
 	it("downgrades recently modified orphans to info", async () => {
 		const img = makeFile("assets/recent.png", Date.now() - 1000);
 		const ctx = makeCtx({
