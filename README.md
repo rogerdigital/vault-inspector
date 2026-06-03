@@ -89,7 +89,7 @@ vault-inspector /path/to/your/vault
 Pin a specific npm version when repeatability matters:
 
 ```bash
-npx vault-inspector@0.4.2 /path/to/your/vault
+npx vault-inspector@0.4.3 /path/to/your/vault
 ```
 
 `vault-inspector scan /path/to/vault` is also supported for scripts that prefer
