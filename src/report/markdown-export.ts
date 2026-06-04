@@ -40,19 +40,160 @@ export function generateMarkdownReport(result: ScanResult): string {
 			continue;
 		}
 
-		lines.push(`| Severity | Title | File | Message |`);
-		lines.push(`|---|---|---|---|`);
-
 		for (const issue of issues) {
-			const title = escapeMd(issue.title);
-			const path = issue.primaryPath ? escapeMd(issue.primaryPath) : "-";
-			const message = escapeMd(issue.message);
-			lines.push(`| ${issue.severity} | ${title} | \`${path}\` | ${message} |`);
+			lines.push(`### ${escapeMd(issue.title)}`);
+			lines.push(``);
+			lines.push(`- **Severity:** ${issue.severity}`);
+			const location = issue.primaryPath ?? issue.relatedPaths[0];
+			if (location) lines.push(`- **Location:** \`${escapeInlineCode(location)}\``);
+			lines.push(`- **Message:** ${escapeMd(issue.message)}`);
+			for (const detail of getMarkdownDetails(issue)) {
+				if ("value" in detail) {
+					lines.push(`- **${detail.label}:** ${detail.value}`);
+				} else {
+					lines.push(`- **${detail.label}:**`);
+					for (const item of detail.items) {
+						lines.push(`  - ${item}`);
+					}
+				}
+			}
+			lines.push(``);
 		}
-		lines.push(``);
 	}
 
 	return lines.join("\n");
+}
+
+type MarkdownDetail =
+	| { label: string; value: string }
+	| { label: string; items: string[] };
+
+function getMarkdownDetails(issue: Issue): MarkdownDetail[] {
+	const details: MarkdownDetail[] = [];
+	const target = getIssueTarget(issue);
+	if (target) details.push({ label: getTargetLabel(issue), value: formatCode(target) });
+
+	if (issue.scannerId === "external-links") {
+		const status = getNumber(issue.evidence.status);
+		const timeoutMs = getNumber(issue.evidence.timeoutMs);
+		const error = issue.evidence.error;
+		if (status !== null) details.push({ label: "Status", value: String(status) });
+		if (timeoutMs !== null) details.push({ label: "Timeout", value: `${timeoutMs}ms` });
+		if (typeof error === "string") details.push({ label: "Error", value: escapeMd(error) });
+	}
+
+	if (issue.scannerId === "broken-links") {
+		const link = issue.evidence.link;
+		if (typeof link === "string") details.push({ label: "Link text", value: formatCode(link) });
+	}
+
+	if (issue.scannerId === "duplicate-files") {
+		const count = getNumber(issue.evidence.count);
+		if (count !== null) details.push({ label: "Count", value: String(count) });
+		const size = getNumber(issue.evidence.size);
+		if (size !== null) details.push({ label: "Size", value: formatBytes(size) });
+		const paths = getEvidencePaths(issue);
+		if (paths.length > 0) {
+			details.push({
+				label: "Files",
+				items: paths.map((path) => formatCode(path)),
+			});
+		}
+	}
+
+	if (issue.scannerId === "frontmatter-types") {
+		const property = issue.evidence.property;
+		const types = issue.evidence.types;
+		const fileCount = getNumber(issue.evidence.fileCount);
+		if (typeof property === "string") details.push({ label: "Property", value: formatCode(property) });
+		if (typeof types === "string") details.push({ label: "Types", value: escapeMd(types) });
+		if (fileCount !== null) details.push({ label: "Files", value: String(fileCount) });
+		if (issue.relatedPaths.length > 0) {
+			details.push({
+				label: "Samples",
+				items: issue.relatedPaths.map((path) => formatCode(path)),
+			});
+		}
+	}
+
+	if (issue.scannerId === "tag-usage") {
+		const tag = issue.evidence.tag;
+		const count = getNumber(issue.evidence.count);
+		const threshold = getNumber(issue.evidence.threshold);
+		if (typeof tag === "string") details.push({ label: "Tag", value: formatTag(tag) });
+		if (count !== null) details.push({ label: "Count", value: String(count) });
+		if (threshold !== null) details.push({ label: "Threshold", value: String(threshold) });
+		const paths = [issue.primaryPath, ...issue.relatedPaths].filter((path): path is string => Boolean(path));
+		if (paths.length > 0) {
+			details.push({
+				label: "Files",
+				items: paths.map((path) => formatCode(path)),
+			});
+		}
+	}
+
+	if (issue.scannerId === "large-files") {
+		const size = getNumber(issue.evidence.size);
+		const threshold = getNumber(issue.evidence.threshold);
+		const type = issue.evidence.type;
+		if (size !== null) details.push({ label: "Size", value: formatBytes(size) });
+		if (threshold !== null) details.push({ label: "Threshold", value: formatBytes(threshold) });
+		if (typeof type === "string") details.push({ label: "Type", value: escapeMd(type) });
+	}
+
+	if (issue.scannerId === "orphan-attachments") {
+		const lastModified = getNumber(issue.evidence.lastModified);
+		if (lastModified !== null) {
+			details.push({ label: "Modified", value: new Date(lastModified).toLocaleString() });
+		}
+	}
+
+	if (issue.scannerId === "empty-notes") {
+		const size = getNumber(issue.evidence.size);
+		if (size !== null) details.push({ label: "Size", value: formatBytes(size) });
+	}
+
+	return details;
+}
+
+function getIssueTarget(issue: Issue): string | null {
+	const url = issue.evidence.url;
+	if (typeof url === "string") return url;
+	const target = issue.evidence.target;
+	if (typeof target === "string") return target;
+	return null;
+}
+
+function getTargetLabel(issue: Issue): string {
+	if (issue.scannerId === "external-links") return "URL";
+	if (issue.scannerId === "broken-links") return "Target";
+	return "Target";
+}
+
+function getEvidencePaths(issue: Issue): string[] {
+	const paths = issue.evidence.paths;
+	if (typeof paths !== "string") return issue.relatedPaths;
+	return paths.split(",").map((path) => path.trim()).filter(Boolean);
+}
+
+function getNumber(value: unknown): number | null {
+	return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatBytes(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	const kib = bytes / 1024;
+	if (kib < 1024) return `${kib.toFixed(kib < 10 ? 1 : 0)} KB`;
+	const mib = kib / 1024;
+	return `${mib.toFixed(mib < 10 ? 1 : 0)} MB`;
+}
+
+function formatTag(tag: string): string {
+	return tag.startsWith("#") ? tag : `#${tag}`;
+}
+
+function formatCode(text: string): string {
+	return `\`${escapeInlineCode(text)}\``;
 }
 
 function groupByScanner(issues: Issue[]): Record<string, Issue[]> {
@@ -66,4 +207,8 @@ function groupByScanner(issues: Issue[]): Record<string, Issue[]> {
 
 function escapeMd(text: string): string {
 	return text.replace(/\|/g, "\\|").replace(/\n/g, " ");
+}
+
+function escapeInlineCode(text: string): string {
+	return text.replace(/`/g, "\\`");
 }
