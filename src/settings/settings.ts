@@ -18,7 +18,7 @@ export type InspectorSettings = {
 
 export const DEFAULT_SETTINGS: InspectorSettings = {
 	enabledScanners: Object.fromEntries(
-		SCANNER_IDS.map((id) => [id, true]),
+		SCANNER_IDS.map((id) => [id, id !== "external-links"]),
 	) as Record<ScannerId, boolean>,
 	enableFixActions: true,
 	largeMarkdownBytes: 100 * 1024,

@@ -26,9 +26,12 @@ export class InspectorSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		new Setting(containerEl).setName("Enabled scanners").setHeading();
 		for (const id of SCANNER_IDS) {
-			new Setting(containerEl)
-				.setName(SCANNER_LABELS[id])
-				.addToggle((toggle) =>
+			const setting = new Setting(containerEl)
+				.setName(SCANNER_LABELS[id]);
+			if (id === "external-links") {
+				setting.setDesc("Opt-in network check for HTTP/HTTPS URLs. Can be slower and depends on external sites.");
+			}
+			setting.addToggle((toggle) =>
 					toggle.setValue(this.plugin.settings.enabledScanners[id])
 						.onChange(async (value) => {
 							this.plugin.settings.enabledScanners[id] = value;

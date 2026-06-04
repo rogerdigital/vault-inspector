@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { performance } from "node:perf_hooks";
 import { orphanAttachmentsScanner } from "../scanner/scanners/orphan-attachments";
 import type { ScanContext } from "../scanner/ScanContext";
 
@@ -163,5 +164,34 @@ describe("orphanAttachmentsScanner", () => {
 		});
 		const issues = await orphanAttachmentsScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
+	});
+
+	it("resolves many short attachment embeds without scanning all files per link", async () => {
+		const md = { path: "notes/a.md" } as any;
+		const attachments = Array.from({ length: 2000 }, (_, index) =>
+			makeFile(`attachments/image-${index}.png`, 1000),
+		);
+		const embeds = attachments.map((file) => ({
+			link: file.path.split("/").pop()!,
+		}));
+		const allFiles = [md, ...attachments];
+		const ctx = makeCtx({
+			markdownFiles: [md],
+			allFiles,
+			filePathIndex: new Set(allFiles.map((file) => file.path)),
+			metadataCache: {
+				getFileCache: () => ({
+					links: [],
+					embeds,
+				}),
+			} as any,
+		});
+
+		const startedAt = performance.now();
+		const issues = await orphanAttachmentsScanner.scan(ctx);
+		const durationMs = performance.now() - startedAt;
+
+		expect(issues).toHaveLength(0);
+		expect(durationMs).toBeLessThan(500);
 	});
 });
