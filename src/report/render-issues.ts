@@ -35,14 +35,6 @@ export function renderIssueList(container: HTMLElement, config: IssueListConfig)
 			].filter(Boolean).join(" ");
 
 			const li = list.createEl("li", { cls });
-			if (!config.selectionMode && getIssuePath(issue)) {
-				li.addClass("vi-issue-clickable");
-				setTooltip(li, "Click to open issue location");
-				li.addEventListener("click", (event) => {
-					if (shouldKeepTextSelection(event)) return;
-					config.onOpenIssue(issue);
-				});
-			}
 
 			if (config.selectionMode) {
 				const checkbox = li.createEl("input", { cls: "vi-issue-checkbox", type: "checkbox" });
@@ -67,26 +59,20 @@ export function renderIssueList(container: HTMLElement, config: IssueListConfig)
 				pathEl.addEventListener("click", (e) => {
 					e.stopPropagation();
 					if (hasActiveTextSelection()) return;
-					config.onOpenIssue(issue);
+					config.onOpenIssue(makePathIssue(issue, issuePath));
 				});
 			}
 
-			renderIssueDetails(li, issue);
+			renderIssueDetails(li, issue, config);
 		}
 	}
-}
-
-function shouldKeepTextSelection(event: MouseEvent): boolean {
-	const target = event.target instanceof HTMLElement ? event.target : null;
-	if (target?.closest(".vi-issue-details")) return true;
-	return hasActiveTextSelection();
 }
 
 function hasActiveTextSelection(): boolean {
 	return window.getSelection()?.toString().trim().length ? true : false;
 }
 
-function renderIssueDetails(container: HTMLElement, issue: Issue) {
+function renderIssueDetails(container: HTMLElement, issue: Issue, config: IssueListConfig) {
 	const details = container.createDiv({ cls: "vi-issue-details" });
 	const summary = getIssueSummary(issue);
 	if (summary) details.createEl("div", { cls: "vi-issue-message", text: summary });
@@ -94,7 +80,25 @@ function renderIssueDetails(container: HTMLElement, issue: Issue) {
 	for (const row of getIssueDetailRows(issue)) {
 		const rowEl = details.createDiv({ cls: "vi-issue-target" });
 		rowEl.createEl("span", { cls: "vi-issue-target-label", text: row.label });
-		rowEl.createEl("span", { cls: "vi-issue-target-value", text: row.value });
+		const valueEl = rowEl.createEl("span", { cls: "vi-issue-target-value" });
+		if ("value" in row) {
+			valueEl.setText(row.value);
+		} else {
+			for (const item of row.items) {
+				const itemEl = valueEl.createEl("span", {
+					cls: `vi-issue-value-token ${item.className ?? ""}`.trim(),
+					text: item.text,
+				});
+				if (!item.issue) continue;
+				itemEl.addClass("vi-issue-value-clickable");
+				setTooltip(itemEl, "Click to open issue location");
+				itemEl.addEventListener("click", (event) => {
+					event.stopPropagation();
+					if (hasActiveTextSelection()) return;
+					config.onOpenIssue(item.issue!);
+				});
+			}
+		}
 	}
 }
 
@@ -143,32 +147,82 @@ function getExternalLinkSummary(issue: Issue): string {
 	return issue.message;
 }
 
-function getIssueDetailRows(issue: Issue): Array<{ label: string; value: string }> {
-	const rows: Array<{ label: string; value: string }> = [];
+type IssueDetailRow =
+	| { label: string; value: string }
+	| { label: string; items: Array<{ text: string; issue?: Issue; className?: string }> };
+
+function getIssueDetailRows(issue: Issue): IssueDetailRow[] {
+	const rows: IssueDetailRow[] = [];
 	const target = getIssueTarget(issue);
-	if (target) rows.push({ label: getTargetLabel(issue), value: target });
+	if (target) {
+		rows.push({
+			label: getTargetLabel(issue),
+			items: [{
+				text: target,
+				issue: makeTargetIssue(issue, target),
+				className: "vi-issue-token-monospace",
+			}],
+		});
+	}
 
 	if (issue.scannerId === "duplicate-files") {
 		const count = getNumber(issue.evidence.count);
 		if (count !== null) rows.push({ label: "Count", value: String(count) });
 		const paths = getEvidencePaths(issue);
-		if (paths.length > 0) rows.push({ label: "Files", value: summarizePaths(paths) });
+		if (paths.length > 0) {
+			rows.push({
+				label: "Files",
+				items: paths.map((path) => ({
+					text: path,
+					issue: makePathIssue(issue, path),
+					className: "vi-issue-path-token",
+				})),
+			});
+		}
 	}
 
 	if (issue.scannerId === "frontmatter-types") {
 		const property = issue.evidence.property;
 		const types = issue.evidence.types;
 		const fileCount = getNumber(issue.evidence.fileCount);
-		if (typeof property === "string") rows.push({ label: "Property", value: property });
+		if (typeof property === "string") {
+			rows.push({
+				label: "Property",
+				items: [{
+					text: property,
+					issue: issue.relatedPaths.length > 0 ? makePropertyIssue(issue, property) : undefined,
+					className: "vi-issue-token-monospace",
+				}],
+			});
+		}
 		if (typeof types === "string") rows.push({ label: "Types", value: types });
 		if (fileCount !== null) rows.push({ label: "Files", value: String(fileCount) });
+		if (issue.relatedPaths.length > 0) {
+			rows.push({
+				label: "Sample",
+				items: issue.relatedPaths.map((path) => ({
+					text: path,
+					issue: makePathIssue(issue, path),
+					className: "vi-issue-path-token",
+				})),
+			});
+		}
 	}
 
 	if (issue.scannerId === "tag-usage") {
 		const tag = issue.evidence.tag;
 		const count = getNumber(issue.evidence.count);
 		const threshold = getNumber(issue.evidence.threshold);
-		if (typeof tag === "string") rows.push({ label: "Tag", value: tag });
+		if (typeof tag === "string") {
+			rows.push({
+				label: "Tag",
+				items: [{
+					text: formatTag(tag),
+					issue: issue.primaryPath ? makeTagIssue(issue, tag) : undefined,
+					className: "vi-issue-tag-token",
+				}],
+			});
+		}
 		if (count !== null) rows.push({ label: "Count", value: String(count) });
 		if (threshold !== null) rows.push({ label: "Threshold", value: String(threshold) });
 	}
@@ -179,6 +233,51 @@ function getIssueDetailRows(issue: Issue): Array<{ label: string; value: string 
 	}
 
 	return rows;
+}
+
+function makePathIssue(issue: Issue, path: string): Issue {
+	return {
+		...issue,
+		primaryPath: path,
+		relatedPaths: issue.relatedPaths.filter((relatedPath) => relatedPath !== path),
+	};
+}
+
+function makeTargetIssue(issue: Issue, target: string): Issue {
+	const evidence = { ...issue.evidence };
+	if (issue.scannerId === "external-links") {
+		evidence.url = target;
+	} else if (issue.scannerId === "broken-links") {
+		evidence.target = target;
+	} else {
+		evidence.link = target;
+	}
+
+	return {
+		...issue,
+		evidence,
+	};
+}
+
+function makeTagIssue(issue: Issue, tag: string): Issue {
+	return {
+		...issue,
+		evidence: {
+			...issue.evidence,
+			tag,
+		},
+	};
+}
+
+function makePropertyIssue(issue: Issue, property: string): Issue {
+	return {
+		...issue,
+		primaryPath: issue.primaryPath ?? issue.relatedPaths[0],
+		evidence: {
+			...issue.evidence,
+			property,
+		},
+	};
 }
 
 export function getIssueTarget(issue: Issue): string | null {
@@ -203,12 +302,6 @@ function getEvidencePaths(issue: Issue): string[] {
 	return paths.split(",").map((path) => path.trim()).filter(Boolean);
 }
 
-function summarizePaths(paths: string[]): string {
-	const visible = paths.slice(0, 4);
-	const suffix = paths.length > visible.length ? `, +${paths.length - visible.length} more` : "";
-	return `${visible.join(", ")}${suffix}`;
-}
-
 function getNumber(value: unknown): number | null {
 	return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -227,6 +320,10 @@ function formatDate(timestamp: number): string {
 
 function getIssuePath(issue: Issue): string | null {
 	return issue.primaryPath ?? issue.relatedPaths[0] ?? null;
+}
+
+function formatTag(tag: string): string {
+	return tag.startsWith("#") ? tag : `#${tag}`;
 }
 
 function groupByScanner(issues: Issue[]): Record<string, Issue[]> {
