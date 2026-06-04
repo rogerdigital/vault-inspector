@@ -10,6 +10,7 @@ export const tagUsageScanner = {
 	scan(ctx: ScanContext): Issue[] {
 		const issues: Issue[] = [];
 		const tagCounts = new Map<string, number>();
+		const tagPaths = new Map<string, Set<string>>();
 		const watchedSet = new Set(ctx.watchedTags);
 
 		// Collect tags from metadata (tags frontmatter field and inline tags)
@@ -22,6 +23,9 @@ export const tagUsageScanner = {
 			const tags = collectTags(cache);
 			for (const tag of tags) {
 				tagCounts.set(tag, (tagCounts.get(tag) ?? 0) + 1);
+				const paths = tagPaths.get(tag) ?? new Set<string>();
+				paths.add(file.path);
+				tagPaths.set(tag, paths);
 			}
 		}
 
@@ -29,13 +33,15 @@ export const tagUsageScanner = {
 		for (const [tag, count] of tagCounts) {
 			if (count >= ctx.lowUsageTagThreshold) continue;
 			if (watchedSet.has(tag)) continue; // watched tags reported separately
+			const paths = Array.from(tagPaths.get(tag) ?? []).sort();
 
 			issues.push({
 				scannerId: "tag-usage",
 				severity: "info",
 				title: "Low-usage tag",
 				message: `Tag "${tag}" is only used ${count} time(s), below threshold of ${ctx.lowUsageTagThreshold}`,
-				relatedPaths: [],
+				primaryPath: paths[0],
+				relatedPaths: paths.slice(1),
 				evidence: { tag, count, threshold: ctx.lowUsageTagThreshold },
 				fingerprint: generateFingerprint("tag-usage", undefined, {
 					tag,

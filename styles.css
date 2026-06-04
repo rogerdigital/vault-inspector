@@ -51,6 +51,7 @@
 .vi-issue-list { list-style: none; padding: 0; margin: 0; }
 .vi-issue { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; padding: 10px 12px; border-radius: 4px; }
 .vi-issue:hover { background: var(--background-secondary); }
+.vi-issue-clickable { cursor: pointer; }
 .vi-issue.vi-selectable { cursor: pointer; }
 .vi-issue.vi-selected { background: rgba(var(--interactive-accent-rgb, 64, 133, 235), 0.1); }
 
@@ -62,7 +63,11 @@
 .vi-issue-title { font-weight: 500; }
 .vi-issue-path { color: var(--text-muted); font-size: 12px; font-family: var(--font-monospace); overflow-wrap: anywhere; cursor: pointer; }
 .vi-issue-path:hover { text-decoration: underline; }
-.vi-issue-message { width: 100%; color: var(--text-muted); font-size: 12px; padding-left: 4px; }
+.vi-issue-details { width: 100%; padding-left: 4px; display: flex; flex-direction: column; gap: 4px; }
+.vi-issue-message { color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.vi-issue-target { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 10px; align-items: baseline; font-size: 12px; color: var(--text-muted); }
+.vi-issue-target-label { color: var(--text-faint); text-transform: uppercase; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; white-space: nowrap; }
+.vi-issue-target-value { min-width: 0; font-family: var(--font-monospace); color: var(--text-muted); overflow-wrap: anywhere; }
 
 .vi-issue-checkbox { margin: 0 4px 0 0; cursor: pointer; }
 .vi-toggle-all { display: inline-flex; align-items: center; cursor: pointer; }

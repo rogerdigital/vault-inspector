@@ -90,12 +90,12 @@ export default class VaultInspectorPlugin extends Plugin {
 				new Notice(`Fixed ${fixed} issue(s)`);
 				await this.scanAndRender(view);
 			},
-			onRevealFile: async (path) => {
+			onRevealIssue: async (issue) => {
+				const path = issue.primaryPath ?? issue.relatedPaths[0];
+				if (!path) return;
 				const file = this.app.vault.getAbstractFileByPath(path);
-				if (file) {
-					if (file instanceof TFile) {
-						await this.app.workspace.getLeaf(false).openFile(file);
-					}
+				if (file instanceof TFile) {
+					await view.revealIssue(issue);
 				} else {
 					new Notice(`File not found: ${path}`);
 				}
