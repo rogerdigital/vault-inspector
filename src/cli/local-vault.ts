@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, extname, join, relative, sep } from "node:path";
 import type { App, MetadataCache, TFile, Vault } from "obsidian";
+import { extractBareUrls } from "../scanner/scanners/external-links";
 
 type LocalFile = TFile & {
 	path: string;
@@ -130,6 +131,12 @@ function parseMarkdownMetadata(content: string): LocalMetadata {
 		const entry = { link: match[2].trim() };
 		if (match[1] === "!") embeds.push(entry);
 		else links.push(entry);
+	}
+
+	for (const url of extractBareUrls(content)) {
+		if (!links.some((link) => link.link === url) && !embeds.some((embed) => embed.link === url)) {
+			links.push({ link: url });
+		}
 	}
 
 	const headings = [...body.matchAll(/^#{1,6}\s+(.+)$/gm)].map((match) => ({

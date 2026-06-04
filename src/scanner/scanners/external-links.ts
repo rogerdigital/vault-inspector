@@ -1,4 +1,5 @@
 import type { Issue } from "../Issue";
+import type { ScanProgressCallback } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { generateFingerprint } from "../issue-fingerprint";
 import { isIgnoredPath } from "../../utils/paths";
@@ -6,10 +7,10 @@ import { isIgnoredPath } from "../../utils/paths";
 export const externalLinksScanner = {
 	id: "external-links" as const,
 
-	async scan(ctx: ScanContext): Promise<Issue[]> {
+	async scan(ctx: ScanContext, onProgress?: ScanProgressCallback): Promise<Issue[]> {
 		const issues: Issue[] = [];
-		const urlMap = collectExternalUrls(ctx);
-		const { results, skipped } = await checkUrls(urlMap, ctx);
+		const urlMap = await collectExternalUrls(ctx);
+		const { results, skipped } = await checkUrls(urlMap, ctx, onProgress);
 
 		for (const result of results) {
 			const issue = makeIssue(result);
@@ -48,7 +49,7 @@ type CheckResult =
 	| (UrlEntry & { kind: "timeout"; timeoutMs: number })
 	| (UrlEntry & { kind: "failed"; error: string });
 
-function collectExternalUrls(ctx: ScanContext): UrlEntry[] {
+async function collectExternalUrls(ctx: ScanContext): Promise<UrlEntry[]> {
 	const entries: UrlEntry[] = [];
 	const seen = new Set<string>();
 
@@ -78,6 +79,17 @@ function collectExternalUrls(ctx: ScanContext): UrlEntry[] {
 				}
 			}
 		}
+
+		try {
+			const content = await ctx.vault.cachedRead(file);
+			for (const url of extractBareUrls(content)) {
+				if (seen.has(url)) continue;
+				seen.add(url);
+				entries.push({ url, sourcePath: file.path });
+			}
+		} catch {
+			continue;
+		}
 	}
 
 	return entries;
@@ -87,26 +99,93 @@ function isExternalUrl(text: string): boolean {
 	return /^https?:\/\//i.test(text);
 }
 
+export function extractBareUrls(content: string): string[] {
+	const urls: string[] = [];
+	const seen = new Set<string>();
+	const body = stripFencedCodeBlocks(stripFrontmatter(content));
+	const urlPattern = /https?:\/\/[^\s<>"']+/gi;
+
+	for (const match of body.matchAll(urlPattern)) {
+		const url = trimUrlBoundary(match[0]);
+		if (!url || seen.has(url)) continue;
+		seen.add(url);
+		urls.push(url);
+	}
+
+	return urls;
+}
+
+function stripFrontmatter(content: string): string {
+	if (!content.startsWith("---\n")) return content;
+	const end = content.indexOf("\n---", 4);
+	if (end === -1) return content;
+	return content.slice(end + 4);
+}
+
+function stripFencedCodeBlocks(content: string): string {
+	return content.replace(/```[\s\S]*?```/g, "");
+}
+
+function trimUrlBoundary(url: string): string {
+	let trimmed = url;
+	while (/[),.;:!?]$/.test(trimmed)) {
+		trimmed = trimmed.slice(0, -1);
+	}
+	return trimmed;
+}
+
 async function checkUrls(
 	urlMap: UrlEntry[],
 	ctx?: ScanContext,
+	onProgress?: ScanProgressCallback,
 ): Promise<{ results: CheckResult[]; skipped: number }> {
 	const results: CheckResult[] = [];
 	const startedAt = Date.now();
 	const deadline = startedAt + EXTERNAL_LINK_SCAN_BUDGET_MS;
+	const stats = { timedOut: 0, failed: 0 };
+
+	reportExternalProgress(onProgress, urlMap.length, results.length, stats);
 
 	for (let i = 0; i < urlMap.length; i += EXTERNAL_LINK_BATCH_SIZE) {
 		if (Date.now() >= deadline) {
-			return { results, skipped: urlMap.length - i };
+			const skipped = urlMap.length - i;
+			reportExternalProgress(onProgress, urlMap.length, results.length, stats, skipped);
+			return { results, skipped };
 		}
 
 		const timeoutMs = Math.max(1, Math.min(EXTERNAL_LINK_TIMEOUT_MS, deadline - Date.now()));
 		const batch = urlMap.slice(i, i + EXTERNAL_LINK_BATCH_SIZE);
 		const checks = batch.map((entry) => checkUrlWithTimeout(entry, ctx, timeoutMs));
-		results.push(...await Promise.all(checks));
+		const batchResults = await Promise.all(checks);
+		for (const result of batchResults) {
+			if (result.kind === "timeout") stats.timedOut++;
+			if (result.kind === "failed") stats.failed++;
+		}
+		results.push(...batchResults);
+		reportExternalProgress(onProgress, urlMap.length, results.length, stats);
 	}
 
 	return { results, skipped: 0 };
+}
+
+function reportExternalProgress(
+	onProgress: ScanProgressCallback | undefined,
+	total: number,
+	current: number,
+	stats: { timedOut: number; failed: number },
+	skipped = 0,
+) {
+	onProgress?.({
+		type: "scanner-progress",
+		scannerId: "external-links",
+		scannerIndex: 0,
+		scannerTotal: 0,
+		phase: "Checking URLs",
+		current,
+		total,
+		message: `timed out ${stats.timedOut}, failed ${stats.failed}, skipped ${skipped}`,
+		elapsedMs: 0,
+	});
 }
 
 async function checkUrlWithTimeout(

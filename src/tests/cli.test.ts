@@ -58,6 +58,25 @@ describe("runCli", () => {
 		});
 	});
 
+	it("keeps external link checks disabled in default CLI scans", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+			status: 404,
+		} as Response);
+
+		await withVault(
+			{
+				"note.md": "https://example.com/dead\n\nEnough content to avoid empty note warnings.\n",
+			},
+			async (vaultPath) => {
+				const result = await runCli(["scan", vaultPath]);
+				const payload = JSON.parse(result.stdout);
+
+				expect(fetchMock).not.toHaveBeenCalled();
+				expect(payload.summary.scannersRun).not.toContain("external-links");
+			},
+		);
+	});
+
 	it("writes scan progress to stderr when requested", async () => {
 		await withVault({ "empty.md": "# Empty\n" }, async (vaultPath) => {
 			const result = await runCli(["scan", vaultPath, "--format", "json", "--progress"]);
@@ -267,6 +286,41 @@ describe("runCli", () => {
 						evidence: expect.objectContaining({
 							url: "https://example.com/dead",
 							status: 404,
+						}),
+					}),
+				]);
+			},
+		);
+	});
+
+	it("checks bare external URLs in CLI scans", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+			status: 404,
+		} as Response);
+
+		await withVault(
+			{
+				"note.md": "https://example.com/bare.\n\nEnough content to avoid empty note warnings.\n",
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"external-links",
+				]);
+
+				expect(fetchMock).toHaveBeenCalledWith("https://example.com/bare", {
+					method: "HEAD",
+				});
+				expect(result.exitCode).toBe(1);
+				const payload = JSON.parse(result.stdout);
+				expect(payload.issues).toEqual([
+					expect.objectContaining({
+						scannerId: "external-links",
+						primaryPath: "note.md",
+						evidence: expect.objectContaining({
+							url: "https://example.com/bare",
 						}),
 					}),
 				]);
