@@ -38,7 +38,10 @@ export function renderIssueList(container: HTMLElement, config: IssueListConfig)
 			if (!config.selectionMode && getIssuePath(issue)) {
 				li.addClass("vi-issue-clickable");
 				setTooltip(li, "Click to open issue location");
-				li.addEventListener("click", () => config.onOpenIssue(issue));
+				li.addEventListener("click", (event) => {
+					if (shouldKeepTextSelection(event)) return;
+					config.onOpenIssue(issue);
+				});
 			}
 
 			if (config.selectionMode) {
@@ -61,12 +64,26 @@ export function renderIssueList(container: HTMLElement, config: IssueListConfig)
 					text: issuePath,
 				});
 				setTooltip(pathEl, "Click to open issue location");
-				pathEl.addEventListener("click", (e) => { e.stopPropagation(); config.onOpenIssue(issue); });
+				pathEl.addEventListener("click", (e) => {
+					e.stopPropagation();
+					if (hasActiveTextSelection()) return;
+					config.onOpenIssue(issue);
+				});
 			}
 
 			renderIssueDetails(li, issue);
 		}
 	}
+}
+
+function shouldKeepTextSelection(event: MouseEvent): boolean {
+	const target = event.target instanceof HTMLElement ? event.target : null;
+	if (target?.closest(".vi-issue-details")) return true;
+	return hasActiveTextSelection();
+}
+
+function hasActiveTextSelection(): boolean {
+	return window.getSelection()?.toString().trim().length ? true : false;
 }
 
 function renderIssueDetails(container: HTMLElement, issue: Issue) {

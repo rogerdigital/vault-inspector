@@ -1,6 +1,6 @@
 /* Vault Inspector */
 
-.vault-inspector { padding: 16px; font-size: 14px; }
+.vault-inspector { padding: 16px; font-size: 14px; user-select: text; }
 
 .vi-empty { padding: 32px; text-align: center; color: var(--text-muted); font-size: 15px; }
 .vi-empty-btn { margin-top: 12px; padding: 8px 24px; border-radius: 6px; border: none; background: var(--interactive-accent); color: var(--text-on-accent); font-size: 14px; cursor: pointer; }
@@ -63,7 +63,7 @@
 .vi-issue-title { font-weight: 500; }
 .vi-issue-path { color: var(--text-muted); font-size: 12px; font-family: var(--font-monospace); overflow-wrap: anywhere; cursor: pointer; }
 .vi-issue-path:hover { text-decoration: underline; }
-.vi-issue-details { width: 100%; padding-left: 4px; display: flex; flex-direction: column; gap: 4px; }
+.vi-issue-details { width: 100%; padding-left: 4px; display: flex; flex-direction: column; gap: 4px; cursor: text; user-select: text; }
 .vi-issue-message { color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
 .vi-issue-target { display: grid; grid-template-columns: max-content minmax(0, 1fr); column-gap: 10px; align-items: baseline; font-size: 12px; color: var(--text-muted); }
 .vi-issue-target-label { color: var(--text-faint); text-transform: uppercase; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; white-space: nowrap; }
