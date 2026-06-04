@@ -17,7 +17,11 @@ export default class VaultInspectorPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
-		this.registerView(VIEW_TYPE_INSPECTOR, (leaf) => new InspectorView(leaf));
+		this.registerView(VIEW_TYPE_INSPECTOR, (leaf) => {
+			const view = new InspectorView(leaf);
+			this.configureView(view);
+			return view;
+		});
 		this.addCommand({
 			id: "run-scan",
 			name: "Run scan",
@@ -55,6 +59,11 @@ export default class VaultInspectorPlugin extends Plugin {
 		await this.app.workspace.revealLeaf(leaf);
 
 		const view = leaf.view as unknown as InspectorView;
+		this.configureView(view);
+		await this.scanAndRender(view);
+	}
+
+	private configureView(view: InspectorView) {
 		view.setCallbacks({
 			onIgnoreAllIssues: async (issues) => {
 				for (const issue of issues) {
@@ -103,7 +112,6 @@ export default class VaultInspectorPlugin extends Plugin {
 			onRunScan: () => { void this.runScan(); },
 		});
 		view.setEnableFixActions(this.settings.enableFixActions);
-		await this.scanAndRender(view);
 	}
 
 	private async scanAndRender(view: InspectorView) {
