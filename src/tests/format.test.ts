@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatSize } from "../utils/format";
+import { formatDuration, formatSize } from "../utils/format";
 
 describe("formatSize", () => {
 	it("formats bytes", () => {
@@ -18,5 +18,29 @@ describe("formatSize", () => {
 
 	it("handles zero", () => {
 		expect(formatSize(0)).toBe("0 B");
+	});
+});
+
+describe("formatDuration", () => {
+	it("formats sub-second durations in milliseconds", () => {
+		expect(formatDuration(0)).toBe("0ms");
+		expect(formatDuration(87)).toBe("87ms");
+		expect(formatDuration(999)).toBe("999ms");
+	});
+
+	it("formats short second-level durations with one decimal", () => {
+		expect(formatDuration(1000)).toBe("1.0s");
+		expect(formatDuration(1549)).toBe("1.5s");
+		expect(formatDuration(9900)).toBe("9.9s");
+	});
+
+	it("formats longer second-level durations as whole seconds", () => {
+		expect(formatDuration(10_000)).toBe("10s");
+		expect(formatDuration(59_400)).toBe("59s");
+	});
+
+	it("formats minute-level durations", () => {
+		expect(formatDuration(60_000)).toBe("1m 00s");
+		expect(formatDuration(125_400)).toBe("2m 05s");
 	});
 });

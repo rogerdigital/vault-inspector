@@ -8,6 +8,7 @@ import { DEFAULT_SETTINGS, type InspectorSettings } from "../settings/settings";
 import { generateMarkdownReport } from "../report/markdown-export";
 import { createLocalApp } from "./local-vault";
 import { TOOL_VERSION } from "./version";
+import { formatDuration } from "../utils/format";
 
 type OutputFormat = "json" | "markdown";
 type FailOn = "any" | "error" | "warning" | "new" | "none";
@@ -315,14 +316,6 @@ function formatProgressDetail(progress: ScanProgress): string {
 	}
 	if (progress.message) parts.push(progress.message);
 	return parts.join(", ");
-}
-
-function formatDuration(ms: number): string {
-	const seconds = ms / 1000;
-	if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
-	const minutes = Math.floor(seconds / 60);
-	const remainingSeconds = Math.floor(seconds % 60);
-	return `${minutes}m ${remainingSeconds.toString().padStart(2, "0")}s`;
 }
 
 function toJsonPayload(result: CliScanResult, vaultPath: string): Record<string, unknown> {

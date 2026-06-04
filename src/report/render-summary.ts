@@ -1,4 +1,5 @@
 import type { ScanResult, IssueSeverity } from "../scanner/Issue";
+import { formatDuration } from "../utils/format";
 
 export type SummaryActions = {
 	onFilterSeverity: (severity: IssueSeverity | null) => void;
@@ -8,7 +9,7 @@ export function renderSummary(container: HTMLElement, result: ScanResult, action
 	const errors = result.issues.filter((i) => i.severity === "error").length;
 	const warnings = result.issues.filter((i) => i.severity === "warning").length;
 	const infos = result.issues.filter((i) => i.severity === "info").length;
-	const duration = ((result.finishedAt - result.startedAt) / 1000).toFixed(1);
+	const duration = formatDuration(result.finishedAt - result.startedAt);
 
 	const summary = container.createDiv({ cls: "vi-summary" });
 	summary.createEl("h2", { text: "Scan results" });
@@ -33,6 +34,6 @@ export function renderSummary(container: HTMLElement, result: ScanResult, action
 
 	const meta = summary.createDiv({ cls: "vi-meta" });
 	meta.createEl("span", { text: `${result.filesScanned} files scanned` });
-	meta.createEl("span", { text: `${duration}s` });
+	meta.createEl("span", { text: duration });
 	meta.createEl("span", { text: `${result.scannersRun.length} scanners` });
 }

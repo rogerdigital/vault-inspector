@@ -1,5 +1,6 @@
 import type { ScanResult, Issue } from "../scanner/Issue";
 import { SCANNER_LABELS } from "../scanner/Issue";
+import { formatDuration } from "../utils/format";
 
 export function generateMarkdownReport(result: ScanResult): string {
 	const lines: string[] = [];
@@ -9,7 +10,7 @@ export function generateMarkdownReport(result: ScanResult): string {
 	lines.push(``);
 	lines.push(`- **Date:** ${now.toLocaleString()}`);
 	lines.push(`- **Files scanned:** ${result.filesScanned}`);
-	lines.push(`- **Duration:** ${((result.finishedAt - result.startedAt) / 1000).toFixed(1)}s`);
+	lines.push(`- **Duration:** ${formatDuration(result.finishedAt - result.startedAt)}`);
 	lines.push(`- **Scanners run:** ${result.scannersRun.length}`);
 	lines.push(``);
 

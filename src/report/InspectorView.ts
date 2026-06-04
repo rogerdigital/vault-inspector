@@ -5,16 +5,9 @@ import type { ReportModel } from "./report-model";
 import { renderSummary } from "./render-summary";
 import { renderIssueList } from "./render-issues";
 import { setIcon } from "obsidian";
+import { formatDuration } from "../utils/format";
 
 export const VIEW_TYPE_INSPECTOR = "vault-inspector";
-
-function formatDuration(ms: number): string {
-	const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-	const minutes = Math.floor(totalSeconds / 60);
-	const seconds = totalSeconds % 60;
-	if (minutes === 0) return `${seconds}s`;
-	return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
-}
 
 function getLocationTargets(issue: Issue): string[] {
 	const url = issue.evidence.url;
