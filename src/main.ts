@@ -62,9 +62,7 @@ export default class VaultInspectorPlugin extends Plugin {
 				}
 				await this.saveSettings();
 				new Notice(`Ignored ${issues.length} issue(s)`);
-				view.setScanning(true);
-				const result = await this.scanRunner.run(this.app, this.settings);
-				view.setResult(result);
+				await this.scanAndRender(view);
 			},
 			onRestoreIssues: async (issues) => {
 				const toRestore = new Set(issues.map((i) => i.fingerprint));
@@ -73,9 +71,7 @@ export default class VaultInspectorPlugin extends Plugin {
 				);
 				await this.saveSettings();
 				new Notice(`Restored ${issues.length} issue(s)`);
-				view.setScanning(true);
-				const result = await this.scanRunner.run(this.app, this.settings);
-				view.setResult(result);
+				await this.scanAndRender(view);
 			},
 			onFixAllIssues: async (issues) => {
 				const actions = issues.map((i) => i.fixAction!).filter(Boolean);
@@ -92,9 +88,7 @@ export default class VaultInspectorPlugin extends Plugin {
 					}
 				}
 				new Notice(`Fixed ${fixed} issue(s)`);
-				view.setScanning(true);
-				const result = await this.scanRunner.run(this.app, this.settings);
-				view.setResult(result);
+				await this.scanAndRender(view);
 			},
 			onRevealFile: async (path) => {
 				const file = this.app.vault.getAbstractFileByPath(path);
@@ -109,9 +103,19 @@ export default class VaultInspectorPlugin extends Plugin {
 			onRunScan: () => { void this.runScan(); },
 		});
 		view.setEnableFixActions(this.settings.enableFixActions);
+		await this.scanAndRender(view);
+	}
+
+	private async scanAndRender(view: InspectorView) {
 		view.setScanning(true);
-		const result = await this.scanRunner.run(this.app, this.settings);
-		view.setResult(result);
+		try {
+			const result = await this.scanRunner.run(this.app, this.settings);
+			view.setResult(result);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			new Notice(`Vault Inspector scan failed: ${message}`);
+			view.setScanning(false);
+		}
 	}
 
 	private async exportReport() {

@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
 import { requestUrl } from "obsidian";
-import { externalLinksScanner } from "../scanner/scanners/external-links";
+import {
+	EXTERNAL_LINK_SCAN_BUDGET_MS,
+	EXTERNAL_LINK_TIMEOUT_MS,
+	externalLinksScanner,
+} from "../scanner/scanners/external-links";
 import type { ScanContext } from "../scanner/ScanContext";
 
 function makeCtx(overrides: Partial<ScanContext> = {}): ScanContext {
@@ -61,6 +65,109 @@ describe("externalLinksScanner", () => {
 		});
 		const issues = await externalLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
+	});
+
+	it("reports timed out external links without hanging the scan", async () => {
+		vi.useFakeTimers();
+		const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
+		const ctx = makeCtx({
+			requestUrl: () => new Promise<number>(() => {}),
+			markdownFiles: [file],
+			metadataCache: {
+				getFileCache: () => ({
+					links: [{ link: "https://example.com/slow" }],
+					embeds: [],
+				}),
+			} as any,
+		});
+
+		try {
+			const scan = externalLinksScanner.scan(ctx);
+			await vi.advanceTimersByTimeAsync(EXTERNAL_LINK_TIMEOUT_MS);
+			const issues = await scan;
+
+			expect(issues).toHaveLength(1);
+			expect(issues[0]).toEqual(expect.objectContaining({
+				scannerId: "external-links",
+				severity: "info",
+				title: "External link check timed out",
+				primaryPath: "a.md",
+				evidence: expect.objectContaining({
+					url: "https://example.com/slow",
+					timeoutMs: EXTERNAL_LINK_TIMEOUT_MS,
+				}),
+			}));
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("reports failed external link checks separately from dead links", async () => {
+		const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
+		const ctx = makeCtx({
+			requestUrl: async () => {
+				throw new Error("network unavailable");
+			},
+			markdownFiles: [file],
+			metadataCache: {
+				getFileCache: () => ({
+					links: [{ link: "https://example.com/error" }],
+					embeds: [],
+				}),
+			} as any,
+		});
+
+		const issues = await externalLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0]).toEqual(expect.objectContaining({
+			scannerId: "external-links",
+			severity: "info",
+			title: "External link check failed",
+			primaryPath: "a.md",
+			evidence: expect.objectContaining({
+				url: "https://example.com/error",
+				error: "network unavailable",
+			}),
+		}));
+	});
+
+	it("stops external link checks after the scan budget", async () => {
+		vi.useFakeTimers();
+		const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
+		const links = Array.from({ length: 65 }, (_, index) => ({
+			link: `https://example.com/slow-${index}`,
+		}));
+		const ctx = makeCtx({
+			requestUrl: () => new Promise<number>(() => {}),
+			markdownFiles: [file],
+			metadataCache: {
+				getFileCache: () => ({
+					links,
+					embeds: [],
+				}),
+			} as any,
+		});
+
+		try {
+			const scan = externalLinksScanner.scan(ctx);
+			for (let elapsed = 0; elapsed < EXTERNAL_LINK_SCAN_BUDGET_MS; elapsed += EXTERNAL_LINK_TIMEOUT_MS) {
+				await vi.advanceTimersByTimeAsync(EXTERNAL_LINK_TIMEOUT_MS);
+			}
+			const issues = await scan;
+			const skipped = issues.find((issue) => issue.title === "External link checks skipped");
+
+			expect(skipped).toEqual(expect.objectContaining({
+				scannerId: "external-links",
+				severity: "info",
+				evidence: expect.objectContaining({
+					skipped: 5,
+					budgetMs: EXTERNAL_LINK_SCAN_BUDGET_MS,
+				}),
+			}));
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("skips internal links", async () => {

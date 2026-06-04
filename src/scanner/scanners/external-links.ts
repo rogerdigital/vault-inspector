@@ -9,22 +9,27 @@ export const externalLinksScanner = {
 	async scan(ctx: ScanContext): Promise<Issue[]> {
 		const issues: Issue[] = [];
 		const urlMap = collectExternalUrls(ctx);
-		const results = await checkUrls(urlMap, ctx);
+		const { results, skipped } = await checkUrls(urlMap, ctx);
 
 		for (const result of results) {
+			const issue = makeIssue(result);
+			if (issue) issues.push(issue);
+		}
+
+		if (skipped > 0) {
 			issues.push({
 				scannerId: "external-links",
-				severity: result.status >= 400 ? "warning" : "info",
-				title: "Dead external link",
-				message: `HTTP ${result.status} — ${result.url}`,
-				primaryPath: result.sourcePath,
+				severity: "info",
+				title: "External link checks skipped",
+				message: `Stopped after ${EXTERNAL_LINK_SCAN_BUDGET_MS / 1000}s scan budget; ${skipped} URL(s) were not checked.`,
 				relatedPaths: [],
 				evidence: {
-					url: result.url,
-					status: result.status,
+					skipped,
+					budgetMs: EXTERNAL_LINK_SCAN_BUDGET_MS,
 				},
-				fingerprint: generateFingerprint("external-links", result.sourcePath, {
-					url: result.url,
+				fingerprint: generateFingerprint("external-links", undefined, {
+					skipped,
+					budgetMs: EXTERNAL_LINK_SCAN_BUDGET_MS,
 				}),
 			});
 		}
@@ -33,8 +38,15 @@ export const externalLinksScanner = {
 	},
 };
 
+export const EXTERNAL_LINK_TIMEOUT_MS = 5000;
+export const EXTERNAL_LINK_SCAN_BUDGET_MS = 60000;
+const EXTERNAL_LINK_BATCH_SIZE = 5;
+
 type UrlEntry = { url: string; sourcePath: string };
-type CheckResult = UrlEntry & { status: number };
+type CheckResult =
+	| (UrlEntry & { kind: "http"; status: number })
+	| (UrlEntry & { kind: "timeout"; timeoutMs: number })
+	| (UrlEntry & { kind: "failed"; error: string });
 
 function collectExternalUrls(ctx: ScanContext): UrlEntry[] {
 	const entries: UrlEntry[] = [];
@@ -75,30 +87,140 @@ function isExternalUrl(text: string): boolean {
 	return /^https?:\/\//i.test(text);
 }
 
-async function checkUrls(urlMap: UrlEntry[], ctx?: ScanContext): Promise<CheckResult[]> {
+async function checkUrls(
+	urlMap: UrlEntry[],
+	ctx?: ScanContext,
+): Promise<{ results: CheckResult[]; skipped: number }> {
 	const results: CheckResult[] = [];
-	const batchSize = 5;
+	const startedAt = Date.now();
+	const deadline = startedAt + EXTERNAL_LINK_SCAN_BUDGET_MS;
 
-	for (let i = 0; i < urlMap.length; i += batchSize) {
-		const batch = urlMap.slice(i, i + batchSize);
-		const checks = batch.map(async (entry) => {
-			const status = await checkUrl(entry.url, ctx);
-			if (status >= 400) {
-				results.push({ ...entry, status });
-			}
-		});
-		await Promise.all(checks);
+	for (let i = 0; i < urlMap.length; i += EXTERNAL_LINK_BATCH_SIZE) {
+		if (Date.now() >= deadline) {
+			return { results, skipped: urlMap.length - i };
+		}
+
+		const timeoutMs = Math.max(1, Math.min(EXTERNAL_LINK_TIMEOUT_MS, deadline - Date.now()));
+		const batch = urlMap.slice(i, i + EXTERNAL_LINK_BATCH_SIZE);
+		const checks = batch.map((entry) => checkUrlWithTimeout(entry, ctx, timeoutMs));
+		results.push(...await Promise.all(checks));
 	}
 
-	return results;
+	return { results, skipped: 0 };
 }
 
-async function checkUrl(url: string, ctx?: ScanContext): Promise<number> {
+async function checkUrlWithTimeout(
+	entry: UrlEntry,
+	ctx: ScanContext | undefined,
+	timeoutMs: number,
+): Promise<CheckResult> {
+	const result = await withTimeout(checkUrl(entry.url, ctx), timeoutMs, {
+		...entry,
+		kind: "timeout",
+		timeoutMs,
+	});
+	return withSourcePath(result, entry.sourcePath);
+}
+
+async function checkUrl(url: string, ctx?: ScanContext): Promise<CheckResult> {
 	try {
-		if (ctx?.requestUrl) return await ctx.requestUrl(url);
+		if (ctx?.requestUrl) {
+			const status = await ctx.requestUrl(url);
+			return { url, sourcePath: "", kind: "http", status };
+		}
 		const response = await fetch(url, { method: "HEAD" });
-		return response.status;
-	} catch {
-		return 0;
+		return { url, sourcePath: "", kind: "http", status: response.status };
+	} catch (error) {
+		return {
+			url,
+			sourcePath: "",
+			kind: "failed",
+			error: error instanceof Error ? error.message : String(error),
+		};
 	}
+}
+
+async function withTimeout<T>(
+	promise: Promise<T>,
+	timeoutMs: number,
+	timeoutValue: T,
+): Promise<T> {
+	let timeoutId: ReturnType<typeof setTimeout> | undefined;
+	try {
+		return await Promise.race([
+			promise,
+			new Promise<T>((resolve) => {
+				timeoutId = setTimeout(() => resolve(timeoutValue), timeoutMs);
+			}),
+		]);
+	} finally {
+		if (timeoutId) clearTimeout(timeoutId);
+	}
+}
+
+function makeIssue(result: CheckResult): Issue | null {
+	if (result.kind === "http") {
+		if (result.status < 400) return null;
+		return {
+			scannerId: "external-links",
+			severity: "warning",
+			title: "Dead external link",
+			message: `HTTP ${result.status} — ${result.url}`,
+			primaryPath: result.sourcePath,
+			relatedPaths: [],
+			evidence: {
+				url: result.url,
+				status: result.status,
+			},
+			fingerprint: generateFingerprint("external-links", result.sourcePath, {
+				url: result.url,
+			}),
+		};
+	}
+
+	if (result.kind === "timeout") {
+		return {
+			scannerId: "external-links",
+			severity: "info",
+			title: "External link check timed out",
+			message: `No response after ${result.timeoutMs}ms — ${result.url}`,
+			primaryPath: result.sourcePath,
+			relatedPaths: [],
+			evidence: {
+				url: result.url,
+				timeoutMs: result.timeoutMs,
+			},
+			fingerprint: generateFingerprint("external-links", result.sourcePath, {
+				url: result.url,
+				timeout: true,
+			}),
+		};
+	}
+
+	return {
+		scannerId: "external-links",
+		severity: "info",
+		title: "External link check failed",
+		message: `Could not check URL — ${result.url}`,
+		primaryPath: result.sourcePath,
+		relatedPaths: [],
+		evidence: {
+			url: result.url,
+			error: result.error,
+		},
+		fingerprint: generateFingerprint("external-links", result.sourcePath, {
+			url: result.url,
+			failed: true,
+		}),
+	};
+}
+
+function withSourcePath(result: CheckResult, sourcePath: string): CheckResult {
+	if (result.kind === "http") {
+		return { ...result, sourcePath };
+	}
+	if (result.kind === "timeout") {
+		return { ...result, sourcePath };
+	}
+	return { ...result, sourcePath };
 }

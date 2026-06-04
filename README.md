@@ -11,7 +11,7 @@ Use it before publishing, exporting, migrating, or cleaning up a long-lived vaul
 - **Broken Links** — Detect wiki links, markdown links, and embeds pointing to non-existent notes or headings.
 - **Orphan Attachments** — Find images, PDFs, audio/video, and archives not referenced by any note.
 - **Empty Notes** — Flag notes with no meaningful content beyond frontmatter and title.
-- **External Links** — Check external URLs for availability (HTTP status).
+- **External Links** — Optionally check external URLs for availability (HTTP status).
 - **Duplicate Files** — Identify duplicates by name, size, and optional SHA-256 content hash.
 - **Frontmatter Types** — Report properties used with inconsistent value types across notes.
 - **Tag Usage** — Watch for missing or underused tags from a configurable watchlist.
@@ -104,6 +104,7 @@ Common options:
 ```bash
 vinspect . --format markdown --output report.md
 vinspect . --scanner broken-links,empty-notes
+vinspect . --scanner external-links
 vinspect . --config vault-inspector.config.json
 ```
 
@@ -180,9 +181,10 @@ Flags notes that have no content beyond frontmatter and a title heading.
 
 ### External Links
 
-Checks HTTP/HTTPS URLs found in notes for availability.
+Opt-in scanner for checking HTTP/HTTPS URLs found in notes for availability. It is disabled by default because it makes network requests and depends on external sites, DNS, and rate limits.
 
-- `warning` — unreachable URL or non-2xx status
+- `warning` — HTTP status 400 or higher
+- `info` — timed out, failed, or skipped URL checks
 
 ### Duplicate Files
 
@@ -214,7 +216,7 @@ Flags files exceeding configurable size thresholds.
 
 | Setting | Default | Description |
 |---|---|---|
-| Enabled Scanners | All on | Toggle individual scanners |
+| Enabled Scanners | All local scanners on; External Links off | Toggle individual scanners |
 | Enable fix actions | On | Allow batch delete of fixable issues |
 | Large Markdown threshold | 100 KB | Markdown files above this size are flagged |
 | Large attachment threshold | 5 MB | Attachments above this size are flagged |
@@ -228,7 +230,7 @@ Flags files exceeding configurable size thresholds.
 
 ## Privacy
 
-Vault Inspector does not make network requests except the External Links scanner, which checks URLs you explicitly have in your notes. In Obsidian this uses Obsidian's `requestUrl`; in the CLI it uses HTTP HEAD requests through the runtime `fetch` API. No vault content leaves your device beyond those link-check requests.
+Vault Inspector does not make network requests unless the External Links scanner is enabled. That scanner checks URLs you explicitly have in your notes. In Obsidian this uses Obsidian's `requestUrl`; in the CLI it uses HTTP HEAD requests through the runtime `fetch` API. No vault content leaves your device beyond those link-check requests.
 
 Vault Inspector enumerates vault files and Markdown metadata so scanners can detect
 broken links, orphan attachments, duplicate files, large files, tag usage, and
@@ -238,6 +240,7 @@ frontmatter type drift. This access is local and read-only during scans.
 
 - Read-only — does not modify, move, or delete vault files (except exported reports and optional batch-delete via trash).
 - Broken link detection relies on Obsidian's metadata cache; links inside code blocks or comments may be missed.
+- External link checks are opt-in and network-dependent; timeouts or blocked requests do not necessarily mean a URL is dead.
 - Orphan detection cannot account for references from CSS, Canvas, Dataview queries, or external tools.
 - Duplicate detection above the hash cap reports candidates only (no content verification).
 
