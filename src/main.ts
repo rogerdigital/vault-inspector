@@ -17,7 +17,11 @@ export default class VaultInspectorPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
-		this.registerView(VIEW_TYPE_INSPECTOR, (leaf) => new InspectorView(leaf));
+		this.registerView(VIEW_TYPE_INSPECTOR, (leaf) => {
+			const view = new InspectorView(leaf);
+			this.configureView(view);
+			return view;
+		});
 		this.addCommand({
 			id: "run-scan",
 			name: "Run scan",
@@ -55,6 +59,11 @@ export default class VaultInspectorPlugin extends Plugin {
 		await this.app.workspace.revealLeaf(leaf);
 
 		const view = leaf.view as unknown as InspectorView;
+		this.configureView(view);
+		await this.scanAndRender(view);
+	}
+
+	private configureView(view: InspectorView) {
 		view.setCallbacks({
 			onIgnoreAllIssues: async (issues) => {
 				for (const issue of issues) {
@@ -90,12 +99,12 @@ export default class VaultInspectorPlugin extends Plugin {
 				new Notice(`Fixed ${fixed} issue(s)`);
 				await this.scanAndRender(view);
 			},
-			onRevealFile: async (path) => {
+			onRevealIssue: async (issue) => {
+				const path = issue.primaryPath ?? issue.relatedPaths[0];
+				if (!path) return;
 				const file = this.app.vault.getAbstractFileByPath(path);
-				if (file) {
-					if (file instanceof TFile) {
-						await this.app.workspace.getLeaf(false).openFile(file);
-					}
+				if (file instanceof TFile) {
+					await view.revealIssue(issue);
 				} else {
 					new Notice(`File not found: ${path}`);
 				}
@@ -103,13 +112,14 @@ export default class VaultInspectorPlugin extends Plugin {
 			onRunScan: () => { void this.runScan(); },
 		});
 		view.setEnableFixActions(this.settings.enableFixActions);
-		await this.scanAndRender(view);
 	}
 
 	private async scanAndRender(view: InspectorView) {
 		view.setScanning(true);
 		try {
-			const result = await this.scanRunner.run(this.app, this.settings);
+			const result = await this.scanRunner.run(this.app, this.settings, {
+				onProgress: (progress) => view.setScanProgress(progress),
+			});
 			view.setResult(result);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);

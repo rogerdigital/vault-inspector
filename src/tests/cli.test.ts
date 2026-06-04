@@ -58,6 +58,57 @@ describe("runCli", () => {
 		});
 	});
 
+	it("keeps external link checks disabled in default CLI scans", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+			status: 404,
+		} as Response);
+
+		await withVault(
+			{
+				"note.md": "https://example.com/dead\n\nEnough content to avoid empty note warnings.\n",
+			},
+			async (vaultPath) => {
+				const result = await runCli(["scan", vaultPath]);
+				const payload = JSON.parse(result.stdout);
+
+				expect(fetchMock).not.toHaveBeenCalled();
+				expect(payload.summary.scannersRun).not.toContain("external-links");
+			},
+		);
+	});
+
+	it("writes scan progress to stderr when requested", async () => {
+		await withVault({ "empty.md": "# Empty\n" }, async (vaultPath) => {
+			const result = await runCli(["scan", vaultPath, "--format", "json", "--progress"]);
+
+			expect(result.exitCode).toBe(1);
+			expect(result.stderr).toContain("Scanning vault...");
+			expect(result.stderr).toContain("[1/8] Broken Links");
+			expect(result.stderr).toContain("External Links skipped (disabled)");
+			expect(result.stderr).toContain("Done in ");
+
+			const payload = JSON.parse(result.stdout);
+			expect(payload.tool).toBe("vault-inspector");
+		});
+	});
+
+	it("can stream scan progress through a runtime stderr writer", async () => {
+		await withVault({ "empty.md": "# Empty\n" }, async (vaultPath) => {
+			let streamed = "";
+			const result = await runCli(["scan", vaultPath, "--progress"], {
+				writeStderr: (text) => {
+					streamed += text;
+				},
+			});
+
+			expect(result.exitCode).toBe(1);
+			expect(result.stderr).toBe("");
+			expect(streamed).toContain("Scanning vault...");
+			expect(streamed).toContain("[1/8] Broken Links");
+			expect(JSON.parse(result.stdout).tool).toBe("vault-inspector");
+		});
+	});
+
 	it("treats a vault path as the default scan command", async () => {
 		await withVault({ "empty.md": "" }, async (vaultPath) => {
 			const result = await runCli([vaultPath, "--scanner", "empty-notes"]);
@@ -235,6 +286,41 @@ describe("runCli", () => {
 						evidence: expect.objectContaining({
 							url: "https://example.com/dead",
 							status: 404,
+						}),
+					}),
+				]);
+			},
+		);
+	});
+
+	it("checks bare external URLs in CLI scans", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+			status: 404,
+		} as Response);
+
+		await withVault(
+			{
+				"note.md": "https://example.com/bare.\n\nEnough content to avoid empty note warnings.\n",
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"external-links",
+				]);
+
+				expect(fetchMock).toHaveBeenCalledWith("https://example.com/bare", {
+					method: "HEAD",
+				});
+				expect(result.exitCode).toBe(1);
+				const payload = JSON.parse(result.stdout);
+				expect(payload.issues).toEqual([
+					expect.objectContaining({
+						scannerId: "external-links",
+						primaryPath: "note.md",
+						evidence: expect.objectContaining({
+							url: "https://example.com/bare",
 						}),
 					}),
 				]);

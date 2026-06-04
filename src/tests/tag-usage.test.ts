@@ -40,7 +40,30 @@ describe("tagUsageScanner", () => {
 		const issues = await tagUsageScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].title).toBe("Low-usage tag");
+		expect(issues[0].primaryPath).toBe("notes/a.md");
 		expect(issues[0].evidence.tag).toBe("rare");
+	});
+
+	it("includes related paths for low-usage tags used in multiple files", async () => {
+		const fileA = { path: "notes/a.md" } as any;
+		const fileB = { path: "notes/b.md" } as any;
+		const ctx = makeCtx({
+			markdownFiles: [fileB, fileA],
+			allFiles: [fileB, fileA],
+			lowUsageTagThreshold: 3,
+			metadataCache: {
+				getFileCache: () => ({
+					tags: [{ tag: "#rare" }],
+					frontmatter: {},
+				}),
+			} as any,
+		});
+
+		const issues = await tagUsageScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].primaryPath).toBe("notes/a.md");
+		expect(issues[0].relatedPaths).toEqual(["notes/b.md"]);
 	});
 
 	it("does not report tags at or above threshold", async () => {

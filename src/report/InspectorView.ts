@@ -1,17 +1,53 @@
-import { ItemView, WorkspaceLeaf, Notice, TFile, setTooltip } from "obsidian";
-import type { ScanResult, Issue } from "../scanner/Issue";
+import { ItemView, MarkdownView, WorkspaceLeaf, Notice, TFile, setTooltip } from "obsidian";
+import type { ScanProgress, ScanResult, Issue } from "../scanner/Issue";
 import { SCANNER_LABELS } from "../scanner/Issue";
 import type { ReportModel } from "./report-model";
 import { renderSummary } from "./render-summary";
 import { renderIssueList } from "./render-issues";
 import { setIcon } from "obsidian";
+import { formatDuration } from "../utils/format";
 
 export const VIEW_TYPE_INSPECTOR = "vault-inspector";
+
+function getLocationTargets(issue: Issue): string[] {
+	const url = issue.evidence.url;
+	if (typeof url === "string") return [url];
+	const link = issue.evidence.link;
+	if (typeof link === "string") return [link];
+	const target = issue.evidence.target;
+	if (typeof target === "string") return [target];
+	const property = issue.evidence.property;
+	if (typeof property === "string") return [property];
+	const tag = issue.evidence.tag;
+	if (typeof tag === "string") return [`#${tag}`, tag];
+	return [];
+}
+
+function findFirstTextPosition(content: string, targets: string[]): { line: number; ch: number } | null {
+	for (const target of targets) {
+		const position = findTextPosition(content, target);
+		if (position) return position;
+	}
+	return null;
+}
+
+function findTextPosition(content: string, target: string): { line: number; ch: number } | null {
+	const index = content.indexOf(target);
+	if (index === -1) return null;
+	const before = content.slice(0, index);
+	const lines = before.split(/\n/);
+	return {
+		line: lines.length - 1,
+		ch: lines[lines.length - 1].length,
+	};
+}
 
 export class InspectorView extends ItemView {
 	private model: ReportModel = {
 		result: null,
 		isScanning: false,
+		scanProgress: null,
+		scanStartedAt: null,
 		filterScanner: null,
 		filterSeverity: null,
 		enableFixActions: true,
@@ -25,9 +61,10 @@ export class InspectorView extends ItemView {
 	private onIgnoreAllIssues: ((issues: Issue[]) => void | Promise<void>) | null = null;
 	private onRestoreIssues: ((issues: Issue[]) => void | Promise<void>) | null = null;
 	private onFixAllIssues: ((issues: Issue[]) => void | Promise<void>) | null = null;
-	private onRevealFile: ((path: string) => void | Promise<void>) | null = null;
+	private onRevealIssue: ((issue: Issue) => void | Promise<void>) | null = null;
 	private onRunScan: (() => void) | null = null;
 	private backToTopHandler: (() => void) | null = null;
+	private scanTimer: ReturnType<typeof setInterval> | null = null;
 
 	constructor(leaf: WorkspaceLeaf) {
 		super(leaf);
@@ -52,21 +89,39 @@ export class InspectorView extends ItemView {
 			container.removeEventListener("scroll", this.backToTopHandler);
 			this.backToTopHandler = null;
 		}
+		this.stopScanTimer();
 		this.onIgnoreAllIssues = null;
 		this.onRestoreIssues = null;
 		this.onFixAllIssues = null;
-		this.onRevealFile = null;
+		this.onRevealIssue = null;
 		this.onRunScan = null;
 	}
 
 	setScanning(scanning: boolean) {
 		this.model.isScanning = scanning;
+		if (scanning) {
+			this.model.scanStartedAt = Date.now();
+			this.model.scanProgress = null;
+			this.startScanTimer();
+		} else {
+			this.model.scanProgress = null;
+			this.model.scanStartedAt = null;
+			this.stopScanTimer();
+		}
+		this.render();
+	}
+
+	setScanProgress(progress: ScanProgress) {
+		this.model.scanProgress = progress;
 		this.render();
 	}
 
 	setResult(result: ScanResult) {
 		this.model.result = result;
 		this.model.isScanning = false;
+		this.model.scanProgress = null;
+		this.model.scanStartedAt = null;
+		this.stopScanTimer();
 		this.model.selectionMode = false;
 		this.model.selectedFingerprints = new Set();
 		this.model.ignoredSelectionMode = false;
@@ -82,13 +137,13 @@ export class InspectorView extends ItemView {
 		onIgnoreAllIssues: (issues: Issue[]) => void | Promise<void>;
 		onRestoreIssues: (issues: Issue[]) => void | Promise<void>;
 		onFixAllIssues: (issues: Issue[]) => void | Promise<void>;
-		onRevealFile: (path: string) => void | Promise<void>;
+		onRevealIssue: (issue: Issue) => void | Promise<void>;
 		onRunScan: () => void;
 	}) {
 		this.onIgnoreAllIssues = callbacks.onIgnoreAllIssues;
 		this.onRestoreIssues = callbacks.onRestoreIssues;
 		this.onFixAllIssues = callbacks.onFixAllIssues;
-		this.onRevealFile = callbacks.onRevealFile;
+		this.onRevealIssue = callbacks.onRevealIssue;
 		this.onRunScan = callbacks.onRunScan;
 	}
 
@@ -106,7 +161,7 @@ export class InspectorView extends ItemView {
 		container.empty();
 
 		if (this.model.isScanning) {
-			container.createEl("div", { cls: "vi-progress", text: "Scanning vault..." });
+			this.renderProgress(container);
 			return;
 		}
 
@@ -119,7 +174,7 @@ export class InspectorView extends ItemView {
 			});
 			empty.createEl("p", {
 				cls: "vi-empty-hint",
-				text: "You can also click the search icon in the left ribbon, or use the command palette (Cmd/Ctrl+P) → \"Vault Inspector: Run scan\".",
+				text: "You can also click the shield icon in the left ribbon, or run \"Vault Inspector: Run scan\" from the command palette.",
 			});
 			return;
 		}
@@ -143,12 +198,84 @@ export class InspectorView extends ItemView {
 			scannersRun: this.model.result.scannersRun,
 			selectionMode: this.model.selectionMode,
 			selectedFingerprints: this.model.selectedFingerprints,
-			onOpenFile: (path) => { void this.handleOpenFile(path); },
+			onOpenIssue: (issue) => { void this.handleOpenIssue(issue); },
 			onToggleSelect: (issue) => this.handleToggleSelect(issue),
 		});
 
 		this.renderIgnoredSection(container);
 		this.addBackToTop(container);
+	}
+
+	private renderProgress(container: HTMLElement) {
+		const progress = this.model.scanProgress;
+		const startedAt = this.model.scanStartedAt ?? Date.now();
+		const elapsedMs = Date.now() - startedAt;
+		const scannerIndex = progress?.scannerIndex ?? 0;
+		const scannerTotal = progress?.scannerTotal ?? 0;
+		const percent = scannerTotal > 0
+			? Math.max(0, Math.min(100, Math.round((scannerIndex / scannerTotal) * 100)))
+			: 0;
+
+		const panel = container.createDiv({ cls: "vi-progress-panel" });
+		panel.createEl("h2", { text: "Scanning vault" });
+
+		const bar = panel.createDiv({ cls: "vi-progress-bar", attr: { "aria-label": "Scan progress" } });
+		bar.createDiv({ cls: "vi-progress-bar-fill", attr: { style: `width: ${percent}%` } });
+
+		panel.createEl("div", {
+			cls: "vi-progress-meta",
+			text: scannerTotal > 0 ? `${scannerIndex} / ${scannerTotal} scanners` : "Preparing scan...",
+		});
+
+		const current = panel.createDiv({ cls: "vi-progress-current" });
+		const scannerLabel = progress ? SCANNER_LABELS[progress.scannerId] : "Preparing scan";
+		current.createEl("div", { cls: "vi-progress-label", text: "Current" });
+		current.createEl("div", { cls: "vi-progress-value", text: scannerLabel });
+
+		const detailText = this.formatProgressDetail(progress);
+		if (detailText) {
+			const detail = panel.createDiv({ cls: "vi-progress-detail" });
+			detail.createEl("span", { text: detailText });
+		}
+
+		panel.createEl("div", {
+			cls: "vi-progress-elapsed",
+			text: `Elapsed: ${formatDuration(elapsedMs)}`,
+		});
+	}
+
+	private formatProgressDetail(progress: ScanProgress | null): string {
+		if (!progress) return "";
+		if (progress.type === "scanner-skipped") {
+			return progress.message ? `Skipped: ${progress.message}` : "Skipped";
+		}
+		if (progress.type === "scanner-complete") return "Completed";
+
+		const parts: string[] = [];
+		if (progress.phase) {
+			if (typeof progress.current === "number" && typeof progress.total === "number") {
+				parts.push(`${progress.phase}: ${progress.current} / ${progress.total}`);
+			} else {
+				parts.push(progress.phase);
+			}
+		} else if (progress.type === "scanner-start") {
+			parts.push("Scanning...");
+		}
+		if (progress.message) parts.push(progress.message);
+		return parts.join(" · ");
+	}
+
+	private startScanTimer() {
+		if (this.scanTimer) return;
+		this.scanTimer = setInterval(() => {
+			if (this.model.isScanning) this.render();
+		}, 1000);
+	}
+
+	private stopScanTimer() {
+		if (!this.scanTimer) return;
+		clearInterval(this.scanTimer);
+		this.scanTimer = null;
 	}
 
 	// ─── Toolbar ─────────────────────────────────────────────
@@ -316,7 +443,7 @@ export class InspectorView extends ItemView {
 			scannersRun: this.model.result.scannersRun,
 			selectionMode: this.model.ignoredSelectionMode,
 			selectedFingerprints: this.model.ignoredSelectedFingerprints,
-			onOpenFile: (path) => { void this.handleOpenFile(path); },
+			onOpenIssue: (issue) => { void this.handleOpenIssue(issue); },
 			onToggleSelect: (issue) => this.handleIgnoredToggleSelect(issue),
 		});
 	}
@@ -387,10 +514,34 @@ export class InspectorView extends ItemView {
 		return issues;
 	}
 
-	private async handleOpenFile(path: string) {
-		if (this.onRevealFile) { void this.onRevealFile(path); return; }
+	private async handleOpenIssue(issue: Issue) {
+		if (this.onRevealIssue) { void this.onRevealIssue(issue); return; }
+		await this.revealIssue(issue);
+	}
+
+	async revealIssue(issue: Issue) {
+		const path = issue.primaryPath ?? issue.relatedPaths[0];
+		if (!path) return;
 		const file = this.app.vault.getAbstractFileByPath(path);
-		if (file instanceof TFile) await this.app.workspace.getLeaf(false).openFile(file);
+		if (!(file instanceof TFile)) return;
+
+		const leaf = this.app.workspace.getLeaf(false);
+		await leaf.openFile(file, { active: true });
+
+		const targets = getLocationTargets(issue);
+		if (targets.length === 0) return;
+
+		const content = await this.app.vault.cachedRead(file);
+		const position = findFirstTextPosition(content, targets);
+		if (!position) return;
+
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		const editor = view?.editor;
+		if (!editor) return;
+
+		editor.setCursor(position);
+		editor.scrollIntoView({ from: position, to: position }, true);
+		editor.focus();
 	}
 
 	private handleToggleSelect(issue: Issue) {

@@ -105,8 +105,12 @@ Common options:
 vinspect . --format markdown --output report.md
 vinspect . --scanner broken-links,empty-notes
 vinspect . --scanner external-links
+vinspect . --progress
 vinspect . --config vault-inspector.config.json
 ```
+
+`--progress` writes scanner progress to stderr so JSON and Markdown output on
+stdout remain machine-readable.
 
 For CI baseline checks:
 

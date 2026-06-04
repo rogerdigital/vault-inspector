@@ -67,6 +67,42 @@ describe("externalLinksScanner", () => {
 		expect(issues).toHaveLength(0);
 	});
 
+	it("checks bare URLs in Markdown body text", async () => {
+		const checkedUrls: string[] = [];
+		const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
+		const ctx = makeCtx({
+			requestUrl: async (url) => {
+				checkedUrls.push(url);
+				return 404;
+			},
+			markdownFiles: [file],
+			vault: {
+				cachedRead: async () => [
+					"https://example.com/bare.",
+					"https://example.com/paren)",
+					"```",
+					"https://example.com/code",
+					"```",
+				].join("\n"),
+			} as any,
+			metadataCache: {
+				getFileCache: () => ({
+					links: [],
+					embeds: [],
+				}),
+			} as any,
+		});
+
+		const issues = await externalLinksScanner.scan(ctx);
+
+		expect(checkedUrls).toEqual([
+			"https://example.com/bare",
+			"https://example.com/paren",
+		]);
+		expect(issues).toHaveLength(2);
+		expect(issues.map((issue) => issue.evidence.url)).toEqual(checkedUrls);
+	});
+
 	it("reports timed out external links without hanging the scan", async () => {
 		vi.useFakeTimers();
 		const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;

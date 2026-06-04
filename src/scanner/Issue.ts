@@ -41,6 +41,20 @@ export type ScanResult = {
 	scannersRun: ScannerId[];
 };
 
+export type ScanProgress = {
+	type: "scanner-start" | "scanner-progress" | "scanner-complete" | "scanner-skipped";
+	scannerId: ScannerId;
+	scannerIndex: number;
+	scannerTotal: number;
+	phase?: string;
+	current?: number;
+	total?: number;
+	message?: string;
+	elapsedMs: number;
+};
+
+export type ScanProgressCallback = (progress: ScanProgress) => void;
+
 export const SCANNER_IDS: ScannerId[] = [
 	"broken-links",
 	"orphan-attachments",
