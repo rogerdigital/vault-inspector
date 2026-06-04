@@ -16,6 +16,7 @@ Use it before publishing, exporting, migrating, or cleaning up a long-lived vaul
 - **Frontmatter Types** — Report properties used with inconsistent value types across notes.
 - **Tag Usage** — Watch for missing or underused tags from a configurable watchlist.
 - **Large Files** — Flag Markdown files and attachments exceeding configurable size thresholds.
+- **Scan Progress** — Show scanner progress in Obsidian and optional CLI progress on stderr.
 
 ## Install
 
@@ -52,10 +53,14 @@ the Obsidian plugin affects the in-app plugin; installing from npm provides the
 
 1. Open the command palette and run **Vault Inspector: Run scan**.
 2. The Inspector view opens in the right sidebar.
-3. Filter results by scanner or severity. Click a file path to open it.
+3. Filter results by scanner or severity. Click paths, URLs, targets, properties, or tags to jump to the relevant location.
 4. Click **Select** to enter selection mode, then batch delete or ignore issues.
 5. Expand **Ignored items** at the bottom to restore previously ignored issues.
 6. Run **Vault Inspector: Export report** to save results as Markdown.
+
+Scan results are selectable for copying. Duplicate file results show each file
+separately, tag results show `#tag` chips, and exported Markdown reports include
+scanner-specific detail fields.
 
 ## CLI
 
@@ -89,7 +94,7 @@ vault-inspector /path/to/your/vault
 Pin a specific npm version when repeatability matters:
 
 ```bash
-npx vault-inspector@0.4.3 /path/to/your/vault
+npx vault-inspector@0.4.4 /path/to/your/vault
 ```
 
 `vault-inspector scan /path/to/vault` is also supported for scripts that prefer
@@ -110,7 +115,8 @@ vinspect . --config vault-inspector.config.json
 ```
 
 `--progress` writes scanner progress to stderr so JSON and Markdown output on
-stdout remain machine-readable.
+stdout remain machine-readable. Short scans may complete in milliseconds; progress
+and report durations use millisecond, second, or minute units depending on scale.
 
 For CI baseline checks:
 
@@ -189,6 +195,7 @@ Opt-in scanner for checking HTTP/HTTPS URLs found in notes for availability. It 
 
 - `warning` — HTTP status 400 or higher
 - `info` — timed out, failed, or skipped URL checks
+- Checks Markdown links, frontmatter links, images/embeds, and bare HTTP/HTTPS URLs in note bodies.
 
 ### Duplicate Files
 
