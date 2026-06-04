@@ -181,7 +181,7 @@ export class InspectorView extends ItemView {
 			});
 			empty.createEl("p", {
 				cls: "vi-empty-hint",
-				text: "You can also click the search icon in the left ribbon, or use the command palette (Cmd/Ctrl+P) → \"Vault Inspector: Run scan\".",
+				text: "You can also click the shield icon in the left ribbon, or run \"Vault Inspector: Run scan\" from the command palette.",
 			});
 			return;
 		}
