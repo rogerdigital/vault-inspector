@@ -1,11 +1,15 @@
 import type { App } from "obsidian";
-import type { Issue, ScanResult, ScannerId } from "./Issue";
+import type { Issue, ScanProgressCallback, ScanResult, ScannerId } from "./Issue";
 import type { ScanContext } from "./ScanContext";
 import type { InspectorSettings } from "../settings/settings";
 
 export type Scanner = {
 	id: ScannerId;
-	scan(ctx: ScanContext): Issue[] | Promise<Issue[]>;
+	scan(ctx: ScanContext, onProgress?: ScanProgressCallback): Issue[] | Promise<Issue[]>;
+};
+
+type RunOptions = {
+	onProgress?: ScanProgressCallback;
 };
 
 export class ScanRunner {
@@ -17,7 +21,7 @@ export class ScanRunner {
 		this.scanners.push(scanner);
 	}
 
-	async run(app: App, settings: InspectorSettings): Promise<ScanResult> {
+	async run(app: App, settings: InspectorSettings, options: RunOptions = {}): Promise<ScanResult> {
 		const startedAt = Date.now();
 		const markdownFiles = app.vault.getMarkdownFiles();
 		const allFiles = app.vault.getFiles();
@@ -51,10 +55,36 @@ export class ScanRunner {
 		const issues: Issue[] = [];
 		const ignoredIssues: Issue[] = [];
 
-		for (const scanner of this.scanners) {
-			if (!ctx.enabledScanners.has(scanner.id)) continue;
+		for (let index = 0; index < this.scanners.length; index++) {
+			const scanner = this.scanners[index];
+			const scannerIndex = index + 1;
+			const scannerTotal = this.scanners.length;
+			const emitProgress = (type: Parameters<ScanProgressCallback>[0]["type"], message?: string) => {
+				options.onProgress?.({
+					type,
+					scannerId: scanner.id,
+					scannerIndex,
+					scannerTotal,
+					message,
+					elapsedMs: Date.now() - startedAt,
+				});
+			};
+
+			if (!ctx.enabledScanners.has(scanner.id)) {
+				emitProgress("scanner-skipped", "disabled");
+				continue;
+			}
 			scannersRun.push(scanner.id);
-			const result = await scanner.scan(ctx);
+			emitProgress("scanner-start");
+			const result = await scanner.scan(ctx, (progress) => {
+				options.onProgress?.({
+					...progress,
+					scannerId: scanner.id,
+					scannerIndex,
+					scannerTotal,
+					elapsedMs: Date.now() - startedAt,
+				});
+			});
 			for (const issue of result) {
 				if (ctx.ignoredFingerprints.has(issue.fingerprint)) {
 					ignoredIssues.push(issue);
@@ -62,6 +92,7 @@ export class ScanRunner {
 					issues.push(issue);
 				}
 			}
+			emitProgress("scanner-complete");
 		}
 
 		return {

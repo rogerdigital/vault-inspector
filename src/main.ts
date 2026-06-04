@@ -109,7 +109,9 @@ export default class VaultInspectorPlugin extends Plugin {
 	private async scanAndRender(view: InspectorView) {
 		view.setScanning(true);
 		try {
-			const result = await this.scanRunner.run(this.app, this.settings);
+			const result = await this.scanRunner.run(this.app, this.settings, {
+				onProgress: (progress) => view.setScanProgress(progress),
+			});
 			view.setResult(result);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);

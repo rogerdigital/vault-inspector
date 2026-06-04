@@ -58,6 +58,38 @@ describe("runCli", () => {
 		});
 	});
 
+	it("writes scan progress to stderr when requested", async () => {
+		await withVault({ "empty.md": "# Empty\n" }, async (vaultPath) => {
+			const result = await runCli(["scan", vaultPath, "--format", "json", "--progress"]);
+
+			expect(result.exitCode).toBe(1);
+			expect(result.stderr).toContain("Scanning vault...");
+			expect(result.stderr).toContain("[1/8] Broken Links");
+			expect(result.stderr).toContain("External Links skipped (disabled)");
+			expect(result.stderr).toContain("Done in ");
+
+			const payload = JSON.parse(result.stdout);
+			expect(payload.tool).toBe("vault-inspector");
+		});
+	});
+
+	it("can stream scan progress through a runtime stderr writer", async () => {
+		await withVault({ "empty.md": "# Empty\n" }, async (vaultPath) => {
+			let streamed = "";
+			const result = await runCli(["scan", vaultPath, "--progress"], {
+				writeStderr: (text) => {
+					streamed += text;
+				},
+			});
+
+			expect(result.exitCode).toBe(1);
+			expect(result.stderr).toBe("");
+			expect(streamed).toContain("Scanning vault...");
+			expect(streamed).toContain("[1/8] Broken Links");
+			expect(JSON.parse(result.stdout).tool).toBe("vault-inspector");
+		});
+	});
+
 	it("treats a vault path as the default scan command", async () => {
 		await withVault({ "empty.md": "" }, async (vaultPath) => {
 			const result = await runCli([vaultPath, "--scanner", "empty-notes"]);

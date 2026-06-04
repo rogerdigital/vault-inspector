@@ -1,8 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { ScanRunner } from "../scanner/ScanRunner";
-import type { ScanResult, ScannerId } from "../scanner/Issue";
-import { SCANNER_IDS } from "../scanner/Issue";
+import type { ScanProgress, ScanResult, ScannerId } from "../scanner/Issue";
+import { SCANNER_IDS, SCANNER_LABELS } from "../scanner/Issue";
 import { registerDefaultScanners } from "../scanner/register-scanners";
 import { DEFAULT_SETTINGS, type InspectorSettings } from "../settings/settings";
 import { generateMarkdownReport } from "../report/markdown-export";
@@ -26,6 +26,7 @@ type CliOptions = {
 	baselinePath?: string;
 	failOn: FailOn;
 	fix: boolean;
+	progress: boolean;
 	largeMarkdownBytes?: number;
 	largeAttachmentBytes?: number;
 	duplicateHashMaxBytes?: number;
@@ -37,13 +38,26 @@ type CliOptions = {
 
 type ParsedArgs = CliOptions & { configPath?: string };
 
+type CliRuntime = {
+	writeStderr?: (text: string) => void;
+};
+
 export type CliResult = {
 	exitCode: number;
 	stdout: string;
 	stderr: string;
 };
 
-export async function runCli(args: string[]): Promise<CliResult> {
+export async function runCli(args: string[], runtime: CliRuntime = {}): Promise<CliResult> {
+	let stderr = "";
+	const writeStderr = (text: string) => {
+		if (runtime.writeStderr) {
+			runtime.writeStderr(text);
+		} else {
+			stderr += text;
+		}
+	};
+
 	const parsedArgs = parseArgs(args);
 	if ("error" in parsedArgs) {
 		return { exitCode: 2, stdout: "", stderr: `${parsedArgs.error}\n` };
@@ -68,7 +82,13 @@ export async function runCli(args: string[]): Promise<CliResult> {
 		const scanRunner = new ScanRunner();
 		registerDefaultScanners(scanRunner);
 		const app = await createLocalApp(vaultPath);
-		const scanResult = await scanRunner.run(app, makeSettings(parsed));
+		if (parsed.progress) writeStderr("Scanning vault...\n");
+		const scanStartedAt = Date.now();
+		const scanResult = await scanRunner.run(app, makeSettings(parsed), {
+			onProgress: parsed.progress
+				? (progress) => writeStderr(formatProgressLine(progress))
+				: undefined,
+		});
 		const baselineFingerprints = parsed.baselinePath
 			? await readBaselineFingerprints(parsed.baselinePath)
 			: new Set<string>();
@@ -78,17 +98,20 @@ export async function runCli(args: string[]): Promise<CliResult> {
 
 		if (parsed.outputPath) {
 			await writeFile(parsed.outputPath, output, "utf8");
-			return { exitCode, stdout: "", stderr: "" };
+			if (parsed.progress) writeStderr(`Done in ${formatDuration(Date.now() - scanStartedAt)}\n`);
+			return { exitCode, stdout: "", stderr };
 		}
 
+		if (parsed.progress) writeStderr(`Done in ${formatDuration(Date.now() - scanStartedAt)}\n`);
 		return {
 			exitCode,
 			stdout: `${output}\n`,
-			stderr: "",
+			stderr,
 		};
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		return { exitCode: 2, stdout: "", stderr: `${message}\n` };
+		writeStderr(`Scan failed: ${message}\n`);
+		return { exitCode: 2, stdout: "", stderr };
 	}
 }
 
@@ -112,6 +135,7 @@ function parseArgs(args: string[]): ParsedArgs | { error: string } {
 		ignoredFolders: [],
 		failOn: "any",
 		fix: false,
+		progress: false,
 	};
 
 	for (let index = hasScanCommand ? 2 : 1; index < args.length; index++) {
@@ -164,6 +188,8 @@ function parseArgs(args: string[]): ParsedArgs | { error: string } {
 			const value = args[++index];
 			if (!isFailOn(value)) return { error: usage(`Unsupported --fail-on value: ${value ?? ""}`) };
 			options.failOn = value;
+		} else if (arg === "--progress") {
+			options.progress = true;
 		} else if (arg === "--fix") {
 			options.fix = true;
 		} else {
@@ -262,6 +288,41 @@ function formatResult(
 ): string {
 	if (format === "markdown") return generateMarkdownReport(result);
 	return JSON.stringify(toJsonPayload(result, vaultPath), null, 2);
+}
+
+function formatProgressLine(progress: ScanProgress): string {
+	const label = SCANNER_LABELS[progress.scannerId];
+	if (progress.type === "scanner-skipped") {
+		return `[${progress.scannerIndex}/${progress.scannerTotal}] ${label} skipped (${progress.message ?? "disabled"})\n`;
+	}
+	if (progress.type === "scanner-start") {
+		return `[${progress.scannerIndex}/${progress.scannerTotal}] ${label}\n`;
+	}
+	if (progress.type === "scanner-complete") return "";
+
+	const detail = formatProgressDetail(progress);
+	return detail ? `  ${detail}\n` : "";
+}
+
+function formatProgressDetail(progress: ScanProgress): string {
+	const parts: string[] = [];
+	if (progress.phase) {
+		if (typeof progress.current === "number" && typeof progress.total === "number") {
+			parts.push(`${progress.phase}: ${progress.current}/${progress.total}`);
+		} else {
+			parts.push(progress.phase);
+		}
+	}
+	if (progress.message) parts.push(progress.message);
+	return parts.join(", ");
+}
+
+function formatDuration(ms: number): string {
+	const seconds = ms / 1000;
+	if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+	const minutes = Math.floor(seconds / 60);
+	const remainingSeconds = Math.floor(seconds % 60);
+	return `${minutes}m ${remainingSeconds.toString().padStart(2, "0")}s`;
 }
 
 function toJsonPayload(result: CliScanResult, vaultPath: string): Record<string, unknown> {
@@ -407,6 +468,7 @@ Options:
   --config <path>           Load CLI options from a JSON config file.
   --baseline <path>         Compare issue fingerprints against a previous JSON report.
   --fail-on <mode>          any, error, warning, new, or none.
+  --progress                Write scan progress to stderr.
   --fix                     Reserved for future opt-in fix execution.
 `;
 }

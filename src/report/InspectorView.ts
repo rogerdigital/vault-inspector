@@ -1,5 +1,5 @@
 import { ItemView, WorkspaceLeaf, Notice, TFile, setTooltip } from "obsidian";
-import type { ScanResult, Issue } from "../scanner/Issue";
+import type { ScanProgress, ScanResult, Issue } from "../scanner/Issue";
 import { SCANNER_LABELS } from "../scanner/Issue";
 import type { ReportModel } from "./report-model";
 import { renderSummary } from "./render-summary";
@@ -8,10 +8,20 @@ import { setIcon } from "obsidian";
 
 export const VIEW_TYPE_INSPECTOR = "vault-inspector";
 
+function formatDuration(ms: number): string {
+	const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+	const minutes = Math.floor(totalSeconds / 60);
+	const seconds = totalSeconds % 60;
+	if (minutes === 0) return `${seconds}s`;
+	return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+}
+
 export class InspectorView extends ItemView {
 	private model: ReportModel = {
 		result: null,
 		isScanning: false,
+		scanProgress: null,
+		scanStartedAt: null,
 		filterScanner: null,
 		filterSeverity: null,
 		enableFixActions: true,
@@ -28,6 +38,7 @@ export class InspectorView extends ItemView {
 	private onRevealFile: ((path: string) => void | Promise<void>) | null = null;
 	private onRunScan: (() => void) | null = null;
 	private backToTopHandler: (() => void) | null = null;
+	private scanTimer: ReturnType<typeof setInterval> | null = null;
 
 	constructor(leaf: WorkspaceLeaf) {
 		super(leaf);
@@ -52,6 +63,7 @@ export class InspectorView extends ItemView {
 			container.removeEventListener("scroll", this.backToTopHandler);
 			this.backToTopHandler = null;
 		}
+		this.stopScanTimer();
 		this.onIgnoreAllIssues = null;
 		this.onRestoreIssues = null;
 		this.onFixAllIssues = null;
@@ -61,12 +73,29 @@ export class InspectorView extends ItemView {
 
 	setScanning(scanning: boolean) {
 		this.model.isScanning = scanning;
+		if (scanning) {
+			this.model.scanStartedAt = Date.now();
+			this.model.scanProgress = null;
+			this.startScanTimer();
+		} else {
+			this.model.scanStartedAt = null;
+			this.model.scanProgress = null;
+			this.stopScanTimer();
+		}
+		this.render();
+	}
+
+	setScanProgress(progress: ScanProgress) {
+		this.model.scanProgress = progress;
 		this.render();
 	}
 
 	setResult(result: ScanResult) {
 		this.model.result = result;
 		this.model.isScanning = false;
+		this.model.scanProgress = null;
+		this.model.scanStartedAt = null;
+		this.stopScanTimer();
 		this.model.selectionMode = false;
 		this.model.selectedFingerprints = new Set();
 		this.model.ignoredSelectionMode = false;
@@ -106,7 +135,7 @@ export class InspectorView extends ItemView {
 		container.empty();
 
 		if (this.model.isScanning) {
-			container.createEl("div", { cls: "vi-progress", text: "Scanning vault..." });
+			this.renderProgress(container);
 			return;
 		}
 
@@ -149,6 +178,78 @@ export class InspectorView extends ItemView {
 
 		this.renderIgnoredSection(container);
 		this.addBackToTop(container);
+	}
+
+	private renderProgress(container: HTMLElement) {
+		const progress = this.model.scanProgress;
+		const startedAt = this.model.scanStartedAt ?? Date.now();
+		const elapsedMs = Date.now() - startedAt;
+		const scannerIndex = progress?.scannerIndex ?? 0;
+		const scannerTotal = progress?.scannerTotal ?? 0;
+		const percent = scannerTotal > 0
+			? Math.max(0, Math.min(100, Math.round((scannerIndex / scannerTotal) * 100)))
+			: 0;
+
+		const panel = container.createDiv({ cls: "vi-progress-panel" });
+		panel.createEl("h2", { text: "Scanning vault" });
+
+		const bar = panel.createDiv({ cls: "vi-progress-bar", attr: { "aria-label": "Scan progress" } });
+		bar.createDiv({ cls: "vi-progress-bar-fill", attr: { style: `width: ${percent}%` } });
+
+		panel.createEl("div", {
+			cls: "vi-progress-meta",
+			text: scannerTotal > 0 ? `${scannerIndex} / ${scannerTotal} scanners` : "Preparing scan...",
+		});
+
+		const current = panel.createDiv({ cls: "vi-progress-current" });
+		const scannerLabel = progress ? SCANNER_LABELS[progress.scannerId] : "Preparing scan";
+		current.createEl("div", { cls: "vi-progress-label", text: "Current" });
+		current.createEl("div", { cls: "vi-progress-value", text: scannerLabel });
+
+		const detailText = this.formatProgressDetail(progress);
+		if (detailText) {
+			const detail = panel.createDiv({ cls: "vi-progress-detail" });
+			detail.createEl("span", { text: detailText });
+		}
+
+		panel.createEl("div", {
+			cls: "vi-progress-elapsed",
+			text: `Elapsed: ${formatDuration(elapsedMs)}`,
+		});
+	}
+
+	private formatProgressDetail(progress: ScanProgress | null): string {
+		if (!progress) return "";
+		if (progress.type === "scanner-skipped") {
+			return progress.message ? `Skipped: ${progress.message}` : "Skipped";
+		}
+		if (progress.type === "scanner-complete") return "Completed";
+
+		const parts: string[] = [];
+		if (progress.phase) {
+			if (typeof progress.current === "number" && typeof progress.total === "number") {
+				parts.push(`${progress.phase}: ${progress.current} / ${progress.total}`);
+			} else {
+				parts.push(progress.phase);
+			}
+		} else if (progress.type === "scanner-start") {
+			parts.push("Scanning...");
+		}
+		if (progress.message) parts.push(progress.message);
+		return parts.join(" · ");
+	}
+
+	private startScanTimer() {
+		if (this.scanTimer) return;
+		this.scanTimer = setInterval(() => {
+			if (this.model.isScanning) this.render();
+		}, 1000);
+	}
+
+	private stopScanTimer() {
+		if (!this.scanTimer) return;
+		clearInterval(this.scanTimer);
+		this.scanTimer = null;
 	}
 
 	// ─── Toolbar ─────────────────────────────────────────────
