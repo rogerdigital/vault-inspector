@@ -13,6 +13,9 @@ export default class VaultInspectorPlugin extends Plugin {
 	scanRunner = new ScanRunner(async (url) => {
 		const response = await requestUrl({ url, method: "HEAD" });
 		return response.status;
+	}, {
+		setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),
+		clearTimeout: (timeoutId) => window.clearTimeout(timeoutId as number),
 	});
 
 	async onload() {

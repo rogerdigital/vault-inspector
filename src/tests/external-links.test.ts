@@ -16,6 +16,8 @@ function makeCtx(overrides: Partial<ScanContext> = {}): ScanContext {
 			const response = await requestUrl({ url, method: "HEAD" });
 			return response.status;
 		},
+		setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
+		clearTimeout: (timeoutId) => clearTimeout(timeoutId as ReturnType<typeof setTimeout>),
 		markdownFiles: [],
 		allFiles: [],
 		filePathIndex: new Set(),

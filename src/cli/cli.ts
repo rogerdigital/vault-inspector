@@ -83,7 +83,13 @@ export async function runCli(args: string[], runtime: CliRuntime = {}): Promise<
 
 	try {
 		const vaultPath = resolve(parsed.vaultPath);
-		const scanRunner = new ScanRunner();
+		const scanRunner = new ScanRunner(async (url) => {
+			const response = await fetch(url, { method: "HEAD" });
+			return response.status;
+		}, {
+			setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
+			clearTimeout: (timeoutId) => clearTimeout(timeoutId as ReturnType<typeof setTimeout>),
+		});
 		registerDefaultScanners(scanRunner);
 		const app = await createLocalApp(vaultPath);
 		if (parsed.progress) writeStderr("Scanning vault...\n");
@@ -427,10 +433,10 @@ function validateConfig(config: CliConfig): string | null {
 	}
 	if (config.severity) {
 		const invalid = config.severity.find((item) => !isSeverity(item));
-		if (invalid) return `Unknown severity: ${invalid}`;
+		if (invalid) return `Unknown severity: ${String(invalid)}`;
 	}
 	if (config.failOn && !isFailOn(config.failOn)) {
-		return `Unsupported failOn value: ${config.failOn}`;
+		return `Unsupported failOn value: ${String(config.failOn)}`;
 	}
 	return null;
 }

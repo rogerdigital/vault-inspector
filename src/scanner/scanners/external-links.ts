@@ -193,11 +193,16 @@ async function checkUrlWithTimeout(
 	ctx: ScanContext | undefined,
 	timeoutMs: number,
 ): Promise<CheckResult> {
-	const result = await withTimeout(checkUrl(entry.url, ctx), timeoutMs, {
-		...entry,
-		kind: "timeout",
+	const result = await withTimeout(
+		checkUrl(entry.url, ctx),
 		timeoutMs,
-	});
+		{
+			...entry,
+			kind: "timeout",
+			timeoutMs,
+		},
+		ctx,
+	);
 	return withSourcePath(result, entry.sourcePath);
 }
 
@@ -207,8 +212,12 @@ async function checkUrl(url: string, ctx?: ScanContext): Promise<CheckResult> {
 			const status = await ctx.requestUrl(url);
 			return { url, sourcePath: "", kind: "http", status };
 		}
-		const response = await fetch(url, { method: "HEAD" });
-		return { url, sourcePath: "", kind: "http", status: response.status };
+		return {
+			url,
+			sourcePath: "",
+			kind: "failed",
+			error: "No request adapter configured",
+		};
 	} catch (error) {
 		return {
 			url,
@@ -223,18 +232,30 @@ async function withTimeout<T>(
 	promise: Promise<T>,
 	timeoutMs: number,
 	timeoutValue: T,
+	ctx?: ScanContext,
 ): Promise<T> {
-	let timeoutId: ReturnType<typeof setTimeout> | undefined;
+	const timer = getTimer(ctx);
+	let timeoutId: unknown;
 	try {
 		return await Promise.race([
 			promise,
 			new Promise<T>((resolve) => {
-				timeoutId = setTimeout(() => resolve(timeoutValue), timeoutMs);
+				timeoutId = timer.setTimeout(() => resolve(timeoutValue), timeoutMs);
 			}),
 		]);
 	} finally {
-		if (timeoutId) clearTimeout(timeoutId);
+		if (timeoutId) timer.clearTimeout(timeoutId);
 	}
+}
+
+function getTimer(ctx?: ScanContext): {
+	setTimeout: (callback: () => void, delayMs: number) => unknown;
+	clearTimeout: (timeoutId: unknown) => void;
+} {
+	return {
+		setTimeout: ctx?.setTimeout ?? ((callback, delayMs) => window.setTimeout(callback, delayMs)),
+		clearTimeout: ctx?.clearTimeout ?? ((timeoutId) => window.clearTimeout(timeoutId as number)),
+	};
 }
 
 function makeIssue(result: CheckResult): Issue | null {
