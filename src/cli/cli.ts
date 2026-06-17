@@ -1,3 +1,4 @@
+/* eslint-disable import/no-nodejs-modules, no-restricted-globals, obsidianmd/prefer-window-timers -- CLI runs in Node, not the Obsidian plugin runtime. */
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { ScanRunner } from "../scanner/ScanRunner";
