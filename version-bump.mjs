@@ -9,7 +9,3 @@ versions[packageJson.version] = manifest.minAppVersion;
 
 await writeFile("manifest.json", `${JSON.stringify(manifest, null, "\t")}\n`);
 await writeFile("versions.json", `${JSON.stringify(versions, null, "\t")}\n`);
-await writeFile(
-	"src/cli/version.ts",
-	`export const TOOL_VERSION = "${packageJson.version}";\n`,
-);
