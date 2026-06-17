@@ -22,6 +22,8 @@ function makeCtx(overrides: Partial<ScanContext> = {}): ScanContext {
 		lowUsageTagThreshold: 2,
 		watchedTags: [],
 		ignoredFolders: [],
+		ignoredLargeMarkdownFrontmatterKeys: ["excalidraw"],
+		ignoredLargeMarkdownPathPatterns: [],
 		...overrides,
 	} as ScanContext;
 }
@@ -90,6 +92,55 @@ describe("largeFilesScanner", () => {
 			ignoredFolders: ["templates"],
 		});
 		const issues = await largeFilesScanner.scan(ctx);
+		expect(issues).toHaveLength(0);
+	});
+
+	it("skips large markdown files with ignored frontmatter keys", async () => {
+		const file = makeFile("drawings/diagram.md", 200 * 1024);
+		const ctx = makeCtx({
+			allFiles: [file],
+			filePathIndex: new Set(["drawings/diagram.md"]),
+			metadataCache: {
+				getFileCache() {
+					return { frontmatter: { excalidraw: true } };
+				},
+			} as any,
+		});
+
+		const issues = await largeFilesScanner.scan(ctx);
+
+		expect(issues).toHaveLength(0);
+	});
+
+	it("reports matching frontmatter markdown when no ignored keys are configured", async () => {
+		const file = makeFile("drawings/diagram.md", 200 * 1024);
+		const ctx = makeCtx({
+			allFiles: [file],
+			filePathIndex: new Set(["drawings/diagram.md"]),
+			ignoredLargeMarkdownFrontmatterKeys: [],
+			metadataCache: {
+				getFileCache() {
+					return { frontmatter: { excalidraw: true } };
+				},
+			} as any,
+		});
+
+		const issues = await largeFilesScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].primaryPath).toBe("drawings/diagram.md");
+	});
+
+	it("skips large markdown files matching ignored path patterns", async () => {
+		const file = makeFile("index/source.canvas.md", 200 * 1024);
+		const ctx = makeCtx({
+			allFiles: [file],
+			filePathIndex: new Set(["index/source.canvas.md"]),
+			ignoredLargeMarkdownPathPatterns: ["index/**/*.md"],
+		});
+
+		const issues = await largeFilesScanner.scan(ctx);
+
 		expect(issues).toHaveLength(0);
 	});
 });

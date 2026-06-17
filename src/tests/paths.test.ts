@@ -5,6 +5,7 @@ import {
 	getBasename,
 	isInFolder,
 	isIgnoredPath,
+	matchesGlob,
 } from "../utils/paths";
 
 describe("normalizePath", () => {
@@ -86,5 +87,17 @@ describe("isIgnoredPath", () => {
 
 	it("returns false for empty ignored list", () => {
 		expect(isIgnoredPath("any/path.md", [])).toBe(false);
+	});
+});
+
+describe("matchesGlob", () => {
+	it("matches single-star path patterns within one segment", () => {
+		expect(matchesGlob("index/source.canvas.md", "index/*.md")).toBe(true);
+		expect(matchesGlob("index/nested/source.canvas.md", "index/*.md")).toBe(false);
+	});
+
+	it("matches double-star path patterns across segments", () => {
+		expect(matchesGlob("index/source.canvas.md", "index/**/*.md")).toBe(true);
+		expect(matchesGlob("index/nested/source.canvas.md", "index/**/*.md")).toBe(true);
 	});
 });

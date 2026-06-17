@@ -13,6 +13,8 @@ export type ScanContext = {
 	ignoredFingerprints: Set<string>;
 	largeMarkdownBytes: number;
 	largeAttachmentBytes: number;
+	ignoredLargeMarkdownFrontmatterKeys: string[];
+	ignoredLargeMarkdownPathPatterns: string[];
 	duplicateHashMaxBytes: number;
 	lowUsageTagThreshold: number;
 	watchedTags: string[];

@@ -82,6 +82,30 @@ export class InspectorSettingTab extends PluginSettingTab {
 					}),
 			);
 		new Setting(containerEl)
+			.setName("Ignored large Markdown frontmatter keys")
+			.setDesc("Markdown files with any of these frontmatter keys are excluded from large file checks.")
+			.addText((text) =>
+				text.setValue(this.plugin.settings.ignoredLargeMarkdownFrontmatterKeys.join(", "))
+					.setPlaceholder("E.g. excalidraw")
+					.onChange(async (value) => {
+						this.plugin.settings.ignoredLargeMarkdownFrontmatterKeys =
+							value.split(",").map((key) => key.trim()).filter(Boolean);
+						await this.plugin.saveSettings();
+					}),
+			);
+		new Setting(containerEl)
+			.setName("Ignored large Markdown path patterns")
+			.setDesc("Vault-relative glob patterns excluded from large Markdown checks.")
+			.addText((text) =>
+				text.setValue(this.plugin.settings.ignoredLargeMarkdownPathPatterns.join(", "))
+					.setPlaceholder("E.g. index/**/*.md, **/*.canvas.md")
+					.onChange(async (value) => {
+						this.plugin.settings.ignoredLargeMarkdownPathPatterns =
+							value.split(",").map((pattern) => pattern.trim()).filter(Boolean);
+						await this.plugin.saveSettings();
+					}),
+			);
+		new Setting(containerEl)
 			.setName("Duplicate hash cap (mb)")
 			.setDesc("Files above this size are reported as candidates without content hashing.")
 			.addSlider((slider) =>

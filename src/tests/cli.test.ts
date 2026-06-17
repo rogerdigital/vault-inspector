@@ -218,6 +218,41 @@ describe("runCli", () => {
 		});
 	});
 
+	it("loads config for large markdown ignore rules", async () => {
+		await withVault(
+			{
+				"drawings/diagram.md": "---\nexcalidraw: true\n---\n" + "x".repeat(30),
+				"index/source.canvas.md": "x".repeat(30),
+				"notes/large.md": "x".repeat(30),
+			},
+			async (vaultPath) => {
+				const configPath = join(vaultPath, "vault-inspector.config.json");
+				await writeFile(
+					configPath,
+					JSON.stringify({
+						scanners: ["large-files"],
+						largeMarkdownBytes: 10,
+						ignoredLargeMarkdownFrontmatterKeys: ["excalidraw"],
+						ignoredLargeMarkdownPathPatterns: ["index/**/*.md"],
+					}),
+					"utf8",
+				);
+
+				const result = await runCli(["scan", vaultPath, "--config", configPath]);
+
+				expect(result.exitCode).toBe(1);
+				const payload = JSON.parse(result.stdout);
+				expect(payload.summary.issues).toBe(1);
+				expect(payload.issues).toEqual([
+					expect.objectContaining({
+						scannerId: "large-files",
+						primaryPath: "notes/large.md",
+					}),
+				]);
+			},
+		);
+	});
+
 	it("uses fail-on to control exit status", async () => {
 		await withVault({ "empty.md": "" }, async (vaultPath) => {
 			const result = await runCli([

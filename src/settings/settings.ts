@@ -6,6 +6,8 @@ export type InspectorSettings = {
 	enableFixActions: boolean;
 	largeMarkdownBytes: number;
 	largeAttachmentBytes: number;
+	ignoredLargeMarkdownFrontmatterKeys: string[];
+	ignoredLargeMarkdownPathPatterns: string[];
 	duplicateHashMaxBytes: number;
 	lowUsageTagThreshold: number;
 	emptyNoteWordThreshold: number;
@@ -23,6 +25,8 @@ export const DEFAULT_SETTINGS: InspectorSettings = {
 	enableFixActions: true,
 	largeMarkdownBytes: 100 * 1024,
 	largeAttachmentBytes: 5 * 1024 * 1024,
+	ignoredLargeMarkdownFrontmatterKeys: ["excalidraw"],
+	ignoredLargeMarkdownPathPatterns: [],
 	duplicateHashMaxBytes: 1024 * 1024,
 	lowUsageTagThreshold: 2,
 	emptyNoteWordThreshold: 5,

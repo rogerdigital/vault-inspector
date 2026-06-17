@@ -43,6 +43,10 @@ export class ScanRunner {
 			ignoredFingerprints: new Set(settings.ignoredIssueFingerprints),
 			largeMarkdownBytes: settings.largeMarkdownBytes,
 			largeAttachmentBytes: settings.largeAttachmentBytes,
+			ignoredLargeMarkdownFrontmatterKeys:
+				settings.ignoredLargeMarkdownFrontmatterKeys,
+			ignoredLargeMarkdownPathPatterns:
+				settings.ignoredLargeMarkdownPathPatterns,
 			duplicateHashMaxBytes: settings.duplicateHashMaxBytes,
 			lowUsageTagThreshold: settings.lowUsageTagThreshold,
 			watchedTags: settings.watchedTags,

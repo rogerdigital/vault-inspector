@@ -29,3 +29,15 @@ export function isInFolder(path: string, folder: string): boolean {
 export function isIgnoredPath(path: string, ignoredFolders: string[]): boolean {
 	return ignoredFolders.some((folder) => isInFolder(path, folder));
 }
+
+export function matchesGlob(path: string, glob: string): boolean {
+	const escaped = glob
+		.replace(/[.+^${}()|[\]\\]/g, "\\$&")
+		.replace(/\*\*\//g, "\u0000")
+		.replace(/\*\*/g, "\u0001")
+		.replace(/\*/g, "[^/]*");
+	const pattern = escaped
+		.replace(/\u0000/g, "(?:.*/)?")
+		.replace(/\u0001/g, ".*");
+	return new RegExp(`^${pattern}$`).test(path);
+}
