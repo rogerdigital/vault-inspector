@@ -5,4 +5,9 @@ describe("DEFAULT_SETTINGS", () => {
 	it("keeps external link checks opt-in by default", () => {
 		expect(DEFAULT_SETTINGS.enabledScanners["external-links"]).toBe(false);
 	});
+
+	it("ignores Excalidraw markdown in large file checks by default", () => {
+		expect(DEFAULT_SETTINGS.ignoredLargeMarkdownFrontmatterKeys).toContain("excalidraw");
+		expect(DEFAULT_SETTINGS.ignoredLargeMarkdownPathPatterns).toEqual([]);
+	});
 });

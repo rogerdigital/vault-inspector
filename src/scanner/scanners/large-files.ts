@@ -1,8 +1,9 @@
+import type { TFile } from "obsidian";
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { generateFingerprint } from "../issue-fingerprint";
 import { isMarkdown } from "../../utils/file-types";
-import { isIgnoredPath } from "../../utils/paths";
+import { isIgnoredPath, matchesGlob } from "../../utils/paths";
 import { formatSize } from "../../utils/format";
 
 export const largeFilesScanner = {
@@ -15,6 +16,8 @@ export const largeFilesScanner = {
 			if (isIgnoredPath(file.path, ctx.ignoredFolders)) continue;
 
 			const isMd = isMarkdown(file.path);
+			if (isMd && isIgnoredLargeMarkdown(file, ctx)) continue;
+
 			const threshold = isMd
 				? ctx.largeMarkdownBytes
 				: ctx.largeAttachmentBytes;
@@ -44,3 +47,25 @@ export const largeFilesScanner = {
 		return issues;
 	},
 };
+
+function isIgnoredLargeMarkdown(file: TFile, ctx: ScanContext): boolean {
+	if (
+		ctx.ignoredLargeMarkdownPathPatterns.some((pattern) =>
+			matchesGlob(file.path, pattern),
+		)
+	) {
+		return true;
+	}
+
+	if (ctx.ignoredLargeMarkdownFrontmatterKeys.length === 0) return false;
+
+	const getFileCache = ctx.metadataCache.getFileCache;
+	if (typeof getFileCache !== "function") return false;
+
+	const frontmatter = getFileCache.call(ctx.metadataCache, file)?.frontmatter;
+	if (!frontmatter) return false;
+
+	return ctx.ignoredLargeMarkdownFrontmatterKeys.some((key) =>
+		Object.prototype.hasOwnProperty.call(frontmatter, key),
+	);
+}

@@ -9,6 +9,7 @@ import { generateMarkdownReport } from "../report/markdown-export";
 import { createLocalApp } from "./local-vault";
 import { TOOL_VERSION } from "./version";
 import { formatDuration } from "../utils/format";
+import { matchesGlob } from "../utils/paths";
 
 type OutputFormat = "json" | "markdown";
 type FailOn = "any" | "error" | "warning" | "new" | "none";
@@ -30,6 +31,8 @@ type CliOptions = {
 	progress: boolean;
 	largeMarkdownBytes?: number;
 	largeAttachmentBytes?: number;
+	ignoredLargeMarkdownFrontmatterKeys?: string[];
+	ignoredLargeMarkdownPathPatterns?: string[];
 	duplicateHashMaxBytes?: number;
 	lowUsageTagThreshold?: number;
 	emptyNoteWordThreshold?: number;
@@ -213,6 +216,8 @@ type CliConfig = Partial<
 		| "failOn"
 		| "largeMarkdownBytes"
 		| "largeAttachmentBytes"
+		| "ignoredLargeMarkdownFrontmatterKeys"
+		| "ignoredLargeMarkdownPathPatterns"
 		| "duplicateHashMaxBytes"
 		| "lowUsageTagThreshold"
 		| "emptyNoteWordThreshold"
@@ -243,6 +248,12 @@ async function loadConfig(args: ParsedArgs): Promise<CliOptions | { error: strin
 			failOn: args.failOn !== "any" ? args.failOn : config.failOn ?? args.failOn,
 			largeMarkdownBytes: args.largeMarkdownBytes ?? config.largeMarkdownBytes,
 			largeAttachmentBytes: args.largeAttachmentBytes ?? config.largeAttachmentBytes,
+			ignoredLargeMarkdownFrontmatterKeys:
+				args.ignoredLargeMarkdownFrontmatterKeys ??
+				config.ignoredLargeMarkdownFrontmatterKeys,
+			ignoredLargeMarkdownPathPatterns:
+				args.ignoredLargeMarkdownPathPatterns ??
+				config.ignoredLargeMarkdownPathPatterns,
 			duplicateHashMaxBytes: args.duplicateHashMaxBytes ?? config.duplicateHashMaxBytes,
 			lowUsageTagThreshold: args.lowUsageTagThreshold ?? config.lowUsageTagThreshold,
 			emptyNoteWordThreshold:
@@ -270,6 +281,12 @@ function makeSettings(options: CliOptions): InspectorSettings {
 		largeMarkdownBytes: options.largeMarkdownBytes ?? DEFAULT_SETTINGS.largeMarkdownBytes,
 		largeAttachmentBytes:
 			options.largeAttachmentBytes ?? DEFAULT_SETTINGS.largeAttachmentBytes,
+		ignoredLargeMarkdownFrontmatterKeys:
+			options.ignoredLargeMarkdownFrontmatterKeys ??
+			DEFAULT_SETTINGS.ignoredLargeMarkdownFrontmatterKeys,
+		ignoredLargeMarkdownPathPatterns:
+			options.ignoredLargeMarkdownPathPatterns ??
+			DEFAULT_SETTINGS.ignoredLargeMarkdownPathPatterns,
 		duplicateHashMaxBytes:
 			options.duplicateHashMaxBytes ?? DEFAULT_SETTINGS.duplicateHashMaxBytes,
 		lowUsageTagThreshold:
@@ -433,15 +450,6 @@ function isSeverity(value: unknown): value is Severity {
 
 function isFailOn(value: unknown): value is FailOn {
 	return value === "any" || value === "error" || value === "warning" || value === "new" || value === "none";
-}
-
-function matchesGlob(path: string, glob: string): boolean {
-	const escaped = glob
-		.replace(/[.+^${}()|[\]\\]/g, "\\$&")
-		.replace(/\*\*/g, "\u0000")
-		.replace(/\*/g, "[^/]*")
-		.replace(/\u0000/g, ".*");
-	return new RegExp(`^${escaped}$`).test(path);
 }
 
 function usage(message: string): string {
