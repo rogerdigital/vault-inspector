@@ -19,6 +19,12 @@ jobs:
 
       - run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Obsidian warning lint
+        run: npm run lint:obsidian-warnings
+
       - name: Type check & build
         run: npm run build
 

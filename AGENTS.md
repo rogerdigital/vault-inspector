@@ -10,6 +10,8 @@ Obsidian plugin that scans a vault for maintenance problems. Read-only by design
 
 ```bash
 npm run dev          # watch mode
+npm run lint         # eslint
+npm run lint:obsidian-warnings # Obsidian review warning checks
 npm run build        # tsc + esbuild production
 npm test             # vitest run
 npm run test:watch   # vitest watch
@@ -17,7 +19,7 @@ npm run test:coverage # vitest with v8 coverage
 npm pack --dry-run   # inspect npm package contents before publishing
 ```
 
-Always run `npm run build && npm test` before committing. CI enforces this.
+Always run `npm run lint && npm run lint:obsidian-warnings && npm run build && npm test` before committing. CI enforces this.
 
 ## Architecture
 
@@ -83,5 +85,5 @@ src/
 - Release assets: `main.js`, `manifest.json`, `styles.css`
 - npm package assets: `main.js`, `cli.js`, `manifest.json`, `styles.css`, `versions.json`, `README.md`, `LICENSE`
 - Release steps: bump version in `manifest.json` + `versions.json` → PR → merge → tag → push tag → CI creates release
-- Before npm publish, run `npm run build && npm test && npm pack --dry-run`.
+- Before npm publish, run `npm run lint && npm run lint:obsidian-warnings && npm run build && npm test && npm pack --dry-run`.
 - Do NOT manually `gh release create` — CI auto-creates on tag push

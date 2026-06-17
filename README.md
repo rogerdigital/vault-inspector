@@ -272,6 +272,8 @@ frontmatter type drift. This access is local and read-only during scans.
 ```bash
 npm install
 npm run dev       # watch mode
+npm run lint      # eslint
+npm run lint:obsidian-warnings # Obsidian review warning checks
 npm run build     # production build
 npm test          # unit tests
 ```

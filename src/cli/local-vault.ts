@@ -1,3 +1,4 @@
+/* eslint-disable import/no-nodejs-modules -- CLI local vault adapter runs in Node. */
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, extname, join, relative, sep } from "node:path";
 import type { App, MetadataCache, TFile, Vault } from "obsidian";

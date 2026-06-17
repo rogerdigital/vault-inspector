@@ -14,6 +14,9 @@ export default defineConfig([
 	},
 	{
 		files: ["src/cli/**/*.ts"],
+		linterOptions: {
+			reportUnusedDisableDirectives: "off",
+		},
 		languageOptions: {
 			globals: {
 				AbortController: "readonly",

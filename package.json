@@ -1,6 +1,6 @@
 {
 	"name": "vault-inspector",
-	"version": "0.4.6",
+	"version": "0.4.7",
 	"description": "Scan an Obsidian vault for long-term maintenance problems.",
 	"main": "main.js",
 	"bin": {
@@ -19,6 +19,8 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"lint": "eslint .",
+		"lint:obsidian-warnings": "eslint \"src/**/*.ts\" --ignore-pattern \"src/tests/**\" --rule 'import/no-nodejs-modules:error' --rule 'obsidianmd/prefer-window-timers:error' --rule 'no-restricted-globals:[\"error\",{\"name\":\"fetch\",\"message\":\"Use the built-in `requestUrl` function instead of `fetch` for network requests in Obsidian.\"}]'",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
