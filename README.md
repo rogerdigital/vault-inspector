@@ -16,7 +16,7 @@ Use it before publishing, exporting, migrating, or cleaning up a long-lived vaul
 - **Frontmatter Types** — Report properties used with inconsistent value types across notes.
 - **Tag Usage** — Watch for missing or underused tags from a configurable watchlist.
 - **Large Files** — Flag Markdown files and attachments exceeding configurable size thresholds.
-- **Scan Progress** — Show scanner progress in Obsidian and optional CLI progress on stderr.
+- **Scan Progress** — Show scanner progress in Obsidian.
 
 ## Install
 
@@ -27,27 +27,6 @@ Search **Vault Inspector** in Obsidian → Settings → Community plugins → Br
 ### Manual
 
 Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/rogerdigital/vault-inspector/releases) and place them in `.obsidian/plugins/vault-inspector/`.
-
-### CLI
-
-Install the npm package for terminal, CI, or agent workflows:
-
-Run without installing:
-
-```bash
-npx vault-inspector /path/to/your/vault
-```
-
-Or install globally and use the short command:
-
-```bash
-npm install -g vault-inspector
-vinspect /path/to/your/vault
-```
-
-The CLI package is separate from Obsidian's Community Plugins install path. Updating
-the Obsidian plugin affects the in-app plugin; installing from npm provides the
-`vault-inspector` terminal command and its short alias, `vinspect`.
 
 ## Usage
 
@@ -61,112 +40,6 @@ the Obsidian plugin affects the in-app plugin; installing from npm provides the
 Scan results are selectable for copying. Duplicate file results show each file
 separately, tag results show `#tag` chips, and exported Markdown reports include
 scanner-specific detail fields.
-
-## CLI
-
-Vault Inspector also exposes a read-only CLI for generated or agent-managed vaults.
-
-Scan a vault:
-
-```bash
-vinspect /path/to/your/vault
-```
-
-From inside a vault, `.` means the current directory:
-
-```bash
-cd /path/to/your/vault
-vinspect .
-```
-
-Use `npx` without installing globally:
-
-```bash
-npx vault-inspector /path/to/your/vault
-```
-
-The full command also remains available:
-
-```bash
-vault-inspector /path/to/your/vault
-```
-
-Pin a specific npm version when repeatability matters:
-
-```bash
-npx vault-inspector@0.4.4 /path/to/your/vault
-```
-
-`vault-inspector scan /path/to/vault` is also supported for scripts that prefer
-an explicit subcommand.
-
-The default output format is JSON. It includes summary counts, scanners run, issues,
-ignored issues, fingerprints, evidence, and available fix-action metadata so other
-tools can decide what to do next.
-
-Common options:
-
-```bash
-vinspect . --format markdown --output report.md
-vinspect . --scanner broken-links,empty-notes
-vinspect . --scanner external-links
-vinspect . --progress
-vinspect . --config vault-inspector.config.json
-```
-
-`--progress` writes scanner progress to stderr so JSON and Markdown output on
-stdout remain machine-readable. Short scans may complete in milliseconds; progress
-and report durations use millisecond, second, or minute units depending on scale.
-
-For CI baseline checks:
-
-```bash
-vinspect . --baseline .vault-inspector-baseline.json --fail-on new
-```
-
-Config files are JSON and use the same option names:
-
-```json
-{
-  "scanners": ["broken-links", "empty-notes", "large-files"],
-  "severity": ["error", "warning"],
-  "include": ["notes/**"],
-  "exclude": ["templates/**"],
-  "ignoredFolders": [".trash"],
-  "failOn": "warning",
-  "largeMarkdownBytes": 102400,
-  "ignoredLargeMarkdownFrontmatterKeys": ["excalidraw"],
-  "ignoredLargeMarkdownPathPatterns": ["index/**/*.md"]
-}
-```
-
-CLI flags override config file values.
-
-JSON output has a stable top-level protocol for automation:
-
-- `schemaVersion` — currently `1`
-- `tool` — always `vault-inspector`
-- `toolVersion` — package version
-- `summary` — stable counts and scanner metadata
-- `issues` / `ignoredIssues` — issue records with stable `scannerId`, `severity`, `primaryPath`, `relatedPaths`, `evidence`, `fingerprint`, and `fixAction` fields
-- `generatedAt`, `durationMs`, titles, and messages are informational and should not be used as stable identifiers
-
-Baseline comparison uses issue `fingerprint` values from a previous JSON report.
-When `--baseline` is provided, each issue includes `isNew`, and `summary.newIssues`
-counts issues not found in the baseline.
-
-Exit codes:
-
-- `0` — scan completed and did not match the configured `--fail-on` threshold.
-- `1` — scan completed and matched the configured `--fail-on` threshold.
-- `2` — invalid CLI usage or scan setup failure.
-
-`--fail-on` accepts `any` (default), `warning`, `error`, `new`, and `none`.
-
-CLI scan mode is read-only. `--fix` is reserved for a future explicit opt-in fix
-command and currently exits with an error instead of modifying files. This keeps
-automated agents from deleting or rewriting vault content unless fix execution is
-implemented as a deliberate, separately documented workflow.
 
 ## Scanners
 
@@ -253,7 +126,7 @@ Markdown files, for example `index/**/*.md` or `exports/**/*.md`.
 
 ## Privacy
 
-Vault Inspector does not make network requests unless the External Links scanner is enabled. That scanner checks URLs you explicitly have in your notes. In Obsidian this uses Obsidian's `requestUrl`; in the CLI it uses HTTP HEAD requests through the runtime `fetch` API. No vault content leaves your device beyond those link-check requests.
+Vault Inspector does not make network requests unless the External Links scanner is enabled. That scanner checks URLs you explicitly have in your notes using Obsidian's `requestUrl`. No vault content leaves your device beyond those link-check requests.
 
 Vault Inspector enumerates vault files and Markdown metadata so scanners can detect
 broken links, orphan attachments, duplicate files, large files, tag usage, and

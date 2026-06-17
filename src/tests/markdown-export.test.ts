@@ -15,7 +15,7 @@ function makeResult(overrides: Partial<ScanResult> = {}): ScanResult {
 }
 
 describe("generateMarkdownReport", () => {
-	it("renders scanner-specific details for human-readable CLI reports", () => {
+	it("renders scanner-specific details for human-readable reports", () => {
 		const report = generateMarkdownReport(makeResult({
 			issues: [
 				{
