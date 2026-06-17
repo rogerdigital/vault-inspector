@@ -5,9 +5,6 @@ import { builtinModules } from "node:module";
 const prod = process.argv[2] === "production";
 
 const context = await esbuild.context({
-	banner: {
-		js: "/* eslint-disable */",
-	},
 	entryPoints: ["src/main.ts"],
 	bundle: true,
 	external: [
@@ -38,7 +35,7 @@ if (prod) {
 	await context.rebuild();
 	await esbuild.build({
 		banner: {
-			js: "#!/usr/bin/env node\n/* eslint-disable */",
+			js: "#!/usr/bin/env node",
 		},
 		entryPoints: ["src/cli/bin.ts"],
 		bundle: true,
