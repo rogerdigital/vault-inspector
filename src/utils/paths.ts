@@ -31,13 +31,15 @@ export function isIgnoredPath(path: string, ignoredFolders: string[]): boolean {
 }
 
 export function matchesGlob(path: string, glob: string): boolean {
+	const globstarSlashPlaceholder = "__VI_GLOBSTAR_SLASH__";
+	const globstarPlaceholder = "__VI_GLOBSTAR__";
 	const escaped = glob
 		.replace(/[.+^${}()|[\]\\]/g, "\\$&")
-		.replace(/\*\*\//g, "\u0000")
-		.replace(/\*\*/g, "\u0001")
+		.replace(/\*\*\//g, globstarSlashPlaceholder)
+		.replace(/\*\*/g, globstarPlaceholder)
 		.replace(/\*/g, "[^/]*");
 	const pattern = escaped
-		.replace(/\u0000/g, "(?:.*/)?")
-		.replace(/\u0001/g, ".*");
+		.split(globstarSlashPlaceholder).join("(?:.*/)?")
+		.split(globstarPlaceholder).join(".*");
 	return new RegExp(`^${pattern}$`).test(path);
 }

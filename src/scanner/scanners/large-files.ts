@@ -58,11 +58,9 @@ function isIgnoredLargeMarkdown(file: TFile, ctx: ScanContext): boolean {
 	}
 
 	if (ctx.ignoredLargeMarkdownFrontmatterKeys.length === 0) return false;
+	if (typeof ctx.metadataCache.getFileCache !== "function") return false;
 
-	const getFileCache = ctx.metadataCache.getFileCache;
-	if (typeof getFileCache !== "function") return false;
-
-	const frontmatter = getFileCache.call(ctx.metadataCache, file)?.frontmatter;
+	const frontmatter = ctx.metadataCache.getFileCache(file)?.frontmatter;
 	if (!frontmatter) return false;
 
 	return ctx.ignoredLargeMarkdownFrontmatterKeys.some((key) =>

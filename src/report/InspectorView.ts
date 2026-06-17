@@ -1,4 +1,4 @@
-import { ItemView, MarkdownView, WorkspaceLeaf, Notice, TFile, setTooltip } from "obsidian";
+import { ItemView, MarkdownView, WorkspaceLeaf, TFile, setTooltip } from "obsidian";
 import type { ScanProgress, ScanResult, Issue } from "../scanner/Issue";
 import { SCANNER_LABELS } from "../scanner/Issue";
 import type { ReportModel } from "./report-model";
@@ -64,7 +64,7 @@ export class InspectorView extends ItemView {
 	private onRevealIssue: ((issue: Issue) => void | Promise<void>) | null = null;
 	private onRunScan: (() => void) | null = null;
 	private backToTopHandler: (() => void) | null = null;
-	private scanTimer: ReturnType<typeof setInterval> | null = null;
+	private scanTimer: number | null = null;
 
 	constructor(leaf: WorkspaceLeaf) {
 		super(leaf);
@@ -174,7 +174,7 @@ export class InspectorView extends ItemView {
 			});
 			empty.createEl("p", {
 				cls: "vi-empty-hint",
-				text: "You can also click the shield icon in the left ribbon, or run \"Vault Inspector: Run scan\" from the command palette.",
+				text: "You can also click the shield icon in the left ribbon, or run \"vault inspector: Run scan\" from the command palette.",
 			});
 			return;
 		}
@@ -267,14 +267,14 @@ export class InspectorView extends ItemView {
 
 	private startScanTimer() {
 		if (this.scanTimer) return;
-		this.scanTimer = setInterval(() => {
+		this.scanTimer = window.setInterval(() => {
 			if (this.model.isScanning) this.render();
 		}, 1000);
 	}
 
 	private stopScanTimer() {
 		if (!this.scanTimer) return;
-		clearInterval(this.scanTimer);
+		window.clearInterval(this.scanTimer);
 		this.scanTimer = null;
 	}
 

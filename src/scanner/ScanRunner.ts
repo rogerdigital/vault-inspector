@@ -15,7 +15,13 @@ type RunOptions = {
 export class ScanRunner {
 	private scanners: Scanner[] = [];
 
-	constructor(private requestUrl?: (url: string) => Promise<number>) {}
+	constructor(
+		private requestUrl?: (url: string) => Promise<number>,
+		private timers?: {
+			setTimeout: (callback: () => void, delayMs: number) => unknown;
+			clearTimeout: (timeoutId: unknown) => void;
+		},
+	) {}
 
 	register(scanner: Scanner): void {
 		this.scanners.push(scanner);
@@ -32,6 +38,8 @@ export class ScanRunner {
 			metadataCache: app.metadataCache,
 			vault: app.vault,
 			requestUrl: this.requestUrl,
+			setTimeout: this.timers?.setTimeout,
+			clearTimeout: this.timers?.clearTimeout,
 			markdownFiles,
 			allFiles,
 			filePathIndex,

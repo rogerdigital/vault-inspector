@@ -29,7 +29,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 			const setting = new Setting(containerEl)
 				.setName(SCANNER_LABELS[id]);
 			if (id === "external-links") {
-				setting.setDesc("Opt-in network check for HTTP/HTTPS URLs. Can be slower and depends on external sites.");
+				setting.setDesc("Opt-in network check for HTTP/HTTPS urls. Can be slower and depends on external sites.");
 			}
 			setting.addToggle((toggle) =>
 					toggle.setValue(this.plugin.settings.enabledScanners[id])
@@ -86,7 +86,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 			.setDesc("Markdown files with any of these frontmatter keys are excluded from large file checks.")
 			.addText((text) =>
 				text.setValue(this.plugin.settings.ignoredLargeMarkdownFrontmatterKeys.join(", "))
-					.setPlaceholder("E.g. excalidraw")
+					.setPlaceholder("E.g. Excalidraw")
 					.onChange(async (value) => {
 						this.plugin.settings.ignoredLargeMarkdownFrontmatterKeys =
 							value.split(",").map((key) => key.trim()).filter(Boolean);
