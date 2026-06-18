@@ -3,7 +3,7 @@
 Obsidian plugin that scans a vault for maintenance problems. Read-only by design — no file mutation except exported reports.
 
 - Plugin ID: `vault-inspector`
-- Current version: `0.4.4`
+- Current version: `0.4.10`
 - Min Obsidian version: `1.7.2`
 
 ## Commands
@@ -87,4 +87,5 @@ src/
 - npm package assets: `main.js`, `cli.js`, `manifest.json`, `styles.css`, `versions.json`, `README.md`, `LICENSE`
 - Release steps: bump version in `manifest.json` + `versions.json` → PR → merge → tag → push tag → CI creates release
 - Before npm publish, run `npm run lint && npm run lint:obsidian-warnings && npm run build && npm test && npm pack --dry-run`.
+- CI verify must include `npm pack --dry-run` so npm CLI packaging regressions are caught before merge.
 - Do NOT manually `gh release create` — CI auto-creates on tag push
