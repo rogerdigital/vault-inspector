@@ -46,7 +46,8 @@ vinspect /path/to/your/vault
 
 The Obsidian Community Plugin release assets contain only the in-app plugin
 files. The npm package additionally includes `cli.js` and exposes the
-`vault-inspector` and `vinspect` commands.
+`vault-inspector` and `vinspect` commands. Starting with `0.4.10`, the npm
+package is the supported CLI distribution path again.
 
 ## Usage
 
@@ -156,6 +157,11 @@ Exit codes:
 CLI scan mode is read-only. `--fix` is reserved for a future explicit opt-in fix
 command and currently exits with an error instead of modifying files.
 
+The CLI and the Obsidian plugin share scanner logic, but they are different
+runtimes. The Obsidian plugin uses Obsidian metadata and UI actions; the CLI uses
+a local filesystem adapter and is intended for terminal, CI, and automation
+workflows.
+
 ## Scanners
 
 ### Broken Links
@@ -264,6 +270,7 @@ npm run lint      # eslint
 npm run lint:obsidian-warnings # Obsidian review warning checks
 npm run build     # production build
 npm test          # unit tests
+npm pack --dry-run # inspect npm package contents, including cli.js
 ```
 
 ## License
