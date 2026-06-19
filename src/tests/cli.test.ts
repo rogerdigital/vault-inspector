@@ -300,6 +300,34 @@ describe("runCli", () => {
 		);
 	});
 
+	it("detects non-English inline tags in CLI scans", async () => {
+		await withVault(
+			{
+				"note.md": "#项目/进行中\n\nEnough content to avoid empty note warnings.\n",
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"tag-usage",
+				]);
+
+				expect(result.exitCode).toBe(1);
+				const payload = JSON.parse(result.stdout);
+				expect(payload.issues).toEqual([
+					expect.objectContaining({
+						scannerId: "tag-usage",
+						primaryPath: "note.md",
+						evidence: expect.objectContaining({
+							tag: "项目/进行中",
+						}),
+					}),
+				]);
+			},
+		);
+	});
+
 	it("checks external links in CLI scans with fetch HEAD requests", async () => {
 		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
 			status: 404,
