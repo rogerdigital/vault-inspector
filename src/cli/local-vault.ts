@@ -142,7 +142,7 @@ function parseMarkdownMetadata(content: string): LocalMetadata {
 	const headings = [...body.matchAll(/^#{1,6}\s+(.+)$/gm)].map((match) => ({
 		heading: match[1].trim(),
 	}));
-	const tags = [...body.matchAll(/(^|\s)#([A-Za-z0-9_/-]+)/g)].map((match) => ({
+	const tags = [...body.matchAll(/(^|\s)#([\p{L}\p{N}\p{M}_/-]+)/gu)].map((match) => ({
 		tag: `#${match[2]}`,
 	}));
 
