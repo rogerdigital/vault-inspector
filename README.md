@@ -49,6 +49,23 @@ files. The npm package additionally includes `cli.js` and exposes the
 `vault-inspector` and `vinspect` commands. Starting with `0.4.10`, the npm
 package is the supported CLI distribution path again.
 
+### Agent Skill
+
+Vault Inspector includes a read-only Agent Skill for CLI-based vault checks:
+
+```bash
+gh skill install rogerdigital/vault-inspector vault-inspector
+```
+
+It can also be installed with the skills CLI:
+
+```bash
+npx skills add rogerdigital/vault-inspector --skill vault-inspector
+```
+
+The skill teaches agents to run scans, interpret JSON/Markdown output, use
+baselines, and avoid modifying vault files.
+
 ## Usage
 
 1. Open the command palette and run **Vault Inspector: Run scan**.

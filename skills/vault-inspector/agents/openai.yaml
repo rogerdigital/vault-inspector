@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vault Inspector"
+  short_description: "Read-only Obsidian vault scan workflow"
+  default_prompt: "Use $vault-inspector to scan this Obsidian vault and summarize maintenance issues without modifying files."
