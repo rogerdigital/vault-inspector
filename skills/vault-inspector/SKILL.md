@@ -1,0 +1,126 @@
+---
+name: vault-inspector
+description: Use when an agent needs to run read-only Vault Inspector CLI checks on an Obsidian vault, interpret JSON or Markdown scan results, compare baselines, or summarize vault maintenance issues without modifying vault files.
+license: MIT
+---
+
+# Vault Inspector
+
+Use Vault Inspector as a read-only quality gate for Obsidian vault maintenance. The skill is for terminal, CI, and agent-managed vault workflows that need to find broken links, orphan attachments, empty notes, external links, duplicate files, frontmatter type drift, tag usage issues, and large files.
+
+## Safety Rules
+
+- Treat the CLI as read-only. Do not modify, move, delete, or rewrite vault files as part of this skill.
+- Do not present `--fix` as available. The CLI currently exits with an error for fix execution.
+- Do not automatically delete orphan attachments, duplicate candidates, or large files. Summarize evidence and recommend manual review.
+- Do not treat `title`, `message`, `generatedAt`, or `durationMs` as stable automation identifiers.
+- Use stable fields for automation: `schemaVersion`, `toolVersion`, `summary`, `scannerId`, `severity`, `primaryPath`, `relatedPaths`, `evidence`, `fingerprint`, `fixAction`, `isNew`, and `summary.newIssues`.
+- Keep scan progress on stderr with `--progress`; keep stdout machine-readable.
+
+## When To Run
+
+Run Vault Inspector:
+
+- before reorganizing, publishing, exporting, or archiving a vault;
+- after generated or agent-managed note changes;
+- before and after bulk edits to links, tags, frontmatter, or attachments;
+- in CI when a vault or generated docs repository needs regression checks;
+- when a user asks for vault hygiene, broken-link, orphan-file, duplicate-file, or large-file analysis.
+
+## Basic Commands
+
+From inside a vault:
+
+```bash
+vinspect . --format json
+```
+
+For one-off use without global install:
+
+```bash
+npx vault-inspector /path/to/vault --format json
+```
+
+Write a human-readable report:
+
+```bash
+vinspect . --format markdown --output report.md
+```
+
+Run selected scanners:
+
+```bash
+vinspect . --scanner broken-links,empty-notes,large-files --format json
+```
+
+Run the opt-in external link scanner only when network checks are acceptable:
+
+```bash
+vinspect . --scanner external-links --format json
+```
+
+Show progress without corrupting stdout:
+
+```bash
+vinspect . --format json --progress
+```
+
+## Baseline Workflow
+
+Create a baseline:
+
+```bash
+vinspect . --format json --output .vault-inspector-baseline.json --fail-on none
+```
+
+Fail only on new findings:
+
+```bash
+vinspect . --baseline .vault-inspector-baseline.json --fail-on new --format json
+```
+
+When a baseline is used, inspect `summary.newIssues` and each issue's `isNew` field. Report new issues before existing known issues.
+
+## Exit Codes
+
+- `0`: scan completed and did not match the configured `--fail-on` threshold.
+- `1`: scan completed and matched the configured `--fail-on` threshold.
+- `2`: invalid CLI usage or scan setup failure.
+
+If exit code is `2`, report the CLI error and do not interpret stdout as a successful scan result.
+
+## Result Interpretation
+
+Prioritize findings in this order:
+
+1. `error` severity broken links and missing attachment links.
+2. `warning` findings, including missing headings, large files, confirmed duplicate files, and older orphan attachments.
+3. `info` findings, including low-usage tags, skipped or timed-out external checks, recent orphan attachments, and duplicate candidates.
+
+For each summary, include:
+
+- total issue count;
+- counts by severity;
+- scanners run;
+- high-confidence issues first;
+- file paths and evidence needed for manual review;
+- baseline new issue counts when available.
+
+Avoid overstating certainty. Orphan attachments and duplicate candidates can be false positives when files are referenced by CSS, Canvas, Dataview, publishing pipelines, or external tools.
+
+## Suggested Agent Response
+
+Use this shape when reporting scan results:
+
+```markdown
+Vault Inspector found <N> issue(s): <E> error(s), <W> warning(s), <I> info.
+
+Highest-priority findings:
+- [<severity>] <scannerId>: <primaryPath> - <short evidence-based explanation>
+
+Notes:
+- <baseline/new issue note if relevant>
+- <manual review caveat for orphan/duplicate candidates if relevant>
+```
+
+If the scan passes, state the command run and the relevant zero counts. Do not claim the vault is perfect; say that Vault Inspector found no issues matching the selected scanners and filters.
