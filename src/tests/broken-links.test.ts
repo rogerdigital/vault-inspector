@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { brokenLinksScanner } from "../scanner/scanners/broken-links";
 import type { ScanContext } from "../scanner/ScanContext";
+import { makeScanContext } from "./helpers/scan-context";
 
 function makeCtx(overrides: Partial<ScanContext> = {}): ScanContext {
 	return {
@@ -105,6 +106,40 @@ describe("brokenLinksScanner", () => {
 		});
 		const issues = await brokenLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
+	});
+
+	it("detects missing non-English headings without collapsing them", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [
+				{ path: "notes/source.md" },
+				{ path: "notes/目标.md" },
+			],
+			metadataByPath: {
+				"notes/source.md": {},
+				"notes/目标.md": {
+					headings: [{ heading: "项目计划", level: 2, position: {} as any }],
+				},
+			},
+			unresolvedLinks: {
+				"notes/source.md": {
+					"目标#不存在": 1,
+				},
+			},
+		});
+
+		const issues = await brokenLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0]).toEqual(expect.objectContaining({
+			severity: "warning",
+			primaryPath: "notes/source.md",
+			relatedPaths: ["notes/目标.md"],
+			evidence: expect.objectContaining({
+				link: "目标#不存在",
+				target: "notes/目标.md",
+			}),
+		}));
 	});
 
 	it("handles aliased links", async () => {

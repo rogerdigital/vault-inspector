@@ -110,7 +110,7 @@ function slugifyHeading(heading: string): string {
 	return heading
 		.toLowerCase()
 		.trim()
-		.replace(/[^\w\s-]/g, "")
+		.replace(/[^\p{L}\p{N}_\s-]/gu, "")
 		.replace(/\s+/g, "-");
 }
 
