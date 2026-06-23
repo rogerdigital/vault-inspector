@@ -1,5 +1,7 @@
 # Restore CLI Support In 0.4.10
 
+> ⚠️ **实现已变更**：CLI 源码已从 `src/cli/` 移至仓库根的 `cli/`，不再依赖 `--ignore-pattern` 排除 Obsidian review 规则。见 #85。本文档保留下方原始决策记录。
+
 ## 1. Goal
 
 Release `0.4.10` with both of these properties:
