@@ -65,3 +65,23 @@ Obsidian review bot 有两条强制规则：
 - 排查时**先做能证伪假设的实验**，而不是顺着猜测链推理
 - 本次的转折点是用 `git clone --depth 1 --branch 0.4.12` 实测，一秒证伪了「annotated tag / 移目录导致 checkout 错」
 - 仔细读错误原文（截图里的 rule name 和 file path）比推理更可靠
+
+---
+
+## #85 移目录方案未达预期（2026-06-24）
+
+**现象**：把 CLI 从 `src/cli/` 移到根目录 `cli/`，目标是让 Obsidian review bot 扫不到 Node API 警告。发布 0.4.13 后检查 scorecard，7 个 Node API warning 仍在（现在报 `cli/cli.ts` 而非 `src/cli/cli.ts`）。
+
+**根因**：方案基于错误假设——以为 review bot 只扫 `src/**`。**实际 bot 扫全仓库 `**/*.ts`**。本地验证时只跑了 `npx eslint "src/**/*.ts"`，得到 0 warning，于是误判方案有效。这个验证范围与 bot 实际行为不一致。
+
+**真实结论**：
+- #85 移目录**没有消除任何 review warning**，只是把路径前缀从 `src/cli/` 换成 `cli/`
+- 唯一实际收益是源码组织上 CLI 不再混在 `src/` 插件树里，以及 `eslint.config.mjs`/`lint:obsidian-warnings` 配置更简洁（不再需要 `--ignore-pattern src/cli/**`）
+- 7 个 Node API warning 是**结构性死结**：CLI 是独立 Node 程序，必须用 `node:fs`/`fetch`/`setTimeout`，无法用 Obsidian 运行时的 `requestUrl`/`window.setTimeout` 替代（CLI 进程里没有这些全局对象）
+- 唯一能到 10/10 的方案是 monorepo 把 CLI 拆出独立包，代价远大于收益，当前 6/10 + Satisfactory + Health: Excellent 是合理结果，不追求
+
+**规则**：
+- 验证「review bot 是否扫到某目录」时，**必须用 bot 等价的全仓库扫描**（`npx eslint "**/*.ts" --rule ...`），不能只扫 `src/**` 就下结论
+- 方案上线后，要用真实 scorecard 结果验证效果，不要只靠本地推理
+- 接受已验证的结构性限制，不为不可达的目标投入资源
+
