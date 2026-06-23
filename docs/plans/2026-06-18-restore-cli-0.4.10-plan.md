@@ -1,6 +1,10 @@
 # Restore CLI Support In 0.4.10
 
-> ⚠️ **实现已变更**：CLI 源码已从 `src/cli/` 移至仓库根的 `cli/`，不再依赖 `--ignore-pattern` 排除 Obsidian review 规则。见 #85。本文档保留下方原始决策记录。
+> ⚠️ **实现已变更**：CLI 源码已从 `src/cli/` 移至仓库根的 `cli/`。
+>
+> **但此方案未达预期目标**：原以为移出 `src/` 能躲过 Obsidian review bot 的 Node API 扫描，实测发现 bot 扫全仓库 `**/*.ts`，7 个 warning 只是路径前缀从 `src/cli/` 变成 `cli/`，并未消除。移目录的实际收益仅限于源码组织整洁和 lint 配置简化。见 #85、#88 及 `tasks/lessons.md`。
+>
+> 本文档保留下方原始决策记录。
 
 ## 1. Goal
 
