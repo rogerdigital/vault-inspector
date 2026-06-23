@@ -86,9 +86,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 			.setDesc("Markdown files with any of these frontmatter keys are excluded from large file checks.")
 			.addText((text) =>
 				text.setValue(this.plugin.settings.ignoredLargeMarkdownFrontmatterKeys.join(", "))
-					// excalidraw-plugin is a literal frontmatter key; keep lowercase.
-					// eslint-disable-next-line obsidianmd/ui/sentence-case
-					.setPlaceholder("E.g. excalidraw-plugin")
+					.setPlaceholder("Frontmatter keys to ignore")
 					.onChange(async (value) => {
 						this.plugin.settings.ignoredLargeMarkdownFrontmatterKeys =
 							value.split(",").map((key) => key.trim()).filter(Boolean);
