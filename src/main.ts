@@ -44,7 +44,12 @@ export default class VaultInspectorPlugin extends Plugin {
 	onunload() {}
 
 	async loadSettings() {
-		this.settings = { ...DEFAULT_SETTINGS, ...await this.loadData() } as InspectorSettings;
+		const loaded = (await this.loadData() as Partial<InspectorSettings> | null) ?? {};
+		this.settings = { ...DEFAULT_SETTINGS, ...loaded };
+
+		if (migrateExcalidrawFrontmatterKey(this.settings, loaded)) {
+			await this.saveSettings();
+		}
 	}
 
 	async saveSettings() {
@@ -150,4 +155,41 @@ export default class VaultInspectorPlugin extends Plugin {
 		await this.app.vault.create(filepath, report);
 		new Notice(`Report exported to ${filepath}`);
 	}
+}
+
+const LEGACY_EXCALIDRAW_KEY = "excalidraw";
+const EXCALIDRAW_FRONTMATTER_KEY = "excalidraw-plugin";
+
+/**
+ * Migrates the legacy `["excalidraw"]` entry in
+ * `ignoredLargeMarkdownFrontmatterKeys` to the correct `excalidraw-plugin`
+ * key the Excalidraw plugin actually writes. Only touches persisted values
+ * (loaded from data.json), never DEFAULT_SETTINGS, so fresh installs and
+ * untouched users are not needlessly rewritten.
+ *
+ * - `["excalidraw"]` → `["excalidraw-plugin"]` (replace in place)
+ * - `["excalidraw", "excalidraw-plugin"]` → `["excalidraw-plugin"]` (dedup)
+ * - `["excalidraw", "canvas"]` → `["excalidraw-plugin", "canvas"]`
+ *
+ * Returns true when settings were changed and should be persisted.
+ */
+export function migrateExcalidrawFrontmatterKey(
+	settings: InspectorSettings,
+	loaded: Partial<InspectorSettings> | null,
+): boolean {
+	const loadedKeys = loaded?.ignoredLargeMarkdownFrontmatterKeys;
+	if (!loadedKeys || !loadedKeys.includes(LEGACY_EXCALIDRAW_KEY)) return false;
+
+	const migrated = settings.ignoredLargeMarkdownFrontmatterKeys.map((k) =>
+		k === LEGACY_EXCALIDRAW_KEY ? EXCALIDRAW_FRONTMATTER_KEY : k,
+	);
+	const deduped = Array.from(new Set(migrated));
+	if (
+		deduped.length === settings.ignoredLargeMarkdownFrontmatterKeys.length &&
+		deduped.every((k, i) => k === settings.ignoredLargeMarkdownFrontmatterKeys[i])
+	) {
+		return false;
+	}
+	settings.ignoredLargeMarkdownFrontmatterKeys = deduped;
+	return true;
 }

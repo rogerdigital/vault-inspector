@@ -150,6 +150,12 @@ Config files are JSON and use the same option names:
 
 CLI flags override config file values.
 
+Settings omitted from a config file fall back to the plugin defaults — for
+example, `ignoredLargeMarkdownFrontmatterKeys` already defaults to
+`["excalidraw-plugin"]`, so Excalidraw drawings are ignored without any config.
+If your config lists the older `"excalidraw"` key, update it to
+`"excalidraw-plugin"`.
+
 JSON output has a stable top-level protocol for automation:
 
 - `schemaVersion` — currently `1`
@@ -238,7 +244,7 @@ Flags files exceeding configurable size thresholds.
 - Markdown files with configured frontmatter keys, such as Excalidraw files, can be excluded from this scanner.
 
 Excalidraw Markdown files are ignored by default when they include the
-`excalidraw` frontmatter key. If your vault uses filename-based Excalidraw
+`excalidraw-plugin` frontmatter key. If your vault uses filename-based Excalidraw
 files without that frontmatter, add a path pattern such as
 `**/*.excalidraw.md` to **Ignored large Markdown path patterns**.
 You can use the same path patterns for other generated or workflow-specific
@@ -252,7 +258,7 @@ Markdown files, for example `index/**/*.md` or `exports/**/*.md`.
 | Enable fix actions | On | Allow batch delete of fixable issues |
 | Large Markdown threshold | 100 KB | Markdown files above this size are flagged |
 | Large attachment threshold | 5 MB | Attachments above this size are flagged |
-| Ignored large Markdown frontmatter keys | excalidraw | Markdown files with these frontmatter keys are excluded from large file checks |
+| Ignored large Markdown frontmatter keys | excalidraw-plugin | Markdown files with these frontmatter keys are excluded from large file checks |
 | Ignored large Markdown path patterns | (none) | Vault-relative glob patterns excluded from large Markdown checks |
 | Duplicate hash cap | 1 MB | Max file size for content hash comparison |
 | Empty note word threshold | 5 | Notes with fewer words (excluding frontmatter/title) are flagged |
