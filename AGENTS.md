@@ -3,7 +3,7 @@
 Obsidian plugin that scans a vault for maintenance problems. Read-only by design — no file mutation except exported reports.
 
 - Plugin ID: `vault-inspector`
-- Current version: `0.4.11`
+- Current version: `0.4.13`
 - Min Obsidian version: `1.7.2`
 
 ## Commands
