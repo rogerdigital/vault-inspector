@@ -73,6 +73,7 @@ cli/                        Standalone Node CLI (outside src/ so Obsidian review
 - CLI accepts both `vault-inspector <vault-path>` and `vault-inspector scan <vault-path>`; prefer the shorter form in user-facing docs.
 - Stable CLI automation fields include `schemaVersion`, `toolVersion`, `summary`, issue `fingerprint`, `scannerId`, `severity`, paths, evidence, and fix-action metadata.
 - Obsidian warning lint only scans `src/**`; CLI code lives in `cli/` at the repo root and may use Node APIs and runtime `fetch`, while plugin code must use Obsidian-safe APIs.
+- Never `eslint-disable` any `obsidianmd/*` rule — the community review bot rejects disabling its rules (validation error). Resolve conflicts by changing the code, not suppressing the rule. Local `lint:obsidian-warnings` is a subset; the review bot enforces the full recommended set.
 
 ## Git workflow
 
@@ -86,6 +87,7 @@ cli/                        Standalone Node CLI (outside src/ so Obsidian review
 - Release assets: `main.js`, `manifest.json`, `styles.css`
 - npm package assets: `main.js`, `cli.js`, `manifest.json`, `styles.css`, `versions.json`, `README.md`, `LICENSE`
 - Release steps: bump version in `manifest.json` + `versions.json` → PR → merge → tag → push tag → CI creates release
+- Use lightweight tags (`git tag <version>`), not annotated (`-a`). All historical release tags are lightweight.
 - Before npm publish, run `npm run lint && npm run lint:obsidian-warnings && npm run build && npm test && npm pack --dry-run`.
 - CI verify must include `npm pack --dry-run` so npm CLI packaging regressions are caught before merge.
 - Do NOT manually `gh release create` — CI auto-creates on tag push
