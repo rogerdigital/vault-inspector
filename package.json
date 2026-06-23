@@ -20,7 +20,7 @@
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"lint": "eslint .",
-		"lint:obsidian-warnings": "eslint \"src/**/*.ts\" --ignore-pattern \"src/tests/**\" --ignore-pattern \"src/cli/**\" --rule 'import/no-nodejs-modules:error' --rule 'obsidianmd/prefer-window-timers:error' --rule 'no-restricted-globals:[\"error\",{\"name\":\"fetch\",\"message\":\"Use the built-in `requestUrl` function instead of `fetch` for network requests in Obsidian.\"}]'",
+		"lint:obsidian-warnings": "eslint \"src/**/*.ts\" --ignore-pattern \"src/tests/**\" --rule 'import/no-nodejs-modules:error' --rule 'obsidianmd/prefer-window-timers:error' --rule 'no-restricted-globals:[\"error\",{\"name\":\"fetch\",\"message\":\"Use the built-in `requestUrl` function instead of `fetch` for network requests in Obsidian.\"}]'",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",

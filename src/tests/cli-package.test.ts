@@ -17,8 +17,8 @@ describe("CLI package contract", () => {
 		expect(pkg.files).toContain("cli.js");
 	});
 
-	it("keeps the CLI entrypoint source in src/cli", () => {
-		expect(fs.existsSync(path.join(root, "src/cli/bin.ts"))).toBe(true);
+	it("keeps the CLI entrypoint source in cli/", () => {
+		expect(fs.existsSync(path.join(root, "cli/bin.ts"))).toBe(true);
 	});
 
 	it("builds a separate CLI bundle in production builds", () => {
@@ -27,7 +27,7 @@ describe("CLI package contract", () => {
 			"utf8",
 		);
 
-		expect(buildConfig).toContain('entryPoints: ["src/cli/bin.ts"]');
+		expect(buildConfig).toContain('entryPoints: ["cli/bin.ts"]');
 		expect(buildConfig).toContain('outfile: "cli.js"');
 	});
 });

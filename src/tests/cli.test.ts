@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runCli } from "../cli/cli";
+import { runCli } from "../../cli/cli";
 
 async function withVault(
 	files: Record<string, string>,
