@@ -1,15 +1,15 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { ScanRunner } from "../scanner/ScanRunner";
-import type { ScanProgress, ScanResult, ScannerId } from "../scanner/Issue";
-import { SCANNER_IDS, SCANNER_LABELS } from "../scanner/Issue";
-import { registerDefaultScanners } from "../scanner/register-scanners";
-import { DEFAULT_SETTINGS, type InspectorSettings } from "../settings/settings";
-import { generateMarkdownReport } from "../report/markdown-export";
+import { ScanRunner } from "../src/scanner/ScanRunner";
+import type { ScanProgress, ScanResult, ScannerId } from "../src/scanner/Issue";
+import { SCANNER_IDS, SCANNER_LABELS } from "../src/scanner/Issue";
+import { registerDefaultScanners } from "../src/scanner/register-scanners";
+import { DEFAULT_SETTINGS, type InspectorSettings } from "../src/settings/settings";
+import { generateMarkdownReport } from "../src/report/markdown-export";
 import { createLocalApp } from "./local-vault";
 import { TOOL_VERSION } from "./version";
-import { formatDuration } from "../utils/format";
-import { matchesGlob } from "../utils/paths";
+import { formatDuration } from "../src/utils/format";
+import { matchesGlob } from "../src/utils/paths";
 
 type OutputFormat = "json" | "markdown";
 type FailOn = "any" | "error" | "warning" | "new" | "none";

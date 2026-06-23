@@ -37,7 +37,7 @@ if (prod) {
 		banner: {
 			js: "#!/usr/bin/env node",
 		},
-		entryPoints: ["src/cli/bin.ts"],
+		entryPoints: ["cli/bin.ts"],
 		bundle: true,
 		external: ["obsidian", ...builtinModules],
 		format: "cjs",

@@ -13,7 +13,7 @@ export default defineConfig([
 		},
 	},
 	{
-		files: ["src/cli/**/*.ts"],
+		files: ["cli/**/*.ts"],
 		linterOptions: {
 			reportUnusedDisableDirectives: "off",
 		},

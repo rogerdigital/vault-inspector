@@ -52,12 +52,12 @@ src/
   fix/
     confirm-modal.ts        Fix confirmation modal
     fix-executor.ts         Executes fix actions (trash-file, remove-link-text)
-  cli/
-    bin.ts                  CLI process entrypoint
-    cli.ts                  CLI argument/config handling and JSON/Markdown output
-    local-vault.ts          Local filesystem adapter for scanner reuse
   utils/                    Shared helpers (paths, file-types, format, hash, frontmatter-type)
   tests/                    Unit tests per scanner + utils
+cli/                        Standalone Node CLI (outside src/ so Obsidian review rules don't flag Node APIs)
+  bin.ts                    CLI process entrypoint
+  cli.ts                    CLI argument/config handling and JSON/Markdown output
+    local-vault.ts            Local filesystem adapter for scanner reuse
 ```
 
 ## Key conventions
@@ -72,7 +72,7 @@ src/
 - CLI scan mode is read-only. Keep mutation/fix execution behind a separate explicit opt-in command.
 - CLI accepts both `vault-inspector <vault-path>` and `vault-inspector scan <vault-path>`; prefer the shorter form in user-facing docs.
 - Stable CLI automation fields include `schemaVersion`, `toolVersion`, `summary`, issue `fingerprint`, `scannerId`, `severity`, paths, evidence, and fix-action metadata.
-- Obsidian warning lint must exclude `src/cli/**`; CLI code may use Node APIs and runtime `fetch`, while plugin code must use Obsidian-safe APIs.
+- Obsidian warning lint only scans `src/**`; CLI code lives in `cli/` at the repo root and may use Node APIs and runtime `fetch`, while plugin code must use Obsidian-safe APIs.
 
 ## Git workflow
 
