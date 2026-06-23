@@ -7,7 +7,7 @@ describe("DEFAULT_SETTINGS", () => {
 	});
 
 	it("ignores Excalidraw markdown in large file checks by default", () => {
-		expect(DEFAULT_SETTINGS.ignoredLargeMarkdownFrontmatterKeys).toContain("excalidraw");
+		expect(DEFAULT_SETTINGS.ignoredLargeMarkdownFrontmatterKeys).toContain("excalidraw-plugin");
 		expect(DEFAULT_SETTINGS.ignoredLargeMarkdownPathPatterns).toEqual([]);
 	});
 });

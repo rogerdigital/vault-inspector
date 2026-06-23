@@ -230,7 +230,8 @@ describe("runCli", () => {
 	it("loads config for large markdown ignore rules", async () => {
 		await withVault(
 			{
-				"drawings/diagram.md": "---\nexcalidraw: true\n---\n" + "x".repeat(30),
+				"drawings/diagram.md":
+					"---\nexcalidraw-plugin: parsed\n---\n" + "x".repeat(30),
 				"index/source.canvas.md": "x".repeat(30),
 				"notes/large.md": "x".repeat(30),
 			},
@@ -241,7 +242,7 @@ describe("runCli", () => {
 					JSON.stringify({
 						scanners: ["large-files"],
 						largeMarkdownBytes: 10,
-						ignoredLargeMarkdownFrontmatterKeys: ["excalidraw"],
+						ignoredLargeMarkdownFrontmatterKeys: ["excalidraw-plugin"],
 						ignoredLargeMarkdownPathPatterns: ["index/**/*.md"],
 					}),
 					"utf8",

@@ -25,7 +25,7 @@ export const DEFAULT_SETTINGS: InspectorSettings = {
 	enableFixActions: true,
 	largeMarkdownBytes: 100 * 1024,
 	largeAttachmentBytes: 5 * 1024 * 1024,
-	ignoredLargeMarkdownFrontmatterKeys: ["excalidraw"],
+	ignoredLargeMarkdownFrontmatterKeys: ["excalidraw-plugin"],
 	ignoredLargeMarkdownPathPatterns: [],
 	duplicateHashMaxBytes: 1024 * 1024,
 	lowUsageTagThreshold: 2,

@@ -22,7 +22,7 @@ function makeCtx(overrides: Partial<ScanContext> = {}): ScanContext {
 		lowUsageTagThreshold: 2,
 		watchedTags: [],
 		ignoredFolders: [],
-		ignoredLargeMarkdownFrontmatterKeys: ["excalidraw"],
+		ignoredLargeMarkdownFrontmatterKeys: ["excalidraw-plugin"],
 		ignoredLargeMarkdownPathPatterns: [],
 		...overrides,
 	} as ScanContext;
@@ -102,7 +102,7 @@ describe("largeFilesScanner", () => {
 			filePathIndex: new Set(["drawings/diagram.md"]),
 			metadataCache: {
 				getFileCache() {
-					return { frontmatter: { excalidraw: true } };
+					return { frontmatter: { "excalidraw-plugin": "parsed" } };
 				},
 			} as any,
 		});
@@ -120,7 +120,7 @@ describe("largeFilesScanner", () => {
 			ignoredLargeMarkdownFrontmatterKeys: [],
 			metadataCache: {
 				getFileCache() {
-					return { frontmatter: { excalidraw: true } };
+					return { frontmatter: { "excalidraw-plugin": "parsed" } };
 				},
 			} as any,
 		});
