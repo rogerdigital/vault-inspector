@@ -1,6 +1,6 @@
 import type { ScanResult, Issue } from "../scanner/Issue";
 import { SCANNER_LABELS } from "../scanner/Issue";
-import { formatDuration } from "../utils/format";
+import { formatDuration, formatSize } from "../utils/format";
 
 export function generateMarkdownReport(result: ScanResult): string {
 	const lines: string[] = [];
@@ -92,7 +92,7 @@ function getMarkdownDetails(issue: Issue): MarkdownDetail[] {
 		const count = getNumber(issue.evidence.count);
 		if (count !== null) details.push({ label: "Count", value: String(count) });
 		const size = getNumber(issue.evidence.size);
-		if (size !== null) details.push({ label: "Size", value: formatBytes(size) });
+		if (size !== null) details.push({ label: "Size", value: formatSize(size) });
 		const paths = getEvidencePaths(issue);
 		if (paths.length > 0) {
 			details.push({
@@ -137,8 +137,8 @@ function getMarkdownDetails(issue: Issue): MarkdownDetail[] {
 		const size = getNumber(issue.evidence.size);
 		const threshold = getNumber(issue.evidence.threshold);
 		const type = issue.evidence.type;
-		if (size !== null) details.push({ label: "Size", value: formatBytes(size) });
-		if (threshold !== null) details.push({ label: "Threshold", value: formatBytes(threshold) });
+		if (size !== null) details.push({ label: "Size", value: formatSize(size) });
+		if (threshold !== null) details.push({ label: "Threshold", value: formatSize(threshold) });
 		if (typeof type === "string") details.push({ label: "Type", value: escapeMd(type) });
 	}
 
@@ -151,7 +151,7 @@ function getMarkdownDetails(issue: Issue): MarkdownDetail[] {
 
 	if (issue.scannerId === "empty-notes") {
 		const size = getNumber(issue.evidence.size);
-		if (size !== null) details.push({ label: "Size", value: formatBytes(size) });
+		if (size !== null) details.push({ label: "Size", value: formatSize(size) });
 	}
 
 	return details;
@@ -179,14 +179,6 @@ function getEvidencePaths(issue: Issue): string[] {
 
 function getNumber(value: unknown): number | null {
 	return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function formatBytes(bytes: number): string {
-	if (bytes < 1024) return `${bytes} B`;
-	const kib = bytes / 1024;
-	if (kib < 1024) return `${kib.toFixed(kib < 10 ? 1 : 0)} KB`;
-	const mib = kib / 1024;
-	return `${mib.toFixed(mib < 10 ? 1 : 0)} MB`;
 }
 
 function formatTag(tag: string): string {
