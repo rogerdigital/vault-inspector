@@ -1,5 +1,6 @@
 import type { Issue, ScannerId } from "../scanner/Issue";
 import { SCANNER_LABELS } from "../scanner/Issue";
+import { formatSize } from "../utils/format";
 import { setTooltip } from "obsidian";
 
 export type IssueListConfig = {
@@ -110,7 +111,7 @@ function getIssueSummary(issue: Issue): string {
 			const size = getNumber(issue.evidence.size);
 			const threshold = getNumber(issue.evidence.threshold);
 			if (size !== null && threshold !== null) {
-				return `File is ${formatBytes(size)}, over ${formatBytes(threshold)} threshold`;
+				return `File is ${formatSize(size)}, over ${formatSize(threshold)} threshold`;
 			}
 			return issue.message;
 		}
@@ -122,7 +123,7 @@ function getIssueSummary(issue: Issue): string {
 		}
 		case "empty-notes": {
 			const size = getNumber(issue.evidence.size);
-			return size !== null ? `No content besides frontmatter/title · ${formatBytes(size)}` : issue.message;
+			return size !== null ? `No content besides frontmatter/title · ${formatSize(size)}` : issue.message;
 		}
 		default:
 			return issue.message;
@@ -304,14 +305,6 @@ function getEvidencePaths(issue: Issue): string[] {
 
 function getNumber(value: unknown): number | null {
 	return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function formatBytes(bytes: number): string {
-	if (bytes < 1024) return `${bytes} B`;
-	const kib = bytes / 1024;
-	if (kib < 1024) return `${kib.toFixed(kib < 10 ? 1 : 0)} KB`;
-	const mib = kib / 1024;
-	return `${mib.toFixed(mib < 10 ? 1 : 0)} MB`;
 }
 
 function formatDate(timestamp: number): string {
