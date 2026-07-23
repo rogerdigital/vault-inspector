@@ -19,6 +19,7 @@ type TagCacheEntry = { tag: string };
 type LocalMetadata = {
 	links?: LinkCacheEntry[];
 	embeds?: LinkCacheEntry[];
+	frontmatterLinks?: LinkCacheEntry[];
 	headings?: HeadingCacheEntry[];
 	tags?: TagCacheEntry[];
 	frontmatter?: Record<string, unknown>;
@@ -120,6 +121,7 @@ function parseMarkdownMetadata(content: string): LocalMetadata {
 	const body = stripFrontmatter(content);
 	const links: LinkCacheEntry[] = [];
 	const embeds: LinkCacheEntry[] = [];
+	const frontmatterLinks = extractFrontmatterWikiLinks(content);
 
 	for (const match of body.matchAll(/(!?)\[\[([^\]]+)\]\]/g)) {
 		const entry = { link: match[2] };
@@ -149,10 +151,21 @@ function parseMarkdownMetadata(content: string): LocalMetadata {
 	return {
 		links,
 		embeds,
+		frontmatterLinks,
 		headings,
 		tags,
 		frontmatter,
 	};
+}
+
+function extractFrontmatterWikiLinks(content: string): LinkCacheEntry[] {
+	if (!content.startsWith("---\n")) return [];
+	const end = content.indexOf("\n---", 4);
+	if (end === -1) return [];
+
+	return [...content.slice(4, end).matchAll(/\[\[([^\]]+)\]\]/g)].map((match) => ({
+		link: match[1],
+	}));
 }
 
 function parseFrontmatter(content: string): Record<string, unknown> | undefined {
