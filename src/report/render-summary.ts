@@ -1,14 +1,14 @@
-import type { ScanResult, IssueSeverity } from "../scanner/Issue";
+import type { Issue, ScanResult, IssueSeverity } from "../scanner/Issue";
 import { formatDuration } from "../utils/format";
+import { summarizeIssues } from "./report-model";
 
-export type SummaryActions = {
-	onFilterSeverity: (severity: IssueSeverity | null) => void;
+export type SummaryOptions = {
+	issues: Issue[];
+	onFilterSeverity?: (severity: IssueSeverity | null) => void;
 };
 
-export function renderSummary(container: HTMLElement, result: ScanResult, actions?: SummaryActions) {
-	const errors = result.issues.filter((i) => i.severity === "error").length;
-	const warnings = result.issues.filter((i) => i.severity === "warning").length;
-	const infos = result.issues.filter((i) => i.severity === "info").length;
+export function renderSummary(container: HTMLElement, result: ScanResult, options: SummaryOptions) {
+	const { total, errors, warnings, infos } = summarizeIssues(options.issues);
 	const duration = formatDuration(result.finishedAt - result.startedAt);
 
 	const summary = container.createDiv({ cls: "vi-summary" });
@@ -16,7 +16,7 @@ export function renderSummary(container: HTMLElement, result: ScanResult, action
 
 	const stats = summary.createDiv({ cls: "vi-stats" });
 	const items: Array<{ label: string; value: number; cls: string; severity: IssueSeverity | null }> = [
-		{ label: "Total", value: result.issues.length, cls: "vi-stat-total", severity: null },
+		{ label: "Total", value: total, cls: "vi-stat-total", severity: null },
 		{ label: "Errors", value: errors, cls: "vi-stat-error", severity: "error" },
 		{ label: "Warnings", value: warnings, cls: "vi-stat-warning", severity: "warning" },
 		{ label: "Info", value: infos, cls: "vi-stat-info", severity: "info" },
@@ -26,9 +26,9 @@ export function renderSummary(container: HTMLElement, result: ScanResult, action
 		const stat = stats.createDiv({ cls: `vi-stat ${item.cls}` });
 		stat.createEl("span", { cls: "vi-stat-value", text: String(item.value) });
 		stat.createEl("span", { cls: "vi-stat-label", text: item.label });
-		if (actions) {
+		if (options.onFilterSeverity) {
 			stat.addClass("vi-stat-clickable");
-			stat.addEventListener("click", () => actions.onFilterSeverity(item.severity));
+			stat.addEventListener("click", () => options.onFilterSeverity?.(item.severity));
 		}
 	}
 

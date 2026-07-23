@@ -1,7 +1,11 @@
 import { ItemView, MarkdownView, WorkspaceLeaf, TFile, setTooltip } from "obsidian";
 import type { ScanProgress, ScanResult, Issue } from "../scanner/Issue";
 import { SCANNER_LABELS } from "../scanner/Issue";
-import type { ReportModel } from "./report-model";
+import {
+	buildIssueFilterView,
+	type IssueFilterView,
+	type ReportModel,
+} from "./report-model";
 import { renderSummary } from "./render-summary";
 import { renderIssueList } from "./render-issues";
 import { setIcon } from "obsidian";
@@ -179,8 +183,10 @@ export class InspectorView extends ItemView {
 			return;
 		}
 
-		this.renderToolbar(container);
+		const filterView = this.getIssueFilterView();
+		this.renderToolbar(container, filterView);
 		renderSummary(container, this.model.result, {
+			issues: filterView.visibleIssues,
 			onFilterSeverity: (severity) => {
 				this.model.filterSeverity = this.model.filterSeverity === severity ? null : severity;
 				this.render();
@@ -192,9 +198,8 @@ export class InspectorView extends ItemView {
 		}
 
 		const issuesContainer = container.createDiv({ cls: "vi-issues" });
-		const visibleIssues = this.getVisibleIssues();
 		renderIssueList(issuesContainer, {
-			issues: visibleIssues,
+			issues: filterView.visibleIssues,
 			scannersRun: this.model.result.scannersRun,
 			selectionMode: this.model.selectionMode,
 			selectedFingerprints: this.model.selectedFingerprints,
@@ -280,13 +285,12 @@ export class InspectorView extends ItemView {
 
 	// ─── Toolbar ─────────────────────────────────────────────
 
-	private renderToolbar(container: HTMLElement) {
+	private renderToolbar(container: HTMLElement, filterView: IssueFilterView) {
 		const toolbar = container.createDiv({ cls: "vi-toolbar" });
-		this.renderScannerFilter(toolbar);
-		this.renderSeverityFilter(toolbar);
+		this.renderScannerFilter(toolbar, filterView);
+		this.renderSeverityFilter(toolbar, filterView);
 
-		const visibleIssues = this.getVisibleIssues();
-		if (visibleIssues.length > 0) {
+		if (filterView.visibleIssues.length > 0) {
 			const selectBtn = toolbar.createEl("button", {
 				cls: `vi-filter-btn vi-select-btn ${this.model.selectionMode ? "vi-active" : ""}`,
 				text: this.model.selectionMode ? "Done" : "Select",
@@ -300,7 +304,7 @@ export class InspectorView extends ItemView {
 		}
 	}
 
-	private renderScannerFilter(toolbar: HTMLElement) {
+	private renderScannerFilter(toolbar: HTMLElement, filterView: IssueFilterView) {
 		if (!this.model.result) return;
 		const group = toolbar.createDiv({ cls: "vi-filter-group" });
 		group.createEl("button", {
@@ -309,7 +313,7 @@ export class InspectorView extends ItemView {
 		}).addEventListener("click", () => { this.model.filterScanner = null; this.render(); });
 
 		for (const scannerId of this.model.result.scannersRun) {
-			const count = this.model.result.issues.filter((i) => i.scannerId === scannerId).length;
+			const count = filterView.scannerCounts.get(scannerId) ?? 0;
 			group.createEl("button", {
 				cls: `vi-filter-btn ${this.model.filterScanner === scannerId ? "vi-active" : ""}`,
 				text: `${SCANNER_LABELS[scannerId]} (${count})`,
@@ -320,17 +324,15 @@ export class InspectorView extends ItemView {
 		}
 	}
 
-	private renderSeverityFilter(toolbar: HTMLElement) {
+	private renderSeverityFilter(toolbar: HTMLElement, filterView: IssueFilterView) {
 		if (!this.model.result) return;
 		const group = toolbar.createDiv({ cls: "vi-filter-group" });
-		for (const sev of ["error", "warning", "info"] as const) {
-			const count = this.model.result.issues.filter((i) => i.severity === sev).length;
-			if (count === 0) continue;
+		for (const { severity, count } of filterView.severityFacets) {
 			group.createEl("button", {
-				cls: `vi-filter-btn vi-severity-${sev} ${this.model.filterSeverity === sev ? "vi-active" : ""}`,
-				text: `${sev} (${count})`,
+				cls: `vi-filter-btn vi-severity-${severity} ${this.model.filterSeverity === severity ? "vi-active" : ""}`,
+				text: `${severity} (${count})`,
 			}).addEventListener("click", () => {
-				this.model.filterSeverity = this.model.filterSeverity === sev ? null : sev;
+				this.model.filterSeverity = this.model.filterSeverity === severity ? null : severity;
 				this.render();
 			});
 		}
@@ -507,11 +509,14 @@ export class InspectorView extends ItemView {
 	}
 
 	private getVisibleIssues(): Issue[] {
-		if (!this.model.result) return [];
-		let issues = this.model.result.issues;
-		if (this.model.filterSeverity) issues = issues.filter((i) => i.severity === this.model.filterSeverity);
-		if (this.model.filterScanner) issues = issues.filter((i) => i.scannerId === this.model.filterScanner);
-		return issues;
+		return this.getIssueFilterView().visibleIssues;
+	}
+
+	private getIssueFilterView(): IssueFilterView {
+		return buildIssueFilterView(this.model.result?.issues ?? [], {
+			scanner: this.model.filterScanner,
+			severity: this.model.filterSeverity,
+		});
 	}
 
 	private async handleOpenIssue(issue: Issue) {
