@@ -298,6 +298,37 @@ describe("runCli", () => {
 				expect(payload.summary.issues).toBe(0);
 				expect(payload.issues).toEqual([]);
 			},
+			);
+	});
+
+	it("does not report attachments referenced by frontmatter properties", async () => {
+		await withVault(
+			{
+				"note.md": [
+					"---",
+					"type: note",
+					'sourceBackup: "[[myBackup.pdf]]"',
+					"references:",
+					'  - "[[myReferencedFile.pdf]]"',
+					"---",
+					"# Content",
+				].join("\n"),
+				"attachments/myBackup.pdf": "fake backup",
+				"attachments/myReferencedFile.pdf": "fake reference",
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"orphan-attachments",
+				]);
+
+				expect(result.exitCode).toBe(0);
+				const payload = JSON.parse(result.stdout);
+				expect(payload.summary.issues).toBe(0);
+				expect(payload.issues).toEqual([]);
+			},
 		);
 	});
 

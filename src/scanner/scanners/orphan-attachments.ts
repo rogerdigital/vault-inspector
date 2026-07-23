@@ -54,8 +54,9 @@ function collectReferencedPaths(ctx: ScanContext): Set<string> {
 
 		const links = cache.links ?? [];
 		const embeds = cache.embeds ?? [];
+		const frontmatterLinks = cache.frontmatterLinks ?? [];
 
-		for (const link of [...links, ...embeds]) {
+		for (const link of [...links, ...embeds, ...frontmatterLinks]) {
 			const resolvedTargets = resolveVaultLinkTargets(ctx, link.link);
 			for (const resolvedTarget of resolvedTargets) paths.add(resolvedTarget);
 		}
