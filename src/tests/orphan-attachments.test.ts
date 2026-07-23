@@ -65,6 +65,70 @@ describe("orphanAttachmentsScanner", () => {
 		expect(issues).toHaveLength(0);
 	});
 
+	it("does not report attachments referenced by a frontmatter property", async () => {
+		const md = { path: "notes/a.md" } as any;
+		const attachment = makeFile("attachments/backup.pdf", 1000);
+		const ctx = makeCtx({
+			markdownFiles: [md],
+			allFiles: [md, attachment],
+			filePathIndex: new Set(["notes/a.md", "attachments/backup.pdf"]),
+			metadataCache: {
+				getFileCache: () => ({
+					links: [],
+					embeds: [],
+					frontmatterLinks: [
+						{
+							key: "sourceBackup",
+							link: "backup.pdf",
+							original: "[[backup.pdf]]",
+						},
+					],
+				}),
+			} as any,
+		});
+
+		const issues = await orphanAttachmentsScanner.scan(ctx);
+
+		expect(issues).toHaveLength(0);
+	});
+
+	it("does not report attachments referenced by a frontmatter array", async () => {
+		const md = { path: "notes/a.md" } as any;
+		const first = makeFile("attachments/first.pdf", 1000);
+		const second = makeFile("attachments/second.pdf", 1000);
+		const ctx = makeCtx({
+			markdownFiles: [md],
+			allFiles: [md, first, second],
+			filePathIndex: new Set([
+				"notes/a.md",
+				"attachments/first.pdf",
+				"attachments/second.pdf",
+			]),
+			metadataCache: {
+				getFileCache: () => ({
+					links: [],
+					embeds: [],
+					frontmatterLinks: [
+						{
+							key: "references",
+							link: "first.pdf",
+							original: "[[first.pdf]]",
+						},
+						{
+							key: "references",
+							link: "second.pdf",
+							original: "[[second.pdf]]",
+						},
+					],
+				}),
+			} as any,
+		});
+
+		const issues = await orphanAttachmentsScanner.scan(ctx);
+
+		expect(issues).toHaveLength(0);
+	});
+
 	it("does not report attachments referenced by short wiki embed names", async () => {
 		const md = { path: "notes/a.md" } as any;
 		const img = makeFile("attachments/image.png", 1000);
