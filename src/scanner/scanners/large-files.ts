@@ -36,7 +36,7 @@ export const largeFilesScanner = {
 						type: isMd ? "markdown" : "attachment",
 					},
 					fingerprint: generateFingerprint("large-files", file.path, {
-						size: file.stat.size,
+						type: isMd ? "markdown" : "attachment",
 					}),
 				});
 			}
