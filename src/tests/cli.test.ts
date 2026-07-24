@@ -3,6 +3,8 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCli } from "../../cli/cli";
+import { createLocalApp } from "../../cli/local-vault";
+import { EXTERNAL_LINK_TIMEOUT_MS } from "../scanner/scanners/external-links";
 
 async function withVault(
 	files: Record<string, string>,
@@ -301,6 +303,273 @@ describe("runCli", () => {
 			);
 	});
 
+	it("exposes Obsidian-shaped resolved links and source-aware link resolution", async () => {
+		await withVault(
+			{
+				"zeta/note.md": "![[image.png]]\n",
+				"zeta/image.png": "local image",
+				"alpha/image.png": "other image",
+			},
+			async (vaultPath) => {
+				const app = await createLocalApp(vaultPath);
+
+				expect(app.metadataCache.resolvedLinks).toEqual({
+					"zeta/note.md": {
+						"zeta/image.png": 1,
+					},
+				});
+				expect(
+					app.metadataCache.getFirstLinkpathDest("image.png", "zeta/note.md")?.path,
+				).toBe("zeta/image.png");
+			},
+		);
+	});
+
+	it("reports a missing heading when the linked CLI note exists", async () => {
+		await withVault(
+			{
+				"notes/source.md": "[[target#Missing heading]]\n",
+				"notes/target.md": "# Existing heading\n",
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"broken-links",
+				]);
+
+				expect(result.exitCode).toBe(1);
+				const payload = JSON.parse(result.stdout);
+				expect(payload.issues).toEqual([
+					expect.objectContaining({
+						scannerId: "broken-links",
+						severity: "warning",
+						primaryPath: "notes/source.md",
+						relatedPaths: ["notes/target.md"],
+						evidence: expect.objectContaining({
+							link: "target#Missing heading",
+							target: "notes/target.md",
+						}),
+					}),
+				]);
+			},
+		);
+	});
+
+	it("does not scan Obsidian and version-control internals", async () => {
+		await withVault(
+			{
+				"note.md": "Visible content with enough words for the scan.\n",
+				".obsidian/workspace.md": "",
+				".git/hooks/example.md": "",
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"empty-notes",
+				]);
+
+				expect(result.exitCode).toBe(0);
+				const payload = JSON.parse(result.stdout);
+				expect(payload.summary.filesScanned).toBe(1);
+				expect(payload.issues).toEqual([]);
+			},
+		);
+	});
+
+	it("parses CRLF frontmatter with YAML block sequence tags", async () => {
+		await withVault(
+			{
+				"note.md": [
+					"---",
+					"tags:",
+					"  - release",
+					"  - 项目/进行中",
+					"---",
+					"Enough body content for the scan.",
+				].join("\r\n"),
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"tag-usage",
+				]);
+
+				expect(result.exitCode).toBe(1);
+				const tags = JSON.parse(result.stdout).issues.map(
+					(issue: { evidence: { tag: string } }) => issue.evidence.tag,
+				);
+				expect(tags).toEqual(["release", "项目/进行中"]);
+			},
+		);
+	});
+
+	it("ignores pseudo links and tags in code and HTML comments", async () => {
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+			status: 404,
+		} as Response);
+
+		await withVault(
+			{
+				"note.md": [
+					"Enough visible content for the scan.",
+					"",
+					"`[[inline-missing]] #inline-tag https://example.com/inline`",
+					"",
+					"```md",
+					"[[fenced-missing]] #fenced-tag",
+					"[dead](https://example.com/fenced)",
+					"```",
+					"",
+					"<!-- [[comment-missing]] #comment-tag https://example.com/comment -->",
+				].join("\n"),
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"broken-links,external-links,tag-usage",
+				]);
+
+				expect(result.exitCode).toBe(0);
+				expect(fetchMock).not.toHaveBeenCalled();
+				expect(JSON.parse(result.stdout).issues).toEqual([]);
+			},
+		);
+	});
+
+	it("resolves relative Markdown links with titles and ignores URI schemes", async () => {
+		await withVault(
+			{
+				"notes/source.md": [
+					'[Target](../docs/target.md "Read target")',
+					"[Email](mailto:person@example.com)",
+					"[Obsidian](obsidian://open?vault=Example)",
+					"[Custom](custom:resource#section)",
+				].join("\n"),
+				"docs/target.md": "# Target\n",
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"broken-links",
+				]);
+
+				expect(result.exitCode).toBe(0);
+				expect(JSON.parse(result.stdout).issues).toEqual([]);
+			},
+		);
+	});
+
+	it("does not report an existing heading in a source-relative Markdown link", async () => {
+		await withVault(
+			{
+				"notes/source.md": "[Target](sub/target.md#Existing)\n",
+				"notes/sub/target.md": "# Existing\n",
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"broken-links",
+				]);
+
+				expect(result.exitCode).toBe(0);
+				expect(JSON.parse(result.stdout).issues).toEqual([]);
+			},
+		);
+	});
+
+	it("reports only a missing heading in a source-relative Markdown link", async () => {
+		await withVault(
+			{
+				"notes/source.md": "[Target](sub/target.md#Missing)\n",
+				"notes/sub/target.md": "# Existing\n",
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"broken-links",
+				]);
+
+				expect(result.exitCode).toBe(1);
+				const issues = JSON.parse(result.stdout).issues;
+				expect(issues).toEqual([
+					expect.objectContaining({
+						scannerId: "broken-links",
+						severity: "warning",
+						message:
+							'Heading "#Missing" not found in notes/sub/target.md',
+						relatedPaths: ["notes/sub/target.md"],
+						evidence: expect.objectContaining({
+							target: "notes/sub/target.md",
+						}),
+					}),
+				]);
+				expect(issues[0]).not.toHaveProperty("fixAction");
+			},
+		);
+	});
+
+	it("reports missing Markdown files without an unsafe wiki removal action", async () => {
+		await withVault(
+			{
+				"notes/source.md": "[Missing](missing.md)\n",
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"broken-links",
+				]);
+
+				expect(result.exitCode).toBe(1);
+				const issues = JSON.parse(result.stdout).issues;
+				expect(issues).toEqual([
+					expect.objectContaining({
+						scannerId: "broken-links",
+						severity: "error",
+						message: "Linked file not found: missing.md",
+					}),
+				]);
+				expect(issues[0]).not.toHaveProperty("fixAction");
+			},
+		);
+	});
+
+	it("keeps wiki subpaths vault-root relative", async () => {
+		await withVault(
+			{
+				"notes/source.md": "[[sub/target#Root heading]]\n",
+				"notes/sub/target.md": "# Source-relative heading\n",
+				"sub/target.md": "# Root heading\n",
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"broken-links",
+				]);
+
+				expect(result.exitCode).toBe(0);
+				expect(JSON.parse(result.stdout).issues).toEqual([]);
+			},
+		);
+	});
+
 	it("does not report attachments referenced by frontmatter properties", async () => {
 		await withVault(
 			{
@@ -377,9 +646,13 @@ describe("runCli", () => {
 					"external-links",
 				]);
 
-				expect(fetchMock).toHaveBeenCalledWith("https://example.com/dead", {
-					method: "HEAD",
-				});
+				expect(fetchMock).toHaveBeenCalledWith(
+					"https://example.com/dead",
+					expect.objectContaining({
+						method: "HEAD",
+						signal: expect.any(AbortSignal),
+					}),
+				);
 				expect(result.exitCode).toBe(1);
 				const payload = JSON.parse(result.stdout);
 				expect(payload.issues).toEqual([
@@ -414,9 +687,13 @@ describe("runCli", () => {
 					"external-links",
 				]);
 
-				expect(fetchMock).toHaveBeenCalledWith("https://example.com/bare", {
-					method: "HEAD",
-				});
+				expect(fetchMock).toHaveBeenCalledWith(
+					"https://example.com/bare",
+					expect.objectContaining({
+						method: "HEAD",
+						signal: expect.any(AbortSignal),
+					}),
+				);
 				expect(result.exitCode).toBe(1);
 				const payload = JSON.parse(result.stdout);
 				expect(payload.issues).toEqual([
@@ -431,6 +708,49 @@ describe("runCli", () => {
 			},
 		);
 	});
+
+	it("aborts timed out CLI fetch requests", async () => {
+		let aborted = false;
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
+			(_input, init) => new Promise<Response>((_resolve, reject) => {
+				init?.signal?.addEventListener("abort", () => {
+					aborted = true;
+					reject(new DOMException("The operation was aborted", "AbortError"));
+				});
+			}),
+		);
+
+		await withVault(
+			{
+				"note.md": "[Slow](https://example.com/slow)\n",
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"external-links",
+				]);
+
+				expect(aborted).toBe(true);
+				expect(fetchMock).toHaveBeenCalledWith(
+					"https://example.com/slow",
+					expect.objectContaining({
+						method: "HEAD",
+						signal: expect.any(AbortSignal),
+					}),
+				);
+				expect(JSON.parse(result.stdout).issues).toEqual([
+					expect.objectContaining({
+						title: "External link check timed out",
+						evidence: expect.objectContaining({
+							url: "https://example.com/slow",
+						}),
+					}),
+				]);
+			},
+		);
+	}, EXTERNAL_LINK_TIMEOUT_MS + 5000);
 
 	it("marks baseline issues and fails only on new issues", async () => {
 		await withVault({ "empty.md": "" }, async (vaultPath) => {

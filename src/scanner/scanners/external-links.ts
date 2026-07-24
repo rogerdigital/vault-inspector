@@ -102,7 +102,7 @@ function isExternalUrl(text: string): boolean {
 export function extractBareUrls(content: string): string[] {
 	const urls: string[] = [];
 	const seen = new Set<string>();
-	const body = stripFencedCodeBlocks(stripFrontmatter(content));
+	const body = stripIgnoredMarkdownRegions(stripFrontmatter(content));
 	const urlPattern = /https?:\/\/[^\s<>"']+/gi;
 
 	for (const match of body.matchAll(urlPattern)) {
@@ -116,14 +116,15 @@ export function extractBareUrls(content: string): string[] {
 }
 
 function stripFrontmatter(content: string): string {
-	if (!content.startsWith("---\n")) return content;
-	const end = content.indexOf("\n---", 4);
-	if (end === -1) return content;
-	return content.slice(end + 4);
+	const match = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.exec(content);
+	return match ? content.slice(match[0].length) : content;
 }
 
-function stripFencedCodeBlocks(content: string): string {
-	return content.replace(/```[\s\S]*?```/g, "");
+function stripIgnoredMarkdownRegions(content: string): string {
+	return content
+		.replace(/<!--[\s\S]*?-->/g, "")
+		.replace(/^[ \t]*(`{3,}|~{3,})[^\r\n]*\r?\n[\s\S]*?^[ \t]*\1[^\r\n]*$/gm, "")
+		.replace(/(`+)[^\r\n]*?\1/g, "");
 }
 
 function trimUrlBoundary(url: string): string {
@@ -193,8 +194,9 @@ async function checkUrlWithTimeout(
 	ctx: ScanContext | undefined,
 	timeoutMs: number,
 ): Promise<CheckResult> {
+	const controller = new AbortController();
 	const result = await withTimeout(
-		checkUrl(entry.url, ctx),
+		checkUrl(entry.url, ctx, controller.signal),
 		timeoutMs,
 		{
 			...entry,
@@ -202,14 +204,19 @@ async function checkUrlWithTimeout(
 			timeoutMs,
 		},
 		ctx,
+		() => controller.abort(),
 	);
 	return withSourcePath(result, entry.sourcePath);
 }
 
-async function checkUrl(url: string, ctx?: ScanContext): Promise<CheckResult> {
+async function checkUrl(
+	url: string,
+	ctx?: ScanContext,
+	signal?: AbortSignal,
+): Promise<CheckResult> {
 	try {
 		if (ctx?.requestUrl) {
-			const status = await ctx.requestUrl(url);
+			const status = await ctx.requestUrl(url, signal);
 			return { url, sourcePath: "", kind: "http", status };
 		}
 		return {
@@ -233,6 +240,7 @@ async function withTimeout<T>(
 	timeoutMs: number,
 	timeoutValue: T,
 	ctx?: ScanContext,
+	onTimeout?: () => void,
 ): Promise<T> {
 	const timer = getTimer(ctx);
 	let timeoutId: unknown;
@@ -240,7 +248,10 @@ async function withTimeout<T>(
 		return await Promise.race([
 			promise,
 			new Promise<T>((resolve) => {
-				timeoutId = timer.setTimeout(() => resolve(timeoutValue), timeoutMs);
+				timeoutId = timer.setTimeout(() => {
+					resolve(timeoutValue);
+					onTimeout?.();
+				}, timeoutMs);
 			}),
 		]);
 	} finally {

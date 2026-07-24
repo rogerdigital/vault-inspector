@@ -47,6 +47,8 @@ export const orphanAttachmentsScanner = {
 
 function collectReferencedPaths(ctx: ScanContext): Set<string> {
 	const paths = new Set<string>();
+	const canResolveLinks =
+		typeof ctx.metadataCache.getFirstLinkpathDest === "function";
 
 	for (const file of ctx.markdownFiles) {
 		const cache = ctx.metadataCache.getFileCache(file);
@@ -57,8 +59,10 @@ function collectReferencedPaths(ctx: ScanContext): Set<string> {
 		const frontmatterLinks = cache.frontmatterLinks ?? [];
 
 		for (const link of [...links, ...embeds, ...frontmatterLinks]) {
-			const resolvedTargets = resolveVaultLinkTargets(ctx, link.link);
-			for (const resolvedTarget of resolvedTargets) paths.add(resolvedTarget);
+			const resolvedTarget = canResolveLinks
+				? ctx.metadataCache.getFirstLinkpathDest(link.link, file.path)?.path
+				: resolveVaultLinkTargets(ctx, link.link, file.path)[0];
+			if (resolvedTarget) paths.add(resolvedTarget);
 		}
 	}
 

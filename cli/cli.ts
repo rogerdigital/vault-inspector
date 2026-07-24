@@ -87,8 +87,8 @@ export async function runCli(args: string[], runtime: CliRuntime = {}): Promise<
 
 	try {
 		const vaultPath = resolve(parsed.vaultPath);
-		const scanRunner = new ScanRunner(async (url) => {
-			const response = await fetch(url, { method: "HEAD" });
+		const scanRunner = new ScanRunner(async (url: string, signal?: AbortSignal) => {
+			const response = await fetch(url, { method: "HEAD", signal });
 			return response.status;
 		}, {
 			setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),

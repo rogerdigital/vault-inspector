@@ -147,7 +147,7 @@ describe("orphanAttachmentsScanner", () => {
 		expect(issues).toHaveLength(0);
 	});
 
-	it("does not report ambiguous same-name attachments as orphan when short wiki embeds reference them", async () => {
+	it("only marks the Obsidian-resolved same-name attachment as referenced", async () => {
 		const md = { path: "notes/a.md" } as any;
 		const first = makeFile("attachments/image.png", 1000);
 		const second = makeFile("archive/image.png", 1000);
@@ -164,10 +164,72 @@ describe("orphanAttachmentsScanner", () => {
 					links: [],
 					embeds: [{ link: "image.png" }],
 				}),
+				getFirstLinkpathDest: (linkPath: string, sourcePath: string) => {
+					expect(linkPath).toBe("image.png");
+					expect(sourcePath).toBe("notes/a.md");
+					return first;
+				},
+				resolvedLinks: {
+					"notes/a.md": {
+						"attachments/image.png": 1,
+					},
+				},
 			} as any,
 		});
 		const issues = await orphanAttachmentsScanner.scan(ctx);
+		expect(issues).toHaveLength(1);
+		expect(issues[0].primaryPath).toBe("archive/image.png");
+	});
+
+	it("does not treat a resolvedLinks occurrence count as a destination path", async () => {
+		const md = { path: "notes/a.md" } as any;
+		const attachment = makeFile("assets/used.png", 1000);
+		const ctx = makeCtx({
+			markdownFiles: [md],
+			allFiles: [md, attachment],
+			filePathIndex: new Set(["notes/a.md", "assets/used.png"]),
+			metadataCache: {
+				getFileCache: () => ({
+					links: [{ link: "assets/used.png" }],
+					embeds: [],
+				}),
+				resolvedLinks: {
+					"notes/a.md": {
+						"assets/used.png": 1,
+					},
+				},
+			} as any,
+		});
+
+		const issues = await orphanAttachmentsScanner.scan(ctx);
+
 		expect(issues).toHaveLength(0);
+	});
+
+	it("prefers the source folder for same-name attachments without resolved metadata", async () => {
+		const md = { path: "zeta/note.md" } as any;
+		const local = makeFile("zeta/image.png", 1000);
+		const other = makeFile("alpha/image.png", 1000);
+		const ctx = makeCtx({
+			markdownFiles: [md],
+			allFiles: [md, local, other],
+			filePathIndex: new Set([
+				"zeta/note.md",
+				"zeta/image.png",
+				"alpha/image.png",
+			]),
+			metadataCache: {
+				getFileCache: () => ({
+					links: [],
+					embeds: [{ link: "image.png" }],
+				}),
+			} as any,
+		});
+
+		const issues = await orphanAttachmentsScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].primaryPath).toBe("alpha/image.png");
 	});
 
 	it("downgrades recently modified orphans to info", async () => {

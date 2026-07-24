@@ -5,7 +5,7 @@ export type ScanContext = {
 	app: App;
 	metadataCache: MetadataCache;
 	vault: Vault;
-	requestUrl?: (url: string) => Promise<number>;
+	requestUrl?: (url: string, signal?: AbortSignal) => Promise<number>;
 	setTimeout?: (callback: () => void, delayMs: number) => unknown;
 	clearTimeout?: (timeoutId: unknown) => void;
 	markdownFiles: TFile[];

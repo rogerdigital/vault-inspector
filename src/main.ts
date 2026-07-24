@@ -7,6 +7,7 @@ import { InspectorSettingTab } from "./settings/settings-tab";
 import { generateMarkdownReport } from "./report/markdown-export";
 import { executeFixAction } from "./fix/fix-executor";
 import { showConfirmModal } from "./fix/confirm-modal";
+import type { FixAction, Issue } from "./scanner/Issue";
 
 export default class VaultInspectorPlugin extends Plugin {
 	settings: InspectorSettings = DEFAULT_SETTINGS;
@@ -45,7 +46,14 @@ export default class VaultInspectorPlugin extends Plugin {
 
 	async loadSettings() {
 		const loaded = (await this.loadData() as Partial<InspectorSettings> | null) ?? {};
-		this.settings = { ...DEFAULT_SETTINGS, ...loaded };
+		this.settings = {
+			...DEFAULT_SETTINGS,
+			...loaded,
+			enabledScanners: {
+				...DEFAULT_SETTINGS.enabledScanners,
+				...loaded.enabledScanners,
+			},
+		};
 
 		if (migrateExcalidrawFrontmatterKey(this.settings, loaded)) {
 			await this.saveSettings();
@@ -95,16 +103,25 @@ export default class VaultInspectorPlugin extends Plugin {
 				if (actions.length === 0) return;
 				const confirmed = await showConfirmModal(this.app, actions);
 				if (!confirmed) return;
+
 				let fixed = 0;
-				for (const action of actions) {
+				for (const issue of issues) {
+					const freshResult = await this.scan(view);
+					if (!freshResult) return;
+					const [freshAction] = getMatchingFreshFixActions(
+						[issue],
+						freshResult.issues,
+					);
+					if (!freshAction) continue;
 					try {
-						await executeFixAction(this.app, action);
-						fixed++;
+						fixed += await executeFixAction(this.app, freshAction);
 					} catch {
 						// continue on individual failures
 					}
 				}
-				new Notice(`Fixed ${fixed} issue(s)`);
+				new Notice(fixed > 0
+					? `Fixed ${fixed} item${fixed === 1 ? "" : "s"}`
+					: "No items were fixed");
 				await this.scanAndRender(view);
 			},
 			onRevealIssue: async (issue) => {
@@ -123,16 +140,21 @@ export default class VaultInspectorPlugin extends Plugin {
 	}
 
 	private async scanAndRender(view: InspectorView) {
+		const result = await this.scan(view);
+		if (result) view.setResult(result);
+	}
+
+	private async scan(view: InspectorView) {
 		view.setScanning(true);
 		try {
-			const result = await this.scanRunner.run(this.app, this.settings, {
+			return await this.scanRunner.run(this.app, this.settings, {
 				onProgress: (progress) => view.setScanProgress(progress),
 			});
-			view.setResult(result);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			new Notice(`Vault Inspector scan failed: ${message}`);
 			view.setScanning(false);
+			return null;
 		}
 	}
 
@@ -155,6 +177,39 @@ export default class VaultInspectorPlugin extends Plugin {
 		await this.app.vault.create(filepath, report);
 		new Notice(`Report exported to ${filepath}`);
 	}
+}
+
+export function getMatchingFreshFixActions(
+	requestedIssues: Issue[],
+	freshIssues: Issue[],
+): FixAction[] {
+	const freshByFingerprint = new Map(
+		freshIssues.map((issue) => [issue.fingerprint, issue]),
+	);
+
+	return requestedIssues.flatMap((requestedIssue) => {
+		const freshIssue = freshByFingerprint.get(requestedIssue.fingerprint);
+		if (
+			!requestedIssue.fixAction
+			|| !freshIssue?.fixAction
+			|| !fixActionsMatch(requestedIssue.fixAction, freshIssue.fixAction)
+		) {
+			return [];
+		}
+		return [freshIssue.fixAction];
+	});
+}
+
+function fixActionsMatch(
+	left: FixAction,
+	right: FixAction,
+): boolean {
+	return left.kind === right.kind
+		&& left.label === right.label
+		&& left.description === right.description
+		&& left.linkText === right.linkText
+		&& left.targetPaths.length === right.targetPaths.length
+		&& left.targetPaths.every((path, index) => path === right.targetPaths[index]);
 }
 
 const LEGACY_EXCALIDRAW_KEY = "excalidraw";

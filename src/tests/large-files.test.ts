@@ -84,6 +84,17 @@ describe("largeFilesScanner", () => {
 		expect(issues[1].evidence.size).toBe(150 * 1024);
 	});
 
+	it("keeps the fingerprint stable when the file size changes", async () => {
+		const initialIssues = await largeFilesScanner.scan(
+			makeCtx({ allFiles: [makeFile("notes/growing.md", 200 * 1024)] }),
+		);
+		const updatedIssues = await largeFilesScanner.scan(
+			makeCtx({ allFiles: [makeFile("notes/growing.md", 300 * 1024)] }),
+		);
+
+		expect(updatedIssues[0].fingerprint).toBe(initialIssues[0].fingerprint);
+	});
+
 	it("skips files in ignored folders", async () => {
 		const file = makeFile("templates/big.md", 200 * 1024);
 		const ctx = makeCtx({
