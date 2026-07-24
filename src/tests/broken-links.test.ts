@@ -160,6 +160,68 @@ describe("brokenLinksScanner", () => {
 		expect(issues[0].evidence.target).toBe("notes/missing");
 	});
 
+	it("does not offer a wiki removal action for Markdown links", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [
+				{ path: "Source.md" },
+				{ path: "Target.md" },
+			],
+			metadataByPath: {
+				"Source.md": {
+					links: [{
+						link: "Target#Missing",
+						original: "[Target](Target.md#Missing)",
+						position: {} as any,
+					}],
+				},
+				"Target.md": {
+					headings: [{
+						heading: "Existing",
+						level: 1,
+						position: {} as any,
+					}],
+				},
+			},
+		});
+
+		const issues = await brokenLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].severity).toBe("warning");
+		expect(issues[0].fixAction).toBeUndefined();
+	});
+
+	it("keeps an exact removal action for aliased wiki links", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [{ path: "Source.md" }],
+			metadataByPath: {
+				"Source.md": {
+					links: [{
+						link: "Missing",
+						original: "[[Missing|Alias]]",
+						displayText: "Alias",
+						position: {} as any,
+					}],
+				},
+			},
+			unresolvedLinks: {
+				"Source.md": {
+					Missing: 1,
+				},
+			},
+		});
+
+		const issues = await brokenLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].fixAction).toEqual(expect.objectContaining({
+			kind: "remove-link-text",
+			linkText: "Missing|Alias",
+		}));
+	});
+
 	it("detects missing attachment links", async () => {
 		const file = { path: "notes/a.md" } as any;
 		const ctx = makeCtx({

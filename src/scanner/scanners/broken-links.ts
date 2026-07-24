@@ -2,7 +2,11 @@ import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { generateFingerprint } from "../issue-fingerprint";
 import { isIgnoredPath } from "../../utils/paths";
-import { getLinkTarget, resolveVaultLinkTargets } from "../../utils/vault-links";
+import {
+	getLinkTarget,
+	hasUriScheme,
+	resolveVaultLinkTargets,
+} from "../../utils/vault-links";
 
 export const brokenLinksScanner = {
 	id: "broken-links" as const,
@@ -21,10 +25,47 @@ export const brokenLinksScanner = {
 				unresolvedLinks?: Record<string, Record<string, number>>;
 			};
 			const linksForFile = meta.unresolvedLinks?.[file.path];
-			if (!linksForFile) continue;
+			const references = [...cache.links ?? [], ...cache.embeds ?? []];
+			const linkCandidates = new Map<
+				string,
+				{ linkText: string; fixLinkText?: string }
+			>();
+			const addCandidate = (candidate: {
+				linkText: string;
+				fixLinkText?: string;
+			}) => {
+				const existing = linkCandidates.get(candidate.linkText);
+				linkCandidates.set(candidate.linkText, {
+					linkText: candidate.linkText,
+					fixLinkText: existing?.fixLinkText ?? candidate.fixLinkText,
+				});
+			};
 
-			for (const linkText of Object.keys(linksForFile)) {
-				issues.push(...resolveLinkIssues(ctx, file.path, linkText));
+			for (const unresolvedLink of Object.keys(linksForFile ?? {})) {
+				const matchingReferences = references.filter(
+					(reference) => reference.link === unresolvedLink,
+				);
+				if (matchingReferences.length === 0) {
+					addCandidate({ linkText: unresolvedLink });
+					continue;
+				}
+				for (const reference of matchingReferences) {
+					addCandidate(getLinkCandidate(reference));
+				}
+			}
+			for (const reference of references) {
+				if (reference.link.includes("#")) {
+					addCandidate(getLinkCandidate(reference));
+				}
+			}
+
+			for (const candidate of linkCandidates.values()) {
+				issues.push(...resolveLinkIssues(
+					ctx,
+					file.path,
+					candidate.linkText,
+					candidate.fixLinkText,
+				));
 			}
 		}
 
@@ -36,31 +77,49 @@ function resolveLinkIssues(
 	ctx: ScanContext,
 	sourcePath: string,
 	linkText: string,
+	fixLinkText?: string,
 ): Issue[] {
 	const issues: Issue[] = [];
 
 	const rawTarget = getLinkTarget(linkText);
 
-	if (!rawTarget) return issues;
+	if (!rawTarget || hasUriScheme(rawTarget)) return issues;
 
 	// Attachment link (has a known non-md extension)
 	if (isAttachmentLink(rawTarget)) {
-		if (resolveVaultLinkTargets(ctx, linkText).length === 0) {
+		if (!findResolvedPath(ctx, rawTarget, sourcePath)) {
 			issues.push(
-				makeIssue(ctx, sourcePath, linkText, rawTarget, "error", `Attachment not found: ${rawTarget}`),
+				makeIssue(
+					sourcePath,
+					linkText,
+					fixLinkText,
+					rawTarget,
+					"error",
+					`Attachment not found: ${rawTarget}`,
+				),
 			);
 		}
 		return issues;
 	}
 
 	// Markdown or heading link
-	const headingPart = linkText.includes("#") ? linkText.split("#").slice(1).join("#") : null;
+	const linkDestination = linkText.split("|")[0];
+	const headingPart = linkDestination.includes("#")
+		? linkDestination.split("#").slice(1).join("#")
+		: null;
 
-	const resolvedPath = findMarkdownPath(ctx, linkText);
+	const resolvedPath = findMarkdownPath(ctx, rawTarget, sourcePath);
 
 	if (!resolvedPath) {
 		issues.push(
-			makeIssue(ctx, sourcePath, linkText, rawTarget, "error", `Linked file not found: ${rawTarget}`),
+			makeIssue(
+				sourcePath,
+				linkText,
+				fixLinkText,
+				rawTarget,
+				"error",
+				`Linked file not found: ${rawTarget}`,
+			),
 		);
 		return issues;
 	}
@@ -78,9 +137,9 @@ function resolveLinkIssues(
 		if (!found) {
 			issues.push(
 				makeIssue(
-					ctx,
 					sourcePath,
 					linkText,
+					fixLinkText,
 					resolvedPath,
 					"warning",
 					`Heading "#${headingPart}" not found in ${resolvedPath}`,
@@ -92,6 +151,20 @@ function resolveLinkIssues(
 	return issues;
 }
 
+function getLinkCandidate(reference: {
+	link: string;
+	original?: string;
+}): { linkText: string; fixLinkText?: string } {
+	const originalWikiLink = reference.original?.match(/^!?\[\[([\s\S]+)\]\]$/);
+	if (originalWikiLink) {
+		return {
+			linkText: originalWikiLink[1],
+			fixLinkText: originalWikiLink[1],
+		};
+	}
+	return { linkText: reference.link };
+}
+
 function isAttachmentLink(target: string): boolean {
 	const lastSegment = target.split("/").pop() ?? "";
 	const dotIndex = lastSegment.lastIndexOf(".");
@@ -100,10 +173,31 @@ function isAttachmentLink(target: string): boolean {
 	return ext !== "md";
 }
 
-function findMarkdownPath(ctx: ScanContext, linkText: string): string | null {
-	const resolvedTargets = resolveVaultLinkTargets(ctx, linkText)
-		.filter((path) => path.endsWith(".md"));
-	return resolvedTargets[0] ?? null;
+function findMarkdownPath(
+	ctx: ScanContext,
+	linkDestination: string,
+	sourcePath: string,
+): string | null {
+	const resolvedPath = findResolvedPath(ctx, linkDestination, sourcePath);
+	return resolvedPath?.endsWith(".md") ? resolvedPath : null;
+}
+
+function findResolvedPath(
+	ctx: ScanContext,
+	linkDestination: string,
+	sourcePath: string,
+): string | null {
+	if (typeof ctx.metadataCache.getFirstLinkpathDest === "function") {
+		return ctx.metadataCache.getFirstLinkpathDest(
+			linkDestination,
+			sourcePath,
+		)?.path ?? null;
+	}
+	return resolveVaultLinkTargets(
+		ctx,
+		linkDestination,
+		sourcePath,
+	)[0] ?? null;
 }
 
 function slugifyHeading(heading: string): string {
@@ -115,14 +209,14 @@ function slugifyHeading(heading: string): string {
 }
 
 function makeIssue(
-	_ctx: ScanContext,
 	sourcePath: string,
 	linkText: string,
+	fixLinkText: string | undefined,
 	targetPath: string,
 	severity: "error" | "warning" | "info",
 	message: string,
 ): Issue {
-	return {
+	const issue: Issue = {
 		scannerId: "broken-links",
 		severity,
 		title: "Broken link",
@@ -134,12 +228,15 @@ function makeIssue(
 			link: linkText,
 			target: targetPath,
 		}),
-		fixAction: {
+	};
+	if (fixLinkText) {
+		issue.fixAction = {
 			kind: "remove-link-text",
 			label: "Remove link",
-			description: `Remove "[[${linkText}]]" from "${sourcePath}"`,
+			description: `Remove "[[${fixLinkText}]]" from "${sourcePath}"`,
 			targetPaths: [sourcePath],
-			linkText,
-		},
-	};
+			linkText: fixLinkText,
+		};
+	}
+	return issue;
 }

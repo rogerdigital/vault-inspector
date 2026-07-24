@@ -15,12 +15,26 @@ export function getLinkTarget(linkText: string): string {
 export function resolveVaultLinkTargets(
 	ctx: Pick<ScanContext, "allFiles" | "filePathIndex" | "markdownFiles">,
 	linkText: string,
+	sourcePath?: string,
 ): string[] {
 	const target = getLinkTarget(linkText);
-	if (!target) return [];
+	if (!target || hasUriScheme(target)) return [];
 
 	const extension = getExtension(target);
-	const exactCandidates = extension ? [target] : [target, `${target}.md`];
+	const relativeTarget = sourcePath && /^\.{1,2}\//.test(target)
+		? resolveRelativePath(sourcePath, target)
+		: null;
+	const sourceFolderTarget = sourcePath && !target.includes("/")
+		? resolveRelativePath(sourcePath, `./${target}`)
+		: null;
+	const candidateTargets = relativeTarget
+		? [relativeTarget]
+		: sourceFolderTarget
+			? [sourceFolderTarget, target]
+			: [target];
+	const exactCandidates = candidateTargets.flatMap((candidate) =>
+		extension ? [candidate] : [candidate, `${candidate}.md`],
+	);
 	for (const candidate of exactCandidates) {
 		if (ctx.filePathIndex.has(candidate)) return [candidate];
 	}
@@ -29,10 +43,28 @@ export function resolveVaultLinkTargets(
 
 	const indexes = getLinkIndexes(ctx);
 	if (extension) {
-		return indexes.fileNameToPaths.get(target) ?? [];
+		return (indexes.fileNameToPaths.get(target) ?? []).slice(0, 1);
 	}
 
-	return indexes.markdownBaseToPaths.get(target) ?? [];
+	return (indexes.markdownBaseToPaths.get(target) ?? []).slice(0, 1);
+}
+
+export function hasUriScheme(text: string): boolean {
+	return /^[a-z][a-z\d+.-]*:/i.test(text);
+}
+
+function resolveRelativePath(sourcePath: string, target: string): string {
+	const segments = normalizePath(sourcePath).split("/");
+	segments.pop();
+	for (const segment of normalizePath(target).split("/")) {
+		if (!segment || segment === ".") continue;
+		if (segment === "..") {
+			segments.pop();
+		} else {
+			segments.push(segment);
+		}
+	}
+	return segments.join("/");
 }
 
 function getLinkIndexes(
