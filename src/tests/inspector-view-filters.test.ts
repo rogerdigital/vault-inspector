@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { WorkspaceLeaf } from "obsidian";
+import { setTooltip, WorkspaceLeaf } from "obsidian";
 import type { Issue, ScanResult, ScannerId } from "../scanner/Issue";
 
 const { renderIssueListMock, renderSummaryMock } = vi.hoisted(() => ({
@@ -95,6 +95,7 @@ describe("InspectorView report filter wiring", () => {
 	beforeEach(() => {
 		renderIssueListMock.mockClear();
 		renderSummaryMock.mockClear();
+		vi.mocked(setTooltip).mockClear();
 	});
 
 	it("passes the same filtered view to summary, toolbar, and issue list", () => {
@@ -135,6 +136,47 @@ describe("InspectorView report filter wiring", () => {
 		expect.soft(renderIssueListMock).toHaveBeenLastCalledWith(
 			expect.any(FakeElement),
 			expect.objectContaining({ issues: [duplicateWarning, duplicateInfo] }),
+		);
+	});
+
+	it("describes mixed fix actions without claiming every action trashes a file", () => {
+		const modifyIssue: Issue = {
+			...makeIssue("broken-links", "warning", "modify-link"),
+			fixAction: {
+				kind: "remove-link-text",
+				label: "Remove link",
+				description: "Remove a broken link",
+				targetPaths: ["Source.md"],
+				linkText: "Missing",
+			},
+		};
+		const trashIssue: Issue = {
+			...makeIssue("empty-notes", "warning", "trash-note"),
+			fixAction: {
+				kind: "trash-file",
+				label: "Delete",
+				description: "Move note to trash",
+				targetPaths: ["Empty.md"],
+			},
+		};
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.result = {
+			...result,
+			issues: [modifyIssue, trashIssue],
+		};
+		(view as any).model.selectionMode = true;
+		(view as any).model.selectedFingerprints = new Set([
+			modifyIssue.fingerprint,
+			trashIssue.fingerprint,
+		]);
+
+		(view as any).render();
+
+		expect(setTooltip).toHaveBeenCalledWith(
+			expect.any(FakeElement),
+			"Modify 1 note and move 1 file to trash",
 		);
 	});
 });

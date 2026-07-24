@@ -46,7 +46,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName("Fix actions").setHeading();
 		new Setting(containerEl)
 			.setName("Enable fix actions")
-			.setDesc("Show fix buttons on issues that can be automatically resolved (files moved to trash).")
+			.setDesc("Show fix buttons for safe automatic actions, including editing notes and moving files to trash.")
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings.enableFixActions)
 					.onChange(async (value) => {

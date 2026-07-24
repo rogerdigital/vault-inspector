@@ -10,6 +10,7 @@ import { renderSummary } from "./render-summary";
 import { renderIssueList } from "./render-issues";
 import { setIcon } from "obsidian";
 import { formatDuration } from "../utils/format";
+import { describeFixActions } from "../fix/confirm-modal";
 
 export const VIEW_TYPE_INSPECTOR = "vault-inspector";
 
@@ -365,11 +366,20 @@ export class InspectorView extends ItemView {
 		});
 
 		if (this.model.enableFixActions && selectedFixable.length > 0) {
-			const deleteBtn = right.createEl("button", { cls: "vi-action-btn vi-action-delete" });
-			setIcon(deleteBtn, "trash-2");
-			deleteBtn.createEl("span", { text: `(${selectedFixable.length})` });
-			setTooltip(deleteBtn, "Move selected files to trash");
-			deleteBtn.addEventListener("click", () => {
+			const fixBtn = right.createEl("button", { cls: "vi-action-btn vi-action-delete" });
+			const actionKinds = new Set(selectedFixable.map((issue) => issue.fixAction!.kind));
+			setIcon(
+				fixBtn,
+				actionKinds.size > 1
+					? "wrench"
+					: actionKinds.has("remove-link-text") ? "pencil" : "trash-2",
+			);
+			fixBtn.createEl("span", { text: `(${selectedFixable.length})` });
+			setTooltip(
+				fixBtn,
+				describeFixActions(selectedFixable.map((issue) => issue.fixAction!)),
+			);
+			fixBtn.addEventListener("click", () => {
 				if (this.onFixAllIssues) void this.onFixAllIssues(selectedFixable);
 			});
 		}
