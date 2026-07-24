@@ -28,8 +28,8 @@ jobs:
       - name: Type check & build
         run: npm run build
 
-      - name: Test
-        run: npm test
+      - name: Test with coverage
+        run: npm run test:coverage
 
       - name: Package dry run
         run: npm pack --dry-run
