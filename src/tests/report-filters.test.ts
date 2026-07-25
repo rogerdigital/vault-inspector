@@ -17,6 +17,12 @@ class FakeElement {
 		return child;
 	}
 
+	createSpan(options: { text?: string } = {}): FakeElement {
+		const child = new FakeElement(options);
+		this.children.push(child);
+		return child;
+	}
+
 	createEl(_tag: string, options: { text?: string } = {}): FakeElement {
 		const child = new FakeElement(options);
 		this.children.push(child);

@@ -22,8 +22,8 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"lint": "eslint .",
-		"lint:obsidian-warnings": "eslint \"src/**/*.ts\" --ignore-pattern \"src/tests/**\" --rule 'import/no-nodejs-modules:error' --rule 'obsidianmd/prefer-window-timers:error' --rule 'no-restricted-globals:[\"error\",{\"name\":\"fetch\",\"message\":\"Use the built-in `requestUrl` function instead of `fetch` for network requests in Obsidian.\"}]'",
+		"lint": "eslint . --max-warnings 0",
+		"lint:obsidian-warnings": "eslint \"src/**/*.ts\" --max-warnings 0",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
@@ -47,8 +47,8 @@
 		"@typescript-eslint/parser": "^8.59.3",
 		"@vitest/coverage-v8": "^4.1.9",
 		"esbuild": "^0.28.1",
-		"eslint-plugin-obsidianmd": "^0.3.0",
-		"obsidian": "^1.8.0",
+		"eslint-plugin-obsidianmd": "^0.4.1",
+		"obsidian": "^1.13.1",
 		"typescript": "^5.8.0",
 		"vitest": "^4.1.9"
 	},

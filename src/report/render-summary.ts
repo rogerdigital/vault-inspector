@@ -24,8 +24,8 @@ export function renderSummary(container: HTMLElement, result: ScanResult, option
 
 	for (const item of items) {
 		const stat = stats.createDiv({ cls: `vi-stat ${item.cls}` });
-		stat.createEl("span", { cls: "vi-stat-value", text: String(item.value) });
-		stat.createEl("span", { cls: "vi-stat-label", text: item.label });
+		stat.createSpan({ cls: "vi-stat-value", text: String(item.value) });
+		stat.createSpan({ cls: "vi-stat-label", text: item.label });
 		if (options.onFilterSeverity) {
 			stat.addClass("vi-stat-clickable");
 			stat.addEventListener("click", () => options.onFilterSeverity?.(item.severity));
@@ -33,7 +33,7 @@ export function renderSummary(container: HTMLElement, result: ScanResult, option
 	}
 
 	const meta = summary.createDiv({ cls: "vi-meta" });
-	meta.createEl("span", { text: `${result.filesScanned} files scanned` });
-	meta.createEl("span", { text: duration });
-	meta.createEl("span", { text: `${result.scannersRun.length} scanners` });
+	meta.createSpan({ text: `${result.filesScanned} files scanned` });
+	meta.createSpan({ text: duration });
+	meta.createSpan({ text: `${result.scannersRun.length} scanners` });
 }

@@ -38,6 +38,12 @@ class FakeElement {
 		return child;
 	}
 
+	createSpan(options: { cls?: string; text?: string } = {}): FakeElement {
+		const child = new FakeElement(options);
+		this.children.push(child);
+		return child;
+	}
+
 	createEl(_tag: string, options: { cls?: string; text?: string } = {}): FakeElement {
 		const child = new FakeElement(options);
 		this.children.push(child);

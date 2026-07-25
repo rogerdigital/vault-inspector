@@ -81,7 +81,7 @@ class ConfirmFixModal extends Modal {
 		if (this.actions.length > 1) {
 			const list = contentEl.createDiv({ cls: "vi-file-list" });
 			for (const path of summary.paths) {
-				list.createEl("div", { cls: "vi-file-list-item", text: path });
+				list.createDiv({ cls: "vi-file-list-item", text: path });
 			}
 		}
 
