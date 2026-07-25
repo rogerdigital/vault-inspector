@@ -1,6 +1,6 @@
 {
 	"name": "vault-inspector",
-	"version": "0.4.14",
+	"version": "0.4.15",
 	"description": "Scan an Obsidian vault for long-term maintenance problems.",
 	"main": "main.js",
 	"engines": {
