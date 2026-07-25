@@ -228,23 +228,23 @@ export class InspectorView extends ItemView {
 		const bar = panel.createDiv({ cls: "vi-progress-bar", attr: { "aria-label": "Scan progress" } });
 		bar.createDiv({ cls: "vi-progress-bar-fill", attr: { style: `width: ${percent}%` } });
 
-		panel.createEl("div", {
+		panel.createDiv({
 			cls: "vi-progress-meta",
 			text: scannerTotal > 0 ? `${scannerIndex} / ${scannerTotal} scanners` : "Preparing scan...",
 		});
 
 		const current = panel.createDiv({ cls: "vi-progress-current" });
 		const scannerLabel = progress ? SCANNER_LABELS[progress.scannerId] : "Preparing scan";
-		current.createEl("div", { cls: "vi-progress-label", text: "Current" });
-		current.createEl("div", { cls: "vi-progress-value", text: scannerLabel });
+		current.createDiv({ cls: "vi-progress-label", text: "Current" });
+		current.createDiv({ cls: "vi-progress-value", text: scannerLabel });
 
 		const detailText = this.formatProgressDetail(progress);
 		if (detailText) {
 			const detail = panel.createDiv({ cls: "vi-progress-detail" });
-			detail.createEl("span", { text: detailText });
+			detail.createSpan({ text: detailText });
 		}
 
-		panel.createEl("div", {
+		panel.createDiv({
 			cls: "vi-progress-elapsed",
 			text: `Elapsed: ${formatDuration(elapsedMs)}`,
 		});
@@ -374,7 +374,7 @@ export class InspectorView extends ItemView {
 					? "wrench"
 					: actionKinds.has("remove-link-text") ? "pencil" : "trash-2",
 			);
-			fixBtn.createEl("span", { text: `(${selectedFixable.length})` });
+			fixBtn.createSpan({ text: `(${selectedFixable.length})` });
 			setTooltip(
 				fixBtn,
 				describeFixActions(selectedFixable.map((issue) => issue.fixAction!)),
@@ -387,7 +387,7 @@ export class InspectorView extends ItemView {
 		if (selectedIssues.length > 0) {
 			const ignoreBtn = right.createEl("button", { cls: "vi-action-btn vi-action-ignore" });
 			setIcon(ignoreBtn, "eye-off");
-			ignoreBtn.createEl("span", { text: `(${selectedIssues.length})` });
+			ignoreBtn.createSpan({ text: `(${selectedIssues.length})` });
 			setTooltip(ignoreBtn, "Hide selected issues from future scans");
 			ignoreBtn.addEventListener("click", () => {
 				if (this.onIgnoreAllIssues) void this.onIgnoreAllIssues(selectedIssues);
@@ -415,9 +415,9 @@ export class InspectorView extends ItemView {
 
 		const header = section.createDiv({ cls: "vi-ignored-header" });
 		const headerLeft = header.createDiv({ cls: "vi-ignored-header-left" });
-		const chevron = headerLeft.createEl("span", { cls: "vi-ignored-chevron" });
+		const chevron = headerLeft.createSpan({ cls: "vi-ignored-chevron" });
 		setIcon(chevron, this.model.ignoredExpanded ? "chevron-down" : "chevron-right");
-		headerLeft.createEl("span", { text: `Ignored items (${ignoredIssues.length})` });
+		headerLeft.createSpan({ text: `Ignored items (${ignoredIssues.length})` });
 		headerLeft.addEventListener("click", () => {
 			this.model.ignoredExpanded = !this.model.ignoredExpanded;
 			if (!this.model.ignoredExpanded) {
@@ -483,7 +483,7 @@ export class InspectorView extends ItemView {
 		if (selectedIssues.length > 0) {
 			const restoreBtn = right.createEl("button", { cls: "vi-action-btn" });
 			setIcon(restoreBtn, "eye");
-			restoreBtn.createEl("span", { text: `(${selectedIssues.length})` });
+			restoreBtn.createSpan({ text: `(${selectedIssues.length})` });
 			setTooltip(restoreBtn, "Stop ignoring selected issues");
 			restoreBtn.addEventListener("click", () => {
 				if (this.onRestoreIssues) void this.onRestoreIssues(selectedIssues);

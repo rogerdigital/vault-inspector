@@ -44,15 +44,15 @@ export function renderIssueList(container: HTMLElement, config: IssueListConfig)
 				li.addEventListener("click", () => config.onToggleSelect(issue));
 			}
 
-			li.createEl("span", {
+			li.createSpan({
 				cls: `vi-severity-badge vi-severity-${issue.severity}`,
 				text: issue.severity.toUpperCase(),
 			});
-			li.createEl("span", { cls: "vi-issue-title", text: issue.title });
+			li.createSpan({ cls: "vi-issue-title", text: issue.title });
 
 			const issuePath = getIssuePath(issue);
 			if (issuePath) {
-				const pathEl = li.createEl("span", {
+				const pathEl = li.createSpan({
 					cls: "vi-issue-path",
 					text: issuePath,
 				});
@@ -76,17 +76,17 @@ function hasActiveTextSelection(): boolean {
 function renderIssueDetails(container: HTMLElement, issue: Issue, config: IssueListConfig) {
 	const details = container.createDiv({ cls: "vi-issue-details" });
 	const summary = getIssueSummary(issue);
-	if (summary) details.createEl("div", { cls: "vi-issue-message", text: summary });
+	if (summary) details.createDiv({ cls: "vi-issue-message", text: summary });
 
 	for (const row of getIssueDetailRows(issue)) {
 		const rowEl = details.createDiv({ cls: "vi-issue-target" });
-		rowEl.createEl("span", { cls: "vi-issue-target-label", text: row.label });
-		const valueEl = rowEl.createEl("span", { cls: "vi-issue-target-value" });
+		rowEl.createSpan({ cls: "vi-issue-target-label", text: row.label });
+		const valueEl = rowEl.createSpan({ cls: "vi-issue-target-value" });
 		if ("value" in row) {
 			valueEl.setText(row.value);
 		} else {
 			for (const item of row.items) {
-				const itemEl = valueEl.createEl("span", {
+				const itemEl = valueEl.createSpan({
 					cls: `vi-issue-value-token ${item.className ?? ""}`.trim(),
 					text: item.text,
 				});
