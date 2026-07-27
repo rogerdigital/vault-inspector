@@ -1,7 +1,7 @@
 {
 	"id": "vault-inspector",
 	"name": "Vault Inspector",
-	"version": "0.4.15",
+	"version": "0.4.16",
 	"minAppVersion": "1.7.2",
 	"description": "Scan your vault for maintenance problems: broken links, orphan attachments, duplicate files, frontmatter inconsistencies, unused tags, and large files.",
 	"author": "Roger Deng",
