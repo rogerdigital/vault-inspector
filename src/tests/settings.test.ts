@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import VaultInspectorPlugin from "../main";
 import { DEFAULT_SETTINGS } from "../settings/settings";
+import { SCANNER_IDS } from "../scanner/Issue";
 
 describe("DEFAULT_SETTINGS", () => {
 	it("keeps external link checks opt-in by default", () => {
@@ -55,5 +56,42 @@ describe("DEFAULT_SETTINGS", () => {
 		expect(plugin.settings.enabledScanners["external-links"]).toBe(
 			DEFAULT_SETTINGS.enabledScanners["external-links"],
 		);
+	});
+
+	it("defines an empty ignored-folder list for every scanner", () => {
+		expect(Object.keys(DEFAULT_SETTINGS.ignoredFoldersByScanner)).toEqual(SCANNER_IDS);
+		for (const scannerId of SCANNER_IDS) {
+			expect(DEFAULT_SETTINGS.ignoredFoldersByScanner[scannerId]).toEqual([]);
+		}
+	});
+
+	it("fills scanner-specific ignored-folder defaults for old settings", async () => {
+		const plugin = new VaultInspectorPlugin({} as any, {} as any);
+		plugin.loadData = vi.fn(async () => ({
+			ignoredFolders: ["archive"],
+		}));
+
+		await plugin.loadSettings();
+
+		expect(plugin.settings.ignoredFolders).toEqual(["archive"]);
+		expect(Object.keys(plugin.settings.ignoredFoldersByScanner)).toEqual(SCANNER_IDS);
+		for (const scannerId of SCANNER_IDS) {
+			expect(plugin.settings.ignoredFoldersByScanner[scannerId]).toEqual([]);
+		}
+	});
+
+	it("preserves partial scanner-specific ignored folders and fills missing scanners", async () => {
+		const plugin = new VaultInspectorPlugin({} as any, {} as any);
+		plugin.loadData = vi.fn(async () => ({
+			ignoredFoldersByScanner: {
+				"broken-links": ["syncTrash"],
+			},
+		}));
+
+		await plugin.loadSettings();
+
+		expect(plugin.settings.ignoredFoldersByScanner["broken-links"]).toEqual(["syncTrash"]);
+		expect(plugin.settings.ignoredFoldersByScanner["duplicate-files"]).toEqual([]);
+		expect(Object.keys(plugin.settings.ignoredFoldersByScanner)).toEqual(SCANNER_IDS);
 	});
 });

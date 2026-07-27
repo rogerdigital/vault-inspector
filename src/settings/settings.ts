@@ -17,9 +17,16 @@ export type InspectorSettings = {
 	watchedTags: string[];
 	ignoredIssueFingerprints: string[];
 	ignoredFolders: string[];
+	ignoredFoldersByScanner: Record<ScannerId, string[]>;
 	ignoredProperties: string[];
 	reportFolderPath: string;
 };
+
+export function createEmptyIgnoredFoldersByScanner(): Record<ScannerId, string[]> {
+	return Object.fromEntries(
+		SCANNER_IDS.map((id) => [id, []]),
+	) as Record<ScannerId, string[]>;
+}
 
 export const DEFAULT_SETTINGS: InspectorSettings = {
 	enabledScanners: Object.fromEntries(
@@ -37,6 +44,7 @@ export const DEFAULT_SETTINGS: InspectorSettings = {
 	watchedTags: [],
 	ignoredIssueFingerprints: [],
 	ignoredFolders: [],
+	ignoredFoldersByScanner: createEmptyIgnoredFoldersByScanner(),
 	ignoredProperties: [],
 	reportFolderPath: "Vault Inspector Reports",
 };
