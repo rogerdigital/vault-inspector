@@ -89,6 +89,23 @@ export class InspectorSettingTab extends PluginSettingTab {
 							);
 						},
 					},
+					{
+						name: "Duplicate file keep mode",
+						desc: "Always ask which hash-identical file to keep, or automatically keep the first vault-relative path in alphabetical order.",
+						render: (setting) => {
+							setting.addDropdown((dropdown) =>
+								dropdown
+									.addOption("always-ask", "Always ask")
+									.addOption("automatic", "Automatically choose")
+									.setValue(this.plugin.settings.duplicateKeepMode)
+									.onChange(async (value) => {
+										this.plugin.settings.duplicateKeepMode =
+											value === "automatic" ? "automatic" : "always-ask";
+										await this.plugin.saveSettings();
+									}),
+							);
+						},
+					},
 				],
 			},
 			{
