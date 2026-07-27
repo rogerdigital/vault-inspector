@@ -270,9 +270,14 @@ Markdown files, for example `index/**/*.md` or `exports/**/*.md`.
 | Empty note word threshold | 5 | Notes with fewer words (excluding frontmatter/title) are flagged |
 | Watched tags | (none) | Tags to watch for missing usage |
 | Low usage tag threshold | 2 | Tags below this count are flagged |
-| Ignored folders | (none) | Folders excluded from all scans |
+| Ignored folders | (none) | Folders excluded from every scanner |
+| Scanner-specific ignored folders | (none) | Additional folders excluded only from the selected scanner |
 | Ignored properties | (none) | Frontmatter properties excluded from type checks |
 | Report folder | Vault Inspector Reports | Folder for exported Markdown reports |
+
+Global ignored folders apply to every scanner. Scanner-specific ignored folders
+are additional exclusions. For example, add `syncTrash` only to Broken Links if
+you want Duplicate Files to inspect that folder while broken-link checks skip it.
 
 ## Privacy
 
