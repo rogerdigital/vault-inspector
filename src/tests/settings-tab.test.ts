@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { App, SettingDefinitionGroup } from "obsidian";
 import type VaultInspectorPlugin from "../main";
 import { SCANNER_IDS, SCANNER_LABELS } from "../scanner/Issue";
-import { InspectorSettingTab } from "../settings/settings-tab";
+import {
+	InspectorSettingTab,
+	parseFolderList,
+} from "../settings/settings-tab";
 import { DEFAULT_SETTINGS } from "../settings/settings";
 
 describe("InspectorSettingTab", () => {
@@ -28,23 +31,43 @@ describe("InspectorSettingTab", () => {
 			"Thresholds",
 			"Tags",
 			"Ignored items",
+			"Scanner-specific ignored folders",
 			"Export",
 		]);
-		expect(names).toEqual([
-			...SCANNER_IDS.map((id) => SCANNER_LABELS[id]),
+
+		const namesByHeading = new Map(
+			groups.map((group) => [
+				group.heading,
+				(group.items ?? []).map((item) => item.name),
+			]),
+		);
+		expect(namesByHeading.get("Enabled scanners")).toEqual(
+			SCANNER_IDS.map((id) => SCANNER_LABELS[id]),
+		);
+		expect(namesByHeading.get("Ignored items")).toEqual([
+			"Ignored folders (comma-separated)",
+			"Ignored frontmatter properties (comma-separated)",
+		]);
+		expect(namesByHeading.get("Scanner-specific ignored folders")).toEqual(
+			SCANNER_IDS.map((id) => SCANNER_LABELS[id]),
+		);
+		expect(names).toEqual(expect.arrayContaining([
 			"Enable fix actions",
 			"Duplicate file keep mode",
 			"Large Markdown threshold (kb)",
-			"Large attachment threshold (mb)",
-			"Ignored large Markdown frontmatter keys",
-			"Ignored large Markdown path patterns",
 			"Duplicate hash cap (mb)",
-			"Empty note word threshold",
-			"Watched tags (comma-separated)",
-			"Low usage tag threshold",
-			"Ignored folders (comma-separated)",
-			"Ignored frontmatter properties (comma-separated)",
 			"Report folder",
-		]);
+		]));
+	});
+});
+
+describe("parseFolderList", () => {
+	it("normalizes comma-separated folder lists", () => {
+		expect(parseFolderList(" syncTrash, drafts, syncTrash, ,templates "))
+			.toEqual(["syncTrash", "drafts", "templates"]);
+	});
+
+	it("returns an empty array for blank input", () => {
+		expect(parseFolderList("   ")).toEqual([]);
 	});
 });
