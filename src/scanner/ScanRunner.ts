@@ -8,6 +8,13 @@ export type Scanner = {
 	scan(ctx: ScanContext, onProgress?: ScanProgressCallback): Issue[] | Promise<Issue[]>;
 };
 
+export function getEffectiveIgnoredFolders(
+	globalFolders: string[],
+	scannerFolders: string[],
+): string[] {
+	return [...new Set([...globalFolders, ...scannerFolders])];
+}
+
 type RunOptions = {
 	onProgress?: ScanProgressCallback;
 };
@@ -88,7 +95,14 @@ export class ScanRunner {
 			}
 			scannersRun.push(scanner.id);
 			emitProgress("scanner-start");
-			const result = await scanner.scan(ctx, (progress) => {
+			const scannerContext: ScanContext = {
+				...ctx,
+				ignoredFolders: getEffectiveIgnoredFolders(
+					settings.ignoredFolders,
+					settings.ignoredFoldersByScanner[scanner.id] ?? [],
+				),
+			};
+			const result = await scanner.scan(scannerContext, (progress) => {
 				options.onProgress?.({
 					...progress,
 					scannerId: scanner.id,

@@ -2,7 +2,11 @@ import { Plugin, Notice, TFile, requestUrl } from "obsidian";
 import { InspectorView, VIEW_TYPE_INSPECTOR } from "./report/InspectorView";
 import { ScanRunner } from "./scanner/ScanRunner";
 import { registerDefaultScanners } from "./scanner/register-scanners";
-import { DEFAULT_SETTINGS, type InspectorSettings } from "./settings/settings";
+import {
+	createEmptyIgnoredFoldersByScanner,
+	DEFAULT_SETTINGS,
+	type InspectorSettings,
+} from "./settings/settings";
 import { InspectorSettingTab } from "./settings/settings-tab";
 import { generateMarkdownReport } from "./report/markdown-export";
 import { executeFixAction } from "./fix/fix-executor";
@@ -52,6 +56,10 @@ export default class VaultInspectorPlugin extends Plugin {
 			enabledScanners: {
 				...DEFAULT_SETTINGS.enabledScanners,
 				...loaded.enabledScanners,
+			},
+			ignoredFoldersByScanner: {
+				...createEmptyIgnoredFoldersByScanner(),
+				...loaded.ignoredFoldersByScanner,
 			},
 		};
 

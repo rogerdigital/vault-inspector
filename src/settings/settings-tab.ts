@@ -3,6 +3,15 @@ import type { App, SettingDefinitionItem } from "obsidian";
 import type VaultInspectorPlugin from "../main";
 import { SCANNER_IDS, SCANNER_LABELS } from "../scanner/Issue";
 
+export function parseFolderList(value: string): string[] {
+	return [...new Set(
+		value
+			.split(",")
+			.map((folder) => folder.trim())
+			.filter(Boolean),
+	)];
+}
+
 interface SettingItemSpec {
 	name: string;
 	desc?: string;
@@ -234,14 +243,13 @@ export class InspectorSettingTab extends PluginSettingTab {
 				items: [
 					{
 						name: "Ignored folders (comma-separated)",
-						desc: "Files in these folders are excluded from scans.",
+						desc: "Files in these folders are excluded from every scanner.",
 						render: (setting) => {
 							setting.addText((text) =>
 								text.setValue(this.plugin.settings.ignoredFolders.join(", "))
 									.setPlaceholder("E.g. Templates, archive")
 									.onChange(async (value) => {
-										this.plugin.settings.ignoredFolders =
-											value.split(",").map((folder) => folder.trim()).filter(Boolean);
+										this.plugin.settings.ignoredFolders = parseFolderList(value);
 										await this.plugin.saveSettings();
 									}),
 							);
@@ -263,6 +271,27 @@ export class InspectorSettingTab extends PluginSettingTab {
 						},
 					},
 				],
+			},
+			{
+				heading: "Scanner-specific ignored folders",
+				items: SCANNER_IDS.map((id) => ({
+					name: SCANNER_LABELS[id],
+					desc: `Additional folders excluded only from ${SCANNER_LABELS[id]}.`,
+					render: (setting) => {
+						setting.addText((text) =>
+							text
+								.setValue(
+									this.plugin.settings.ignoredFoldersByScanner[id].join(", "),
+								)
+								.setPlaceholder("E.g. Templates, archive")
+								.onChange(async (value) => {
+									this.plugin.settings.ignoredFoldersByScanner[id] =
+										parseFolderList(value);
+									await this.plugin.saveSettings();
+								}),
+						);
+					},
+				})),
 			},
 			{
 				heading: "Export",
