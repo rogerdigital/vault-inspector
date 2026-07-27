@@ -7,7 +7,7 @@ import { InspectorSettingTab } from "./settings/settings-tab";
 import { generateMarkdownReport } from "./report/markdown-export";
 import { executeFixAction } from "./fix/fix-executor";
 import { showConfirmModal } from "./fix/confirm-modal";
-import type { FixAction, Issue } from "./scanner/Issue";
+import { getFreshFixAction } from "./fix/fix-decisions";
 
 export default class VaultInspectorPlugin extends Plugin {
 	settings: InspectorSettings = DEFAULT_SETTINGS;
@@ -99,29 +99,42 @@ export default class VaultInspectorPlugin extends Plugin {
 				await this.scanAndRender(view);
 			},
 			onFixAllIssues: async (issues) => {
-				const actions = issues.map((i) => i.fixAction!).filter(Boolean);
-				if (actions.length === 0) return;
-				const confirmed = await showConfirmModal(this.app, actions);
-				if (!confirmed) return;
+				if (!issues.some((issue) => issue.fixAction)) return;
+				const decisions = await showConfirmModal(
+					this.app,
+					issues,
+					this.settings.duplicateKeepMode,
+				);
+				if (!decisions) return;
+				const decisionsByFingerprint = new Map(
+					decisions.map((decision) => [decision.fingerprint, decision]),
+				);
 
 				let fixed = 0;
+				let skipped = 0;
 				for (const issue of issues) {
+					const decision = decisionsByFingerprint.get(issue.fingerprint);
+					if (!decision) {
+						skipped++;
+						continue;
+					}
 					const freshResult = await this.scan(view);
 					if (!freshResult) return;
-					const [freshAction] = getMatchingFreshFixActions(
-						[issue],
-						freshResult.issues,
+					const freshIssue = freshResult.issues.find(
+						(candidate) => candidate.fingerprint === issue.fingerprint,
 					);
-					if (!freshAction) continue;
+					const freshAction = getFreshFixAction(issue, freshIssue, decision);
+					if (!freshAction) {
+						skipped++;
+						continue;
+					}
 					try {
 						fixed += await executeFixAction(this.app, freshAction);
 					} catch {
 						// continue on individual failures
 					}
 				}
-				new Notice(fixed > 0
-					? `Fixed ${fixed} item${fixed === 1 ? "" : "s"}`
-					: "No items were fixed");
+				new Notice(formatFixResultNotice(fixed, skipped));
 				await this.scanAndRender(view);
 			},
 			onRevealIssue: async (issue) => {
@@ -179,37 +192,12 @@ export default class VaultInspectorPlugin extends Plugin {
 	}
 }
 
-export function getMatchingFreshFixActions(
-	requestedIssues: Issue[],
-	freshIssues: Issue[],
-): FixAction[] {
-	const freshByFingerprint = new Map(
-		freshIssues.map((issue) => [issue.fingerprint, issue]),
-	);
-
-	return requestedIssues.flatMap((requestedIssue) => {
-		const freshIssue = freshByFingerprint.get(requestedIssue.fingerprint);
-		if (
-			!requestedIssue.fixAction
-			|| !freshIssue?.fixAction
-			|| !fixActionsMatch(requestedIssue.fixAction, freshIssue.fixAction)
-		) {
-			return [];
-		}
-		return [freshIssue.fixAction];
-	});
-}
-
-function fixActionsMatch(
-	left: FixAction,
-	right: FixAction,
-): boolean {
-	return left.kind === right.kind
-		&& left.label === right.label
-		&& left.description === right.description
-		&& left.linkText === right.linkText
-		&& left.targetPaths.length === right.targetPaths.length
-		&& left.targetPaths.every((path, index) => path === right.targetPaths[index]);
+export function formatFixResultNotice(fixed: number, skipped: number): string {
+	const fixedText = fixed > 0
+		? `Fixed ${fixed} item${fixed === 1 ? "" : "s"}`
+		: "No items were fixed";
+	if (skipped === 0) return fixedText;
+	return `${fixedText}; skipped ${skipped} changed ${skipped === 1 ? "issue" : "issues"}`;
 }
 
 const LEGACY_EXCALIDRAW_KEY = "excalidraw";

@@ -12,12 +12,19 @@ export type IssueSeverity = "info" | "warning" | "error";
 
 export type FixActionKind = "trash-file" | "remove-link-text";
 
+export type KeepOneSelection = {
+	kind: "keep-one";
+	candidatePaths: string[];
+	automaticKeepPath: string;
+};
+
 export type FixAction = {
 	kind: FixActionKind;
 	label: string;
 	description: string;
 	targetPaths: string[];
 	linkText?: string;
+	selection?: KeepOneSelection;
 };
 
 export type Issue = {

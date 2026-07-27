@@ -223,6 +223,11 @@ Groups files by basename + extension, then by size. Files below the hash cap are
 - `warning` — hash-identical files
 - `info` — same-name or same-size candidates without hash
 
+Deletion is offered only for files confirmed identical by content hash. By
+default, Vault Inspector asks which file to keep. Automatic mode keeps the first
+complete vault-relative path in alphabetical order. Modification time, access
+time, and file size do not choose the keep file.
+
 ### Frontmatter Type Inconsistencies
 
 Reports keys used with incompatible value types across notes.
@@ -256,6 +261,7 @@ Markdown files, for example `index/**/*.md` or `exports/**/*.md`.
 |---|---|---|
 | Enabled Scanners | All local scanners on; External Links off | Toggle individual scanners |
 | Enable fix actions | On | Allow batch delete of fixable issues |
+| Duplicate file keep mode | Always ask | Require a keep-file choice, or automatically keep the alphabetically first vault-relative path |
 | Large Markdown threshold | 100 KB | Markdown files above this size are flagged |
 | Large attachment threshold | 5 MB | Attachments above this size are flagged |
 | Ignored large Markdown frontmatter keys | excalidraw-plugin | Markdown files with these frontmatter keys are excluded from large file checks |

@@ -141,3 +141,9 @@
 .vi-confirm-buttons > * { margin-left: 8px; }
 .vi-confirm-destructive { background: var(--text-error); color: white; border: none; padding: 6px 16px; border-radius: 4px; cursor: pointer; }
 .vi-confirm-destructive:hover { opacity: 0.85; }
+.vi-confirm-destructive:disabled { cursor: not-allowed; opacity: 0.5; }
+.vi-keep-group { margin: 0 0 16px; padding: 12px; border: 1px solid var(--background-modifier-border); border-radius: 4px; }
+.vi-keep-group-title { margin: 0 0 8px; font-weight: 600; }
+.vi-keep-option { display: flex; align-items: flex-start; margin: 6px 0 0; }
+.vi-keep-option input { margin: 2px 8px 0 0; }
+.vi-keep-option-path { overflow-wrap: anywhere; font-family: var(--font-monospace); font-size: 12px; }

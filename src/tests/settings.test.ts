@@ -12,6 +12,32 @@ describe("DEFAULT_SETTINGS", () => {
 		expect(DEFAULT_SETTINGS.ignoredLargeMarkdownPathPatterns).toEqual([]);
 	});
 
+	it("defaults duplicate cleanup to always ask", () => {
+		expect(DEFAULT_SETTINGS.duplicateKeepMode).toBe("always-ask");
+	});
+
+	it("loads old settings with the safe duplicate keep default", async () => {
+		const plugin = new VaultInspectorPlugin({} as any, {} as any);
+		plugin.loadData = vi.fn(async () => ({
+			duplicateHashMaxBytes: 2 * 1024 * 1024,
+		}));
+
+		await plugin.loadSettings();
+
+		expect(plugin.settings.duplicateKeepMode).toBe("always-ask");
+	});
+
+	it("preserves an explicit automatic duplicate keep mode", async () => {
+		const plugin = new VaultInspectorPlugin({} as any, {} as any);
+		plugin.loadData = vi.fn(async () => ({
+			duplicateKeepMode: "automatic",
+		}));
+
+		await plugin.loadSettings();
+
+		expect(plugin.settings.duplicateKeepMode).toBe("automatic");
+	});
+
 	it("preserves persisted scanner choices while filling newly added scanner defaults", async () => {
 		const plugin = new VaultInspectorPlugin({} as any, {} as any);
 		plugin.loadData = vi.fn(async () => ({

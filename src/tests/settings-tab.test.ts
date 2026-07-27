@@ -33,6 +33,7 @@ describe("InspectorSettingTab", () => {
 		expect(names).toEqual([
 			...SCANNER_IDS.map((id) => SCANNER_LABELS[id]),
 			"Enable fix actions",
+			"Duplicate file keep mode",
 			"Large Markdown threshold (kb)",
 			"Large attachment threshold (mb)",
 			"Ignored large Markdown frontmatter keys",
