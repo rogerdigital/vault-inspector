@@ -283,7 +283,7 @@ export class InspectorSettingTab extends PluginSettingTab {
 								.setValue(
 									this.plugin.settings.ignoredFoldersByScanner[id].join(", "),
 								)
-								.setPlaceholder("E.g. syncTrash, drafts")
+								.setPlaceholder("E.g. Templates, archive")
 								.onChange(async (value) => {
 									this.plugin.settings.ignoredFoldersByScanner[id] =
 										parseFolderList(value);

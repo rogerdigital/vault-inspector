@@ -23,9 +23,11 @@ export type InspectorSettings = {
 };
 
 export function createEmptyIgnoredFoldersByScanner(): Record<ScannerId, string[]> {
-	return Object.fromEntries(
-		SCANNER_IDS.map((id) => [id, []]),
-	) as Record<ScannerId, string[]>;
+	const result = {} as Record<ScannerId, string[]>;
+	for (const id of SCANNER_IDS) {
+		result[id] = [];
+	}
+	return result;
 }
 
 export const DEFAULT_SETTINGS: InspectorSettings = {
