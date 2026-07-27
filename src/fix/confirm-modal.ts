@@ -1,5 +1,11 @@
 import { App, Modal } from "obsidian";
-import type { FixAction } from "../scanner/Issue";
+import type { FixAction, Issue } from "../scanner/Issue";
+import type { DuplicateKeepMode } from "../settings/settings";
+import {
+	buildFixDecisionState,
+	type FixDecision,
+	resolveDecisionAction,
+} from "./fix-decisions";
 
 export type FixActionSummary = {
 	title: string;
@@ -50,35 +56,117 @@ function pluralize(noun: string, count: number): string {
 	return count === 1 ? noun : `${noun}s`;
 }
 
-export function showConfirmModal(app: App, actions: FixAction[]): Promise<boolean> {
+export function createSingleUseResolver<T>(
+	resolve: (value: T) => void,
+): (value: T) => boolean {
+	let settled = false;
+	return (value) => {
+		if (settled) return false;
+		settled = true;
+		resolve(value);
+		return true;
+	};
+}
+
+export function showConfirmModal(
+	app: App,
+	issues: Issue[],
+	mode: DuplicateKeepMode,
+): Promise<FixDecision[] | null> {
 	return new Promise((resolve) => {
-		const modal = new ConfirmFixModal(app, actions, resolve);
-		modal.open();
+		new ConfirmFixModal(app, issues, mode, resolve).open();
 	});
 }
 
 class ConfirmFixModal extends Modal {
-	private actions: FixAction[];
-	private resolve: (confirmed: boolean) => void;
+	private issues: Issue[];
+	private mode: DuplicateKeepMode;
+	private selectedKeeps = new Map<string, string>();
+	private settle: (result: FixDecision[] | null) => boolean;
 
-	constructor(app: App, actions: FixAction[], resolve: (confirmed: boolean) => void) {
+	constructor(
+		app: App,
+		issues: Issue[],
+		mode: DuplicateKeepMode,
+		resolve: (result: FixDecision[] | null) => void,
+	) {
 		super(app);
-		this.actions = actions;
-		this.resolve = resolve;
+		this.issues = issues;
+		this.mode = mode;
+		this.settle = createSingleUseResolver(resolve);
 	}
 
 	onOpen() {
+		this.contentEl.addClass("vi-confirm-modal");
+		this.renderContent();
+	}
+
+	onClose() {
+		this.contentEl.empty();
+		this.settle(null);
+	}
+
+	private finish(result: FixDecision[] | null): void {
+		if (this.settle(result)) this.close();
+	}
+
+	private renderContent(): void {
 		const { contentEl } = this;
+		contentEl.empty();
 		contentEl.addClass("vi-confirm-modal");
 
-		const summary = summarizeFixActions(this.actions);
+		const state = buildFixDecisionState(
+			this.issues,
+			this.mode,
+			this.selectedKeeps,
+		);
+		const decisionsByFingerprint = new Map(
+			state.decisions.map((decision) => [decision.fingerprint, decision]),
+		);
+		const actions = this.issues.flatMap((issue) => {
+			const decision = decisionsByFingerprint.get(issue.fingerprint);
+			if (!decision) return [];
+			const action = resolveDecisionAction(issue, decision);
+			return action ? [action] : [];
+		});
+		const summary = summarizeFixActions(actions);
 
 		contentEl.createEl("h3", {
-			text: summary.title,
+			text: this.issues.length > 1
+				? `Confirm batch fix (${this.issues.length} actions)`
+				: "Confirm fix",
 		});
-		contentEl.createEl("p", { text: summary.description });
+		contentEl.createEl("p", {
+			text: state.complete
+				? summary.description
+				: "Choose one file to keep in every duplicate group.",
+		});
 
-		if (this.actions.length > 1) {
+		if (this.mode === "always-ask") {
+			for (const issue of this.issues) {
+				const selection = issue.fixAction?.selection;
+				if (!selection) continue;
+				const group = contentEl.createDiv({ cls: "vi-keep-group" });
+				group.createDiv({
+					cls: "vi-keep-group-title",
+					text: "Choose one file to keep",
+				});
+				for (const path of selection.candidatePaths) {
+					const option = group.createEl("label", { cls: "vi-keep-option" });
+					const radio = option.createEl("input", { type: "radio" });
+					radio.name = `keep-${issue.fingerprint}`;
+					radio.checked =
+						this.selectedKeeps.get(issue.fingerprint) === path;
+					radio.addEventListener("change", () => {
+						this.selectedKeeps.set(issue.fingerprint, path);
+						this.renderContent();
+					});
+					option.createSpan({ cls: "vi-keep-option-path", text: path });
+				}
+			}
+		}
+
+		if (this.issues.length > 1 || actions.length > 1) {
 			const list = contentEl.createDiv({ cls: "vi-file-list" });
 			for (const path of summary.paths) {
 				list.createDiv({ cls: "vi-file-list-item", text: path });
@@ -87,13 +175,14 @@ class ConfirmFixModal extends Modal {
 
 		const btnRow = contentEl.createDiv({ cls: "vi-confirm-buttons" });
 		btnRow.createEl("button", { text: "Cancel" })
-			.addEventListener("click", () => { this.resolve(false); this.close(); });
-		const confirmBtn = btnRow.createEl("button", { cls: "vi-confirm-destructive", text: "Confirm" });
-		confirmBtn.addEventListener("click", () => { this.resolve(true); this.close(); });
-	}
-
-	onClose() {
-		this.contentEl.empty();
-		this.resolve(false);
+			.addEventListener("click", () => this.finish(null));
+		const confirmBtn = btnRow.createEl("button", {
+			cls: "vi-confirm-destructive",
+			text: "Confirm",
+		});
+		confirmBtn.disabled = !state.complete;
+		confirmBtn.addEventListener("click", () => {
+			if (state.complete) this.finish(state.decisions);
+		});
 	}
 }
