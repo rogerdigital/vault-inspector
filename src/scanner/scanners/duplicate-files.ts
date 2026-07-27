@@ -82,6 +82,11 @@ export const duplicateFilesScanner = {
 					label: "Delete duplicates",
 					description: `Keep "${kept}" and move ${duplicates.length} duplicate(s) to trash`,
 					targetPaths: duplicates,
+					selection: {
+						kind: "keep-one",
+						candidatePaths: sorted,
+						automaticKeepPath: kept,
+					},
 				},
 			});
 		}

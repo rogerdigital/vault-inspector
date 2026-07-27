@@ -50,6 +50,52 @@ describe("duplicateFilesScanner", () => {
 		const hashIssues = issues.filter((i) => i.severity === "warning");
 		expect(hashIssues).toHaveLength(1);
 		expect(hashIssues[0].evidence.count).toBe(2);
+		expect(hashIssues[0].fixAction).toEqual({
+			kind: "trash-file",
+			label: "Delete duplicates",
+			description: 'Keep "notes/a.md" and move 1 duplicate(s) to trash',
+			targetPaths: ["notes/b.md"],
+			selection: {
+				kind: "keep-one",
+				candidatePaths: ["notes/a.md", "notes/b.md"],
+				automaticKeepPath: "notes/a.md",
+			},
+		});
+	});
+
+	it("sorts complete paths before choosing the automatic keep file", async () => {
+		const sharedContent = new Uint8Array([1, 2, 3]);
+		const ctx = makeCtx({
+			allFiles: [
+				makeFile("z-last/copy.md", 3),
+				makeFile("a-first/copy.md", 3),
+				makeFile("m-middle/copy.md", 3),
+			],
+			filePathIndex: new Set([
+				"z-last/copy.md",
+				"a-first/copy.md",
+				"m-middle/copy.md",
+			]),
+			vault: {
+				readBinary: async () => sharedContent.buffer,
+			} as any,
+		});
+
+		const [issue] = await duplicateFilesScanner.scan(ctx);
+
+		expect(issue.fixAction?.selection).toEqual({
+			kind: "keep-one",
+			candidatePaths: [
+				"a-first/copy.md",
+				"m-middle/copy.md",
+				"z-last/copy.md",
+			],
+			automaticKeepPath: "a-first/copy.md",
+		});
+		expect(issue.fixAction?.targetPaths).toEqual([
+			"m-middle/copy.md",
+			"z-last/copy.md",
+		]);
 	});
 
 	it("reports same-name candidates as info when content differs", async () => {
@@ -71,6 +117,7 @@ describe("duplicateFilesScanner", () => {
 		);
 		expect(nameIssues).toHaveLength(1);
 		expect(nameIssues[0].severity).toBe("info");
+		expect(nameIssues[0].fixAction).toBeUndefined();
 	});
 
 	it("reports same-size candidates as info when content differs", async () => {
@@ -92,6 +139,7 @@ describe("duplicateFilesScanner", () => {
 		);
 		expect(sizeIssues).toHaveLength(1);
 		expect(sizeIssues[0].severity).toBe("info");
+		expect(sizeIssues[0].fixAction).toBeUndefined();
 	});
 
 	it("does not report unique files", async () => {
