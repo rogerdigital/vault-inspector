@@ -3,6 +3,7 @@ import type { ScanProgressCallback } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { generateFingerprint } from "../issue-fingerprint";
 import { isIgnoredPath } from "../../utils/paths";
+import { assessExternalHttpUrl } from "../../utils/network-destination";
 
 export const externalLinksScanner = {
 	id: "external-links" as const,
@@ -46,6 +47,7 @@ const EXTERNAL_LINK_BATCH_SIZE = 5;
 type UrlEntry = { url: string; sourcePath: string };
 type CheckResult =
 	| (UrlEntry & { kind: "http"; status: number })
+	| (UrlEntry & { kind: "blocked"; reason: string })
 	| (UrlEntry & { kind: "timeout"; timeoutMs: number })
 	| (UrlEntry & { kind: "failed"; error: string });
 
@@ -143,7 +145,7 @@ async function checkUrls(
 	const results: CheckResult[] = [];
 	const startedAt = Date.now();
 	const deadline = startedAt + EXTERNAL_LINK_SCAN_BUDGET_MS;
-	const stats = { timedOut: 0, failed: 0 };
+	const stats = { timedOut: 0, failed: 0, blocked: 0 };
 
 	reportExternalProgress(onProgress, urlMap.length, results.length, stats);
 
@@ -159,6 +161,7 @@ async function checkUrls(
 		const checks = batch.map((entry) => checkUrlWithTimeout(entry, ctx, timeoutMs));
 		const batchResults = await Promise.all(checks);
 		for (const result of batchResults) {
+			if (result.kind === "blocked") stats.blocked++;
 			if (result.kind === "timeout") stats.timedOut++;
 			if (result.kind === "failed") stats.failed++;
 		}
@@ -173,7 +176,7 @@ function reportExternalProgress(
 	onProgress: ScanProgressCallback | undefined,
 	total: number,
 	current: number,
-	stats: { timedOut: number; failed: number },
+	stats: { timedOut: number; failed: number; blocked: number },
 	skipped = 0,
 ) {
 	onProgress?.({
@@ -184,7 +187,7 @@ function reportExternalProgress(
 		phase: "Checking URLs",
 		current,
 		total,
-		message: `timed out ${stats.timedOut}, failed ${stats.failed}, skipped ${skipped}`,
+		message: `blocked ${stats.blocked}, timed out ${stats.timedOut}, failed ${stats.failed}, skipped ${skipped}`,
 		elapsedMs: 0,
 	});
 }
@@ -214,6 +217,16 @@ async function checkUrl(
 	ctx?: ScanContext,
 	signal?: AbortSignal,
 ): Promise<CheckResult> {
+	const assessment = assessExternalHttpUrl(url);
+	if (!assessment.allowed) {
+		return {
+			url,
+			sourcePath: "",
+			kind: "blocked",
+			reason: assessment.reason,
+		};
+	}
+
 	try {
 		if (ctx?.requestUrl) {
 			const status = await ctx.requestUrl(url, signal);
@@ -285,6 +298,26 @@ function makeIssue(result: CheckResult): Issue | null {
 			},
 			fingerprint: generateFingerprint("external-links", result.sourcePath, {
 				url: result.url,
+			}),
+		};
+	}
+
+	if (result.kind === "blocked") {
+		return {
+			scannerId: "external-links",
+			severity: "info",
+			title: "External link check blocked",
+			message: `Blocked unsafe destination (${result.reason}) — ${result.url}`,
+			primaryPath: result.sourcePath,
+			relatedPaths: [],
+			evidence: {
+				url: result.url,
+				reason: result.reason,
+				blocked: true,
+			},
+			fingerprint: generateFingerprint("external-links", result.sourcePath, {
+				url: result.url,
+				blocked: true,
 			}),
 		};
 	}

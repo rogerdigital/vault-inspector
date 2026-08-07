@@ -10,6 +10,7 @@ import { createLocalApp } from "./local-vault";
 import { TOOL_VERSION } from "./version";
 import { formatDuration } from "../src/utils/format";
 import { matchesGlob } from "../src/utils/paths";
+import { requestPublicHttpStatus } from "./public-http";
 
 type OutputFormat = "json" | "markdown";
 type FailOn = "any" | "error" | "warning" | "new" | "none";
@@ -44,6 +45,7 @@ type ParsedArgs = CliOptions & { configPath?: string };
 
 type CliRuntime = {
 	writeStderr?: (text: string) => void;
+	requestUrl?: (url: string, signal?: AbortSignal) => Promise<number>;
 };
 
 export type CliResult = {
@@ -87,10 +89,7 @@ export async function runCli(args: string[], runtime: CliRuntime = {}): Promise<
 
 	try {
 		const vaultPath = resolve(parsed.vaultPath);
-		const scanRunner = new ScanRunner(async (url: string, signal?: AbortSignal) => {
-			const response = await fetch(url, { method: "HEAD", signal });
-			return response.status;
-		}, {
+		const scanRunner = new ScanRunner(runtime.requestUrl ?? requestPublicHttpStatus, {
 			setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
 			clearTimeout: (timeoutId) => clearTimeout(timeoutId as ReturnType<typeof setTimeout>),
 		});
