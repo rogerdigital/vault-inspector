@@ -69,6 +69,45 @@ describe("externalLinksScanner", () => {
 		expect(issues).toHaveLength(0);
 	});
 
+	it("blocks non-public destinations before invoking the request adapter", async () => {
+		const checkedUrls: string[] = [];
+		const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
+		const blockedUrls = [
+			"http://127.0.0.1/admin",
+			"http://2130706433/alternate-loopback",
+			"http://10.0.0.1/private",
+			"http://169.254.169.254/latest/meta-data/",
+			"http://localhost/service",
+			"http://[fd00::1]/private",
+		];
+		const publicUrl = "https://example.com/good";
+		const ctx = makeCtx({
+			requestUrl: async (url) => {
+				checkedUrls.push(url);
+				return 200;
+			},
+			markdownFiles: [file],
+			metadataCache: {
+				getFileCache: () => ({
+					links: [...blockedUrls, publicUrl].map((link) => ({ link })),
+					embeds: [],
+				}),
+			} as any,
+		});
+
+		const issues = await externalLinksScanner.scan(ctx);
+
+		expect(checkedUrls).toEqual([publicUrl]);
+		expect(issues).toHaveLength(blockedUrls.length);
+		expect(issues).toEqual(blockedUrls.map((url) => expect.objectContaining({
+			scannerId: "external-links",
+			severity: "info",
+			title: "External link check blocked",
+			primaryPath: "a.md",
+			evidence: expect.objectContaining({ url }),
+		})));
+	});
+
 	it("checks bare URLs in Markdown body text", async () => {
 		const checkedUrls: string[] = [];
 		const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
