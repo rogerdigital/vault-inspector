@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -629,10 +630,11 @@ describe("runCli", () => {
 		);
 	});
 
-	it("checks external links in CLI scans with fetch HEAD requests", async () => {
-		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-			status: 404,
-		} as Response);
+	it("checks external links in CLI scans with the secured request adapter", async () => {
+		const requestUrl = vi.fn(async () => 404);
+		const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(
+			new Error("global fetch must not be used"),
+		);
 
 		await withVault(
 			{
@@ -644,15 +646,13 @@ describe("runCli", () => {
 					vaultPath,
 					"--scanner",
 					"external-links",
-				]);
+				], { requestUrl });
 
-				expect(fetchMock).toHaveBeenCalledWith(
+				expect(requestUrl).toHaveBeenCalledWith(
 					"https://example.com/dead",
-					expect.objectContaining({
-						method: "HEAD",
-						signal: expect.any(AbortSignal),
-					}),
+					expect.any(AbortSignal),
 				);
+				expect(fetchMock).not.toHaveBeenCalled();
 				expect(result.exitCode).toBe(1);
 				const payload = JSON.parse(result.stdout);
 				expect(payload.issues).toEqual([
@@ -671,9 +671,7 @@ describe("runCli", () => {
 	});
 
 	it("checks bare external URLs in CLI scans", async () => {
-		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
-			status: 404,
-		} as Response);
+		const requestUrl = vi.fn(async () => 404);
 
 		await withVault(
 			{
@@ -685,14 +683,11 @@ describe("runCli", () => {
 					vaultPath,
 					"--scanner",
 					"external-links",
-				]);
+				], { requestUrl });
 
-				expect(fetchMock).toHaveBeenCalledWith(
+				expect(requestUrl).toHaveBeenCalledWith(
 					"https://example.com/bare",
-					expect.objectContaining({
-						method: "HEAD",
-						signal: expect.any(AbortSignal),
-					}),
+					expect.any(AbortSignal),
 				);
 				expect(result.exitCode).toBe(1);
 				const payload = JSON.parse(result.stdout);
@@ -709,11 +704,59 @@ describe("runCli", () => {
 		);
 	});
 
-	it("aborts timed out CLI fetch requests", async () => {
+	it("blocks the original loopback SSRF path without reaching the server", async () => {
+		let receivedRequests = 0;
+		const server = createServer((_request, response) => {
+			receivedRequests++;
+			response.writeHead(200).end();
+		});
+		await new Promise<void>((resolve, reject) => {
+			server.once("error", reject);
+			server.listen(0, "127.0.0.1", resolve);
+		});
+
+		try {
+			const address = server.address();
+			if (!address || typeof address === "string") {
+				throw new Error("Expected TCP loopback server address");
+			}
+			await withVault(
+				{
+					"note.md": `http://127.0.0.1:${address.port}/private\n`,
+				},
+				async (vaultPath) => {
+					const result = await runCli([
+						"scan",
+						vaultPath,
+						"--scanner",
+						"external-links",
+					]);
+					const payload = JSON.parse(result.stdout);
+
+					expect(receivedRequests).toBe(0);
+					expect(payload.issues).toEqual([
+						expect.objectContaining({
+							title: "External link check blocked",
+							evidence: expect.objectContaining({
+								url: `http://127.0.0.1:${address.port}/private`,
+								reason: "non-public IP address",
+							}),
+						}),
+					]);
+				},
+			);
+		} finally {
+			await new Promise<void>((resolve, reject) => {
+				server.close((error) => error ? reject(error) : resolve());
+			});
+		}
+	});
+
+	it("aborts timed out CLI external-link requests", async () => {
 		let aborted = false;
-		const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(
-			(_input, init) => new Promise<Response>((_resolve, reject) => {
-				init?.signal?.addEventListener("abort", () => {
+		const requestUrl = vi.fn(
+			(_url: string, signal?: AbortSignal) => new Promise<number>((_resolve, reject) => {
+				signal?.addEventListener("abort", () => {
 					aborted = true;
 					reject(new DOMException("The operation was aborted", "AbortError"));
 				});
@@ -730,15 +773,12 @@ describe("runCli", () => {
 					vaultPath,
 					"--scanner",
 					"external-links",
-				]);
+				], { requestUrl });
 
 				expect(aborted).toBe(true);
-				expect(fetchMock).toHaveBeenCalledWith(
+				expect(requestUrl).toHaveBeenCalledWith(
 					"https://example.com/slow",
-					expect.objectContaining({
-						method: "HEAD",
-						signal: expect.any(AbortSignal),
-					}),
+					expect.any(AbortSignal),
 				);
 				expect(JSON.parse(result.stdout).issues).toEqual([
 					expect.objectContaining({
