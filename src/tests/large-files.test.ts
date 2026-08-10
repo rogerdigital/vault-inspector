@@ -38,6 +38,25 @@ describe("largeFilesScanner", () => {
 		const issues = await largeFilesScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].evidence.type).toBe("markdown");
+		expect(issues[0].classification).toBe("confirmed");
+		expect(issues[0].explanation).toEqual({
+			why: "The observed file size of 200.0 KB (204800 bytes) exceeds the configured Markdown threshold of 100.0 KB (102400 bytes).",
+			caveat: "Large generated notes, media, and workflow artifacts can be expected.",
+			nextStep:
+				"Review whether the file belongs in the vault or should be excluded from this scanner.",
+		});
+	});
+
+	it("reports distinct exact byte counts just above the markdown threshold", async () => {
+		const threshold = 100 * 1024;
+		const issues = await largeFilesScanner.scan(
+			makeCtx({ allFiles: [makeFile("notes/boundary.md", threshold + 1)] }),
+		);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].explanation?.why).toContain("102401 bytes");
+		expect(issues[0].explanation?.why).toContain("102400 bytes");
+		expect(issues[0].explanation?.why).toContain("exceeds");
 	});
 
 	it("does not report files below threshold", async () => {
@@ -59,6 +78,13 @@ describe("largeFilesScanner", () => {
 		const issues = await largeFilesScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].evidence.type).toBe("attachment");
+		expect(issues[0].classification).toBe("confirmed");
+		expect(issues[0].explanation).toEqual({
+			why: "The observed file size of 6.0 MB (6291456 bytes) exceeds the configured attachment threshold of 5.0 MB (5242880 bytes).",
+			caveat: "Large generated notes, media, and workflow artifacts can be expected.",
+			nextStep:
+				"Review whether the file belongs in the vault or should be excluded from this scanner.",
+		});
 	});
 
 	it("does not report attachments below attachment threshold", async () => {
