@@ -97,6 +97,16 @@ describe("frontmatterTypesScanner", () => {
 		expect(issues).toHaveLength(1);
 		expect(issues[0].severity).toBe("warning");
 		expect(issues[0].evidence.property).toBe("priority");
+		expect(issues[0].classification).toBe("confirmed");
+		expect(issues[0].explanation?.why).toContain(
+			"incompatible observed value types",
+		);
+		expect(issues[0].explanation?.caveat).toBe(
+			"Intentional schema variants can be valid when different notes serve different workflows.",
+		);
+		expect(issues[0].explanation?.nextStep).toBe(
+			"Review the sampled notes and normalize the property values or ignore this property.",
+		);
 	});
 
 	it("does not report when types are consistent", async () => {
@@ -181,5 +191,15 @@ describe("frontmatterTypesScanner", () => {
 		expect(issues).toHaveLength(1);
 		expect(issues[0].severity).toBe("info");
 		expect(issues[0].title).toBe("Frontmatter type ambiguity");
+		expect(issues[0].classification).toBe("candidate");
+		expect(issues[0].explanation?.why).toContain(
+			"mixes ISO date-like strings with other string values",
+		);
+		expect(issues[0].explanation?.caveat).toBe(
+			"The ISO date heuristic may classify intentional string formats differently.",
+		);
+		expect(issues[0].explanation?.nextStep).toBe(
+			"Review the sampled notes and choose one representation if consistency is required.",
+		);
 	});
 });
