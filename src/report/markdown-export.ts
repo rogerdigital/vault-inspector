@@ -45,6 +45,12 @@ export function generateMarkdownReport(result: ScanResult): string {
 			lines.push(`### ${escapeMd(issue.title)}`);
 			lines.push(``);
 			lines.push(`- **Severity:** ${issue.severity}`);
+			lines.push(`- **Classification:** ${issue.classification}`);
+			lines.push(`- **Why:** ${escapeMd(issue.explanation.why)}`);
+			if (issue.explanation.caveat) {
+				lines.push(`- **Caveat:** ${escapeMd(issue.explanation.caveat)}`);
+			}
+			lines.push(`- **Next step:** ${escapeMd(issue.explanation.nextStep)}`);
 			const location = issue.primaryPath ?? issue.relatedPaths[0];
 			if (location) lines.push(`- **Location:** \`${escapeInlineCode(location)}\``);
 			lines.push(`- **Message:** ${escapeMd(issue.message)}`);

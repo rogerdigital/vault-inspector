@@ -40,8 +40,8 @@ export type Issue = {
 	severity: IssueSeverity;
 	title: string;
 	message: string;
-	classification?: FindingClassification;
-	explanation?: FindingExplanation;
+	classification: FindingClassification;
+	explanation: FindingExplanation;
 	primaryPath?: string;
 	relatedPaths: string[];
 	evidence: Record<string, string | number | boolean>;

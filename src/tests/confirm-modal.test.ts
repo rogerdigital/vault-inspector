@@ -39,6 +39,11 @@ describe("confirm modal action summary", () => {
 		const issue: Issue = {
 			scannerId: "duplicate-files",
 			severity: "warning",
+			classification: "confirmed",
+			explanation: {
+				why: "Test evidence confirms this fixture.",
+				nextStep: "Review the test fixture.",
+			},
 			title: "Duplicate files (hash-identical)",
 			message: "3 files have identical content",
 			relatedPaths: ["a.md", "b.md", "c.md"],

@@ -21,6 +21,12 @@ describe("generateMarkdownReport", () => {
 				{
 					scannerId: "duplicate-files",
 					severity: "info",
+					classification: "candidate",
+					explanation: {
+						why: "Two files share the same filename.",
+						caveat: "Matching names do not prove matching content.",
+						nextStep: "Compare both files.",
+					},
 					title: "Duplicate file candidates (same name)",
 					message: "2 files share the name \"note.md\"",
 					relatedPaths: ["a/note.md", "b/note.md"],
@@ -33,6 +39,11 @@ describe("generateMarkdownReport", () => {
 				{
 					scannerId: "tag-usage",
 					severity: "info",
+					classification: "confirmed",
+					explanation: {
+						why: "Test evidence confirms this fixture.",
+						nextStep: "Review the test fixture.",
+					},
 					title: "Low-usage tag",
 					message: "Tag \"rare\" is only used 1 time(s), below threshold of 2",
 					primaryPath: "tags.md",
@@ -47,6 +58,11 @@ describe("generateMarkdownReport", () => {
 				{
 					scannerId: "frontmatter-types",
 					severity: "warning",
+					classification: "confirmed",
+					explanation: {
+						why: "Test evidence confirms this fixture.",
+						nextStep: "Review the test fixture.",
+					},
 					title: "Frontmatter type drift",
 					message: "Property \"priority\" has mixed types: number (1), string (1)",
 					relatedPaths: ["one.md", "two.md"],
@@ -61,6 +77,10 @@ describe("generateMarkdownReport", () => {
 		}));
 
 		expect(report).toContain("### Duplicate file candidates (same name)");
+		expect(report).toContain("- **Classification:** candidate");
+		expect(report).toContain("- **Why:** Two files share the same filename.");
+		expect(report).toContain("- **Caveat:** Matching names do not prove matching content.");
+		expect(report).toContain("- **Next step:** Compare both files.");
 		expect(report).toContain("- **Files:**\n  - `a/note.md`\n  - `b/note.md`");
 		expect(report).toContain("- **Tag:** #rare");
 		expect(report).toContain("- **Files:**\n  - `tags.md`");

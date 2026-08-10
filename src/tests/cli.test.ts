@@ -65,6 +65,11 @@ describe("runCli", () => {
 					scannerId: "empty-notes",
 					severity: "warning",
 					primaryPath: "empty.md",
+					classification: expect.stringMatching(/^(confirmed|candidate|unverified)$/),
+					explanation: expect.objectContaining({
+						why: expect.any(String),
+						nextStep: expect.any(String),
+					}),
 				}),
 			]);
 		});

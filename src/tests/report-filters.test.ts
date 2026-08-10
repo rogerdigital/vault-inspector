@@ -37,6 +37,11 @@ function makeIssue(scannerId: ScannerId, severity: Issue["severity"], fingerprin
 	return {
 		scannerId,
 		severity,
+		classification: "confirmed",
+		explanation: {
+			why: "Test evidence confirms this fixture.",
+			nextStep: "Review the test fixture.",
+		},
 		title: fingerprint,
 		message: fingerprint,
 		relatedPaths: [],

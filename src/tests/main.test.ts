@@ -39,6 +39,11 @@ function makeFixIssue(fingerprint: string, fixAction: FixAction): Issue {
 	return {
 		scannerId: fixAction.kind === "remove-link-text" ? "broken-links" : "empty-notes",
 		severity: "warning",
+		classification: "confirmed",
+		explanation: {
+			why: "Test evidence confirms this fixture.",
+			nextStep: "Review the test fixture.",
+		},
 		title: fingerprint,
 		message: fingerprint,
 		primaryPath: fixAction.targetPaths[0],
@@ -317,6 +322,11 @@ function makeDuplicateIssue(fingerprint: string, paths: string[]): Issue {
 	return {
 		scannerId: "duplicate-files",
 		severity: "warning",
+		classification: "confirmed",
+		explanation: {
+			why: "Test evidence confirms this fixture.",
+			nextStep: "Review the test fixture.",
+		},
 		title: "Duplicate files (hash-identical)",
 		message: `${sorted.length} files have identical content`,
 		relatedPaths: sorted,
