@@ -1,6 +1,7 @@
 import type { Issue } from "../Issue";
 import type { ScanProgressCallback } from "../Issue";
 import type { ScanContext } from "../ScanContext";
+import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
 import { isIgnoredPath } from "../../utils/paths";
 import { assessExternalHttpUrl } from "../../utils/network-destination";
@@ -20,6 +21,12 @@ export const externalLinksScanner = {
 
 		if (skipped > 0) {
 			issues.push({
+				...describeFinding(
+					"unverified",
+					`The scanner reached its ${EXTERNAL_LINK_SCAN_BUDGET_MS / 1000}-second scan budget before checking ${skipped} URL(s).`,
+					"Run the external-link scanner again or reduce the number of URLs checked at once.",
+					"Unchecked URLs may still be healthy or broken.",
+				),
 				scannerId: "external-links",
 				severity: "info",
 				title: "External link checks skipped",
@@ -286,6 +293,12 @@ function makeIssue(result: CheckResult): Issue | null {
 	if (result.kind === "http") {
 		if (result.status < 400) return null;
 		return {
+			...describeFinding(
+				"candidate",
+				`The server returned HTTP ${result.status} for this URL.`,
+				"Open the URL manually, then update or remove it if the failure persists.",
+				"Authentication, rate limits, bot protection, and temporary outages can produce a non-success status.",
+			),
 			scannerId: "external-links",
 			severity: "warning",
 			title: "Dead external link",
@@ -304,6 +317,12 @@ function makeIssue(result: CheckResult): Issue | null {
 
 	if (result.kind === "blocked") {
 		return {
+			...describeFinding(
+				"unverified",
+				`The external-link safety policy blocked this destination (${result.reason}).`,
+				"Review or correct the URL based on the reported reason, then run the scanner again.",
+				"Availability was not tested because this URL was rejected before reaching the request adapter.",
+			),
 			scannerId: "external-links",
 			severity: "info",
 			title: "External link check blocked",
@@ -324,6 +343,12 @@ function makeIssue(result: CheckResult): Issue | null {
 
 	if (result.kind === "timeout") {
 		return {
+			...describeFinding(
+				"unverified",
+				`The URL did not respond within ${result.timeoutMs}ms.`,
+				"Retry the scan or open the URL manually.",
+				"Slow networks and temporary server load can cause timeouts.",
+			),
 			scannerId: "external-links",
 			severity: "info",
 			title: "External link check timed out",
@@ -342,6 +367,12 @@ function makeIssue(result: CheckResult): Issue | null {
 	}
 
 	return {
+		...describeFinding(
+			"unverified",
+			"The URL check failed before an HTTP status was received.",
+			"Retry the scan or open the URL manually and inspect the reported error.",
+			"DNS, TLS, connectivity, and remote-server failures can be temporary.",
+		),
 		scannerId: "external-links",
 		severity: "info",
 		title: "External link check failed",
