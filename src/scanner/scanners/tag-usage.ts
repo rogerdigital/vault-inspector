@@ -4,6 +4,7 @@ import type { ScanContext } from "../ScanContext";
 import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
 import { isIgnoredPath } from "../../utils/paths";
+import { normalizeTagName } from "../../utils/tags";
 
 export const tagUsageScanner = {
 	id: "tag-usage" as const,
@@ -13,7 +14,7 @@ export const tagUsageScanner = {
 		const tagCounts = new Map<string, number>();
 		const tagPaths = new Map<string, Set<string>>();
 		const watchedTags = Array.from(
-			new Set(ctx.watchedTags.map(normalizeWatchedTag).filter(Boolean)),
+			new Set(ctx.watchedTags.map(normalizeTagName).filter(Boolean)),
 		);
 		const watchedSet = new Set(watchedTags);
 
@@ -87,10 +88,6 @@ export const tagUsageScanner = {
 		return issues;
 	},
 };
-
-function normalizeWatchedTag(value: string): string {
-	return value.trim().replace(/^#/, "");
-}
 
 function collectTags(cache: CachedMetadata): string[] {
 	const tags: string[] = [];
