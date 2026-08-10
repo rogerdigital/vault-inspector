@@ -1,5 +1,6 @@
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
+import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
 import { isIgnoredPath } from "../../utils/paths";
 
@@ -28,6 +29,12 @@ export const emptyNotesScanner = {
 					primaryPath: file.path,
 					relatedPaths: [],
 					evidence: { size: file.stat.size, wordCount },
+					...describeFinding(
+						"candidate",
+						`The note contains ${wordCount} meaningful word${wordCount === 1 ? "" : "s"}, at or below the configured threshold of ${ctx.emptyNoteWordThreshold}.`,
+						"Add meaningful content, ignore the finding, or move the note to trash after review.",
+						"Intentional placeholders, index notes, and generated stubs can be valid.",
+					),
 					fingerprint: generateFingerprint("empty-notes", file.path, {}),
 					fixAction: {
 						kind: "trash-file",

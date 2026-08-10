@@ -35,6 +35,14 @@ describe("emptyNotesScanner", () => {
 		expect(issues).toHaveLength(1);
 		expect(issues[0].title).toBe("Empty note");
 		expect(issues[0].severity).toBe("warning");
+		expect(issues[0]).toMatchObject({
+			classification: "candidate",
+			explanation: {
+				why: "The note contains 0 meaningful words, at or below the configured threshold of 5.",
+				caveat: "Intentional placeholders, index notes, and generated stubs can be valid.",
+				nextStep: "Add meaningful content, ignore the finding, or move the note to trash after review.",
+			},
+		});
 	});
 
 	it("detects notes with only frontmatter", async () => {
