@@ -27,11 +27,21 @@ export type FixAction = {
 	selection?: KeepOneSelection;
 };
 
+export type FindingClassification = "confirmed" | "candidate" | "unverified";
+
+export type FindingExplanation = {
+	why: string;
+	caveat?: string;
+	nextStep: string;
+};
+
 export type Issue = {
 	scannerId: ScannerId;
 	severity: IssueSeverity;
 	title: string;
 	message: string;
+	classification?: FindingClassification;
+	explanation?: FindingExplanation;
 	primaryPath?: string;
 	relatedPaths: string[];
 	evidence: Record<string, string | number | boolean>;
