@@ -42,6 +42,14 @@ describe("orphanAttachmentsScanner", () => {
 		const issues = await orphanAttachmentsScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].primaryPath).toBe("assets/orphan.png");
+		expect(issues[0]).toMatchObject({
+			classification: "candidate",
+			explanation: {
+				why: "No Markdown note references this attachment within the scanned vault metadata.",
+				caveat: "CSS, Canvas, Dataview, publishing pipelines, and external tools can reference files outside this scan boundary.",
+				nextStep: "Review external and generated references before moving the file to trash.",
+			},
+		});
 	});
 
 	it("does not report attachments referenced by notes", async () => {
