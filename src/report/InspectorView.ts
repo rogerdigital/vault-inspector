@@ -11,6 +11,7 @@ import { renderIssueList } from "./render-issues";
 import { setIcon } from "obsidian";
 import { formatDuration } from "../utils/format";
 import { describeFixActions } from "../fix/confirm-modal";
+import type { LifecycleComparison } from "../scanner/result-diff";
 
 export const VIEW_TYPE_INSPECTOR = "vault-inspector";
 
@@ -50,6 +51,12 @@ function findTextPosition(content: string, target: string): { line: number; ch: 
 export class InspectorView extends ItemView {
 	private model: ReportModel = {
 		result: null,
+		comparison: {
+			available: false,
+			reason: "first-scan",
+			statuses: new Map(),
+			resolvedIssues: [],
+		},
 		isScanning: false,
 		scanProgress: null,
 		scanStartedAt: null,
@@ -121,8 +128,9 @@ export class InspectorView extends ItemView {
 		this.render();
 	}
 
-	setResult(result: ScanResult) {
+	setResult(result: ScanResult, comparison: LifecycleComparison) {
 		this.model.result = result;
+		this.model.comparison = comparison;
 		this.model.isScanning = false;
 		this.model.scanProgress = null;
 		this.model.scanStartedAt = null;

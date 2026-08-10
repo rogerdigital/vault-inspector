@@ -5,11 +5,21 @@ import VaultInspectorPlugin, {
 } from "../main";
 import { DEFAULT_SETTINGS } from "../settings/settings";
 import type { InspectorSettings } from "../settings/settings";
-import type { InspectorView } from "../report/InspectorView";
+import { InspectorView } from "../report/InspectorView";
 import type { FixAction, Issue, ScanResult } from "../scanner/Issue";
-import { createScanSnapshot } from "../snapshot/scan-snapshot";
+import {
+	createScanSnapshot,
+	type ScanSnapshot,
+} from "../snapshot/scan-snapshot";
+import type { LifecycleComparison } from "../scanner/result-diff";
 
-const { executeFixActionMock, noticeMessages, showConfirmModalMock } = vi.hoisted(() => ({
+const {
+	createScanProfileMock,
+	executeFixActionMock,
+	noticeMessages,
+	showConfirmModalMock,
+} = vi.hoisted(() => ({
+	createScanProfileMock: vi.fn(),
 	executeFixActionMock: vi.fn(),
 	noticeMessages: [] as string[],
 	showConfirmModalMock: vi.fn(),
@@ -35,6 +45,10 @@ vi.mock("../fix/confirm-modal", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../fix/confirm-modal")>();
 	return { ...actual, showConfirmModal: showConfirmModalMock };
 });
+
+vi.mock("../scanner/scan-profile", () => ({
+	createScanProfile: createScanProfileMock,
+}));
 
 function makeFixIssue(fingerprint: string, fixAction: FixAction): Issue {
 	return {
@@ -68,9 +82,409 @@ function makeScanResult(issues: Issue[]): ScanResult {
 
 describe("VaultInspectorPlugin", () => {
 	beforeEach(() => {
+		createScanProfileMock.mockReset();
+		createScanProfileMock.mockResolvedValue("current-profile");
 		executeFixActionMock.mockReset();
 		showConfirmModalMock.mockReset();
 		noticeMessages.length = 0;
+	});
+
+	it("initializes lifecycle comparison as unavailable and stores comparison with results", () => {
+		const view = new InspectorView({ app: {} } as any);
+		const result = makeScanResult([]);
+		const comparison: LifecycleComparison = {
+			available: true,
+			statuses: new Map([["current", "new"]]),
+			resolvedIssues: [],
+		};
+
+		expect((view as any).model.comparison).toEqual({
+			available: false,
+			reason: "first-scan",
+			statuses: new Map(),
+			resolvedIssues: [],
+		});
+
+		(view as any).render = vi.fn();
+		(view as any).stopScanTimer = vi.fn();
+		view.setResult(result, comparison);
+
+		expect((view as any).model.result).toBe(result);
+		expect((view as any).model.comparison).toBe(comparison);
+		expect((view as any).model.isScanning).toBe(false);
+		expect((view as any).model.selectedFingerprints).toEqual(new Set());
+		expect((view as any).model.ignoredSelectedFingerprints).toEqual(new Set());
+	});
+
+	it("accepts and persists a first completed scan without lifecycle statuses", async () => {
+		const current = makeLifecycleIssue("current");
+		const result = makeScanResult([current]);
+		const { plugin, run, saveData, view } = makeScanSubject(result);
+
+		await (plugin as any).scanAndRender(view);
+
+		expect(run).toHaveBeenCalledTimes(1);
+		expect(view.setResult).toHaveBeenCalledWith(result, {
+			available: false,
+			reason: "first-scan",
+			statuses: new Map(),
+			resolvedIssues: [],
+		});
+		expect(plugin.lastSuccessfulSnapshot).toMatchObject({
+			toolVersion: "0.5.0",
+			scanProfile: "current-profile",
+			issues: [{ fingerprint: "current", ignored: false }],
+		});
+		expect(saveData).toHaveBeenCalledTimes(1);
+		expect(saveData).toHaveBeenCalledWith({
+			settings: plugin.settings,
+			lastSuccessfulSnapshot: plugin.lastSuccessfulSnapshot,
+		});
+	});
+
+	it("compares against a compatible snapshot and replaces the accepted baseline", async () => {
+		const persisting = makeLifecycleIssue("persisting");
+		const resolved = makeLifecycleIssue("resolved");
+		const added = makeLifecycleIssue("new");
+		const result = makeScanResult([persisting, added]);
+		const { plugin, view } = makeScanSubject(result);
+		const previous = createScanSnapshot(
+			makeScanResult([persisting, resolved]),
+			"current-profile",
+			"0.4.13",
+			100,
+		);
+		plugin.lastSuccessfulSnapshot = previous;
+
+		await (plugin as any).scanAndRender(view);
+
+		expect(view.setResult).toHaveBeenCalledWith(result, {
+			available: true,
+			statuses: new Map([
+				["persisting", "persisting"],
+				["new", "new"],
+			]),
+			resolvedIssues: [expect.objectContaining({ fingerprint: "resolved" })],
+		});
+		expect(plugin.lastSuccessfulSnapshot).not.toBe(previous);
+		expect(plugin.lastSuccessfulSnapshot?.issues.map((issue) => issue.fingerprint))
+			.toEqual(["persisting", "new"]);
+	});
+
+	it("does not label findings new when detection settings changed", async () => {
+		const result = makeScanResult([makeLifecycleIssue("current")]);
+		const { plugin, view } = makeScanSubject(result);
+		plugin.lastSuccessfulSnapshot = createScanSnapshot(
+			makeScanResult([makeLifecycleIssue("previous")]),
+			"previous-profile",
+			"0.4.13",
+			100,
+		);
+
+		await (plugin as any).scanAndRender(view);
+
+		expect(view.setResult).toHaveBeenCalledWith(result, {
+			available: false,
+			reason: "settings-changed",
+			statuses: new Map(),
+			resolvedIssues: [],
+		});
+		expect(plugin.lastSuccessfulSnapshot?.scanProfile).toBe("current-profile");
+	});
+
+	it("reports incompatible stored comparison semantics before replacing the baseline", async () => {
+		const result = makeScanResult([makeLifecycleIssue("current")]);
+		const { plugin, view } = makeScanSubject(result);
+		const previous = createScanSnapshot(result, "current-profile", "0.4.13", 100);
+		previous.comparisonVersion++;
+		plugin.lastSuccessfulSnapshot = previous;
+
+		await (plugin as any).scanAndRender(view);
+
+		expect(view.setResult).toHaveBeenCalledWith(result, {
+			available: false,
+			reason: "semantics-changed",
+			statuses: new Map(),
+			resolvedIssues: [],
+		});
+		expect(plugin.lastSuccessfulSnapshot?.comparisonVersion).not.toBe(
+			previous.comparisonVersion,
+		);
+	});
+
+	it("leaves the accepted baseline untouched when scanning fails", async () => {
+		const { plugin, run, saveData, view } = makeScanSubject(makeScanResult([]));
+		const previous = makeSnapshot("current-profile");
+		plugin.lastSuccessfulSnapshot = previous;
+		run.mockRejectedValueOnce(new Error("scanner exploded"));
+
+		await (plugin as any).scanAndRender(view);
+
+		expect(plugin.lastSuccessfulSnapshot).toBe(previous);
+		expect(plugin.lastSuccessfulSnapshot).toEqual(previous);
+		expect(saveData).not.toHaveBeenCalled();
+		expect(view.setResult).not.toHaveBeenCalled();
+		expect(noticeMessages).toContain("Vault Inspector scan failed: scanner exploded");
+	});
+
+	it("keeps a completed result visible, rolls back a failed snapshot save, and recovers", async () => {
+		const current = makeLifecycleIssue("current");
+		const result = makeScanResult([current]);
+		const { plugin, saveData, view } = makeScanSubject(result);
+		const previous = createScanSnapshot(
+			makeScanResult([makeLifecycleIssue("previous")]),
+			"current-profile",
+			"0.4.13",
+			100,
+		);
+		plugin.lastSuccessfulSnapshot = previous;
+		saveData
+			.mockRejectedValueOnce(new Error("disk unavailable"))
+			.mockResolvedValueOnce(undefined);
+
+		await expect((plugin as any).scanAndRender(view)).resolves.toBeUndefined();
+
+		expect(view.setResult).toHaveBeenCalledWith(result, {
+			available: true,
+			statuses: new Map([["current", "new"]]),
+			resolvedIssues: [expect.objectContaining({ fingerprint: "previous" })],
+		});
+		expect(plugin.lastSuccessfulSnapshot).toBe(previous);
+		expect(noticeMessages).toContain(
+			"Scan completed, but the comparison snapshot could not be saved: disk unavailable",
+		);
+		expect(noticeMessages.some((message) => message.startsWith("Vault Inspector scan failed:")))
+			.toBe(false);
+
+		await expect((plugin as any).scanAndRender(view)).resolves.toBeUndefined();
+
+		expect(saveData).toHaveBeenCalledTimes(2);
+		expect(plugin.lastSuccessfulSnapshot).not.toBe(previous);
+		expect(plugin.lastSuccessfulSnapshot?.issues.map((issue) => issue.fingerprint))
+			.toEqual(["current"]);
+		expect((saveData as ReturnType<typeof vi.fn>).mock.calls[1][0])
+			.toMatchObject({
+				lastSuccessfulSnapshot: {
+					scanProfile: "current-profile",
+					issues: [{ fingerprint: "current" }],
+				},
+			});
+	});
+
+	it("does not start scanning when the detection profile cannot be created", async () => {
+		const { plugin, run, saveData, view } = makeScanSubject(makeScanResult([]));
+		const previous = makeSnapshot("current-profile");
+		plugin.lastSuccessfulSnapshot = previous;
+		createScanProfileMock.mockRejectedValueOnce(new Error("hash unavailable"));
+
+		await expect((plugin as any).scanAndRender(view)).resolves.toBeUndefined();
+
+		expect(run).not.toHaveBeenCalled();
+		expect(plugin.lastSuccessfulSnapshot).toBe(previous);
+		expect(saveData).not.toHaveBeenCalled();
+		expect(view.setResult).not.toHaveBeenCalled();
+		expect(view.setScanning).not.toHaveBeenCalled();
+		expect(noticeMessages).toContain("Vault Inspector scan failed: hash unavailable");
+	});
+
+	it("serializes complete scan flows through snapshot persistence", async () => {
+		const resultA = makeScanResult([makeLifecycleIssue("a")]);
+		const resultB = makeScanResult([
+			makeLifecycleIssue("a"),
+			makeLifecycleIssue("b"),
+		]);
+		const { plugin, run, view } = makeScanSubject(resultA);
+		let finishFirstScan!: (result: ScanResult) => void;
+		const firstScan = new Promise<ScanResult>((resolve) => { finishFirstScan = resolve; });
+		run.mockReset()
+			.mockImplementationOnce(() => firstScan)
+			.mockResolvedValueOnce(resultB);
+
+		const first = (plugin as any).scanAndRender(view);
+		await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+		const second = (plugin as any).scanAndRender(view);
+		await flushMicrotasks();
+
+		expect(run).toHaveBeenCalledTimes(1);
+		finishFirstScan(resultA);
+		await first;
+		await second;
+
+		expect(run).toHaveBeenCalledTimes(2);
+		expect(plugin.lastSuccessfulSnapshot?.issues.map((issue) => issue.fingerprint))
+			.toEqual(["a", "b"]);
+	});
+
+	it("uses one immutable settings snapshot for profile creation and scanning", async () => {
+		const result = makeScanResult([makeLifecycleIssue("current")]);
+		const { plugin, run, view } = makeScanSubject(result);
+		const initialThreshold = plugin.settings.lowUsageTagThreshold;
+		let profileSettings: InspectorSettings | undefined;
+		let finishProfile!: () => void;
+		const profileGate = new Promise<void>((resolve) => { finishProfile = resolve; });
+		createScanProfileMock.mockImplementationOnce(async (settings: InspectorSettings) => {
+			profileSettings = settings;
+			await profileGate;
+			return `threshold:${settings.lowUsageTagThreshold}`;
+		});
+
+		const scan = (plugin as any).scanAndRender(view);
+		await vi.waitFor(() => expect(createScanProfileMock).toHaveBeenCalledTimes(1));
+		plugin.settings.lowUsageTagThreshold = initialThreshold + 10;
+		finishProfile();
+		await scan;
+
+		expect(profileSettings).not.toBe(plugin.settings);
+		expect(profileSettings?.lowUsageTagThreshold).toBe(initialThreshold);
+		expect(run.mock.calls[0][1]).toBe(profileSettings);
+		expect(plugin.lastSuccessfulSnapshot?.scanProfile)
+			.toBe(`threshold:${initialThreshold}`);
+	});
+
+	it("clones current settings for each fix-all preflight scan", async () => {
+		const action: FixAction = {
+			kind: "remove-link-text",
+			label: "Remove link",
+			description: "Remove missing link",
+			targetPaths: ["Source.md"],
+			linkText: "Missing",
+		};
+		const issue = makeFixIssue("stale", action);
+		const { plugin, run, view } = makeScanSubject(makeScanResult([]));
+		const initialThreshold = plugin.settings.lowUsageTagThreshold;
+		let finishPreflight!: (result: ScanResult) => void;
+		const preflight = new Promise<ScanResult>((resolve) => { finishPreflight = resolve; });
+		run.mockReset()
+			.mockImplementationOnce(() => preflight)
+			.mockResolvedValueOnce(makeScanResult([]));
+		showConfirmModalMock.mockResolvedValue([{ fingerprint: issue.fingerprint }]);
+		let callbacks: any;
+		view.setCallbacks.mockImplementation((value) => { callbacks = value; });
+		(plugin as any).configureView(view);
+
+		const fixing = callbacks.onFixAllIssues([issue]);
+		await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+		const preflightSettings = run.mock.calls[0][1] as InspectorSettings;
+		plugin.settings.lowUsageTagThreshold = initialThreshold + 10;
+		const remainedStable = preflightSettings.lowUsageTagThreshold === initialThreshold;
+		const wasCloned = preflightSettings !== plugin.settings;
+		finishPreflight(makeScanResult([]));
+		await fixing;
+
+		expect(wasCloned).toBe(true);
+		expect(remainedStable).toBe(true);
+	});
+
+	it.each([
+		{ firstFails: false, secondFails: false, expected: ["a", "b"] },
+		{ firstFails: true, secondFails: false, expected: ["a", "b"] },
+		{ firstFails: false, secondFails: true, expected: ["a"] },
+		{ firstFails: true, secondFails: true, expected: ["baseline"] },
+	])(
+		"keeps the durable baseline correct when scan saves resolve as $firstFails/$secondFails",
+		async ({ firstFails, secondFails, expected }) => {
+			const baseline = createScanSnapshot(
+				makeScanResult([makeLifecycleIssue("baseline")]),
+				"current-profile",
+				"0.4.13",
+				100,
+			);
+			const resultA = makeScanResult([makeLifecycleIssue("a")]);
+			const resultB = makeScanResult([
+				makeLifecycleIssue("a"),
+				makeLifecycleIssue("b"),
+			]);
+			const { plugin, run, saveData, view } = makeScanSubject(resultA);
+			plugin.lastSuccessfulSnapshot = baseline;
+			run.mockReset()
+				.mockResolvedValueOnce(resultA)
+				.mockResolvedValueOnce(resultB);
+			let releaseFirstSave!: () => void;
+			const firstSaveGate = new Promise<void>((resolve) => { releaseFirstSave = resolve; });
+			saveData.mockReset().mockImplementation(async () => {
+				const call = saveData.mock.calls.length;
+				if (call === 1) {
+					await firstSaveGate;
+					if (firstFails) throw new Error("first save failed");
+				} else if (secondFails) {
+					throw new Error("second save failed");
+				}
+			});
+
+			const first = (plugin as any).scanAndRender(view);
+			await vi.waitFor(() => expect(saveData).toHaveBeenCalledTimes(1));
+			const second = (plugin as any).scanAndRender(view);
+			await flushMicrotasks();
+			releaseFirstSave();
+			await Promise.all([first, second]);
+
+			expect(saveData).toHaveBeenCalledTimes(2);
+			const saveCalls = (saveData as ReturnType<typeof vi.fn>).mock.calls;
+			expect(snapshotFingerprints(saveCalls[0][0])).toEqual(["a"]);
+			expect(snapshotFingerprints(saveCalls[1][0])).toEqual(["a", "b"]);
+			expect(plugin.lastSuccessfulSnapshot?.issues.map((issue) => issue.fingerprint))
+				.toEqual(expected);
+			const secondComparison = view.setResult.mock.calls[1][1] as LifecycleComparison;
+			expect(secondComparison.statuses.get("a"))
+				.toBe(firstFails ? "new" : "persisting");
+		},
+	);
+
+	it("persists each accepted candidate instead of reading a later global candidate", async () => {
+		const resultA = makeScanResult([makeLifecycleIssue("a")]);
+		const resultB = makeScanResult([makeLifecycleIssue("b")]);
+		const { plugin, run, saveData, view } = makeScanSubject(resultA);
+		plugin.lastSuccessfulSnapshot = makeSnapshot("current-profile");
+		run.mockReset()
+			.mockResolvedValueOnce(resultA)
+			.mockResolvedValueOnce(resultB);
+		let releaseBlockingSave!: () => void;
+		const blockingSave = new Promise<void>((resolve) => { releaseBlockingSave = resolve; });
+		saveData.mockReset().mockImplementation(async () => {
+			if (saveData.mock.calls.length === 1) await blockingSave;
+		});
+
+		const settingsSave = plugin.saveSettings();
+		await vi.waitFor(() => expect(saveData).toHaveBeenCalledTimes(1));
+		const first = (plugin as any).scanAndRender(view);
+		await vi.waitFor(() => expect(view.setResult).toHaveBeenCalledTimes(1));
+		const second = (plugin as any).scanAndRender(view);
+		await flushMicrotasks();
+		releaseBlockingSave();
+		await Promise.all([settingsSave, first, second]);
+
+		expect(saveData).toHaveBeenCalledTimes(3);
+		const saveCalls = (saveData as ReturnType<typeof vi.fn>).mock.calls;
+		expect(snapshotFingerprints(saveCalls[1][0])).toEqual(["a"]);
+		expect(snapshotFingerprints(saveCalls[2][0])).toEqual(["b"]);
+		expect(plugin.lastSuccessfulSnapshot?.issues.map((issue) => issue.fingerprint))
+			.toEqual(["b"]);
+	});
+
+	it("recovers the scan queue after an unexpected acceptance error without duplicate notices", async () => {
+		const resultA = makeScanResult([makeLifecycleIssue("a")]);
+		const resultB = makeScanResult([makeLifecycleIssue("b")]);
+		const { plugin, run, view } = makeScanSubject(resultA);
+		run.mockReset()
+			.mockResolvedValueOnce(resultA)
+			.mockResolvedValueOnce(resultB);
+		view.setResult
+			.mockImplementationOnce(() => { throw new Error("view unavailable"); })
+			.mockImplementationOnce(() => undefined);
+		view.setScanning.mockImplementation((scanning: boolean) => {
+			if (!scanning) throw new Error("cleanup unavailable");
+		});
+
+		await expect((plugin as any).scanAndRender(view)).resolves.toBeUndefined();
+		expect(view.setScanning).toHaveBeenCalledWith(false);
+		await expect((plugin as any).scanAndRender(view)).resolves.toBeUndefined();
+
+		expect(run).toHaveBeenCalledTimes(2);
+		expect(plugin.lastSuccessfulSnapshot?.issues.map((issue) => issue.fingerprint))
+			.toEqual(["b"]);
+		expect(noticeMessages.filter(
+			(message) => message === "Vault Inspector scan failed: view unavailable",
+		)).toHaveLength(1);
 	});
 
 	it("binds scan callbacks when Obsidian restores the inspector view", async () => {
@@ -131,6 +545,7 @@ describe("VaultInspectorPlugin", () => {
 	const run = vi.fn().mockResolvedValue(freshResult);
 	const plugin = new VaultInspectorPlugin({} as any, {} as any);
 	(plugin as any).app = {};
+	(plugin as any).manifest = { version: "0.5.0" };
 	(plugin as any).scanRunner = { run };
 	showConfirmModalMock.mockResolvedValue(
 		staleIssues.map((issue) => ({ fingerprint: issue.fingerprint })),
@@ -183,6 +598,7 @@ describe("VaultInspectorPlugin", () => {
 		.mockResolvedValueOnce(makeScanResult([]));
 	const plugin = new VaultInspectorPlugin({} as any, {} as any);
 	(plugin as any).app = {};
+	(plugin as any).manifest = { version: "0.5.0" };
 	(plugin as any).scanRunner = { run };
 	showConfirmModalMock.mockResolvedValue([
 		{ fingerprint: firstIssue.fingerprint },
@@ -231,6 +647,7 @@ describe("VaultInspectorPlugin", () => {
 	const run = vi.fn().mockResolvedValue(makeScanResult(issues));
 	const plugin = new VaultInspectorPlugin({} as any, {} as any);
 	(plugin as any).app = {};
+	(plugin as any).manifest = { version: "0.5.0" };
 	(plugin as any).scanRunner = { run };
 	showConfirmModalMock.mockResolvedValue(
 		issues.map((issue) => ({ fingerprint: issue.fingerprint })),
@@ -415,6 +832,53 @@ function makeSnapshot(scanProfile: string) {
 	return createScanSnapshot(makeScanResult([]), scanProfile, "0.5.0", 100);
 }
 
+function makeLifecycleIssue(fingerprint: string): Issue {
+	return {
+		scannerId: "broken-links",
+		severity: "warning",
+		classification: "confirmed",
+		explanation: {
+			why: "Test evidence confirms this fixture.",
+			nextStep: "Review the test fixture.",
+		},
+		title: fingerprint,
+		message: fingerprint,
+		primaryPath: `${fingerprint}.md`,
+		relatedPaths: [],
+		evidence: { target: fingerprint },
+		fingerprint,
+	};
+}
+
+function makeScanSubject(result: ScanResult) {
+	const plugin = new VaultInspectorPlugin({} as any, {} as any);
+	(plugin as any).app = {};
+	(plugin as any).manifest = { version: "0.5.0" };
+	plugin.settings = structuredClone(DEFAULT_SETTINGS);
+	const run = vi.fn().mockResolvedValue(result);
+	(plugin as any).scanRunner = { run };
+	const saveData = vi.fn(async () => {});
+	plugin.saveData = saveData;
+	const view = {
+		setCallbacks: vi.fn(),
+		setEnableFixActions: vi.fn(),
+		setScanning: vi.fn(),
+		setScanProgress: vi.fn(),
+		setResult: vi.fn(),
+	};
+	return { plugin, run, saveData, view };
+}
+
+async function flushMicrotasks(count = 20): Promise<void> {
+	for (let index = 0; index < count; index++) await Promise.resolve();
+}
+
+function snapshotFingerprints(payload: unknown): string[] {
+	const snapshot = (payload as { lastSuccessfulSnapshot?: ScanSnapshot })
+		.lastSuccessfulSnapshot;
+	return snapshot?.issues.map((issue) => issue.fingerprint) ?? [];
+}
+
 function makeDuplicateIssue(fingerprint: string, paths: string[]): Issue {
 	const sorted = paths.slice().sort();
 	const keepPath = sorted[0];
@@ -447,6 +911,7 @@ function makeDuplicateIssue(fingerprint: string, paths: string[]): Issue {
 }
 
 function configureCallbacks(plugin: VaultInspectorPlugin) {
+	(plugin as any).manifest ??= { version: "0.5.0" };
 	let callbacks: any;
 	const view = {
 		setCallbacks: vi.fn((value) => { callbacks = value; }),

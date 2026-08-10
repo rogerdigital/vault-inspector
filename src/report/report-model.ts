@@ -5,6 +5,7 @@ import type {
 	ScanResult,
 	ScannerId,
 } from "../scanner/Issue";
+import type { LifecycleComparison } from "../scanner/result-diff";
 
 const SEVERITIES: IssueSeverity[] = ["error", "warning", "info"];
 
@@ -68,6 +69,7 @@ export function summarizeIssues(issues: Issue[]): IssueSummary {
 
 export type ReportModel = {
 	result: ScanResult | null;
+	comparison: LifecycleComparison;
 	isScanning: boolean;
 	scanProgress: ScanProgress | null;
 	scanStartedAt: number | null;
