@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import VaultInspectorPlugin from "../main";
 import { DEFAULT_SETTINGS } from "../settings/settings";
 import { SCANNER_IDS } from "../scanner/Issue";
+import { createScanSnapshot } from "../snapshot/scan-snapshot";
 
 describe("DEFAULT_SETTINGS", () => {
 	it("keeps external link checks opt-in by default", () => {
@@ -93,5 +94,35 @@ describe("DEFAULT_SETTINGS", () => {
 		expect(plugin.settings.ignoredFoldersByScanner["broken-links"]).toEqual(["syncTrash"]);
 		expect(plugin.settings.ignoredFoldersByScanner["duplicate-files"]).toEqual([]);
 		expect(Object.keys(plugin.settings.ignoredFoldersByScanner)).toEqual(SCANNER_IDS);
+	});
+
+	it("deep-merges settings from the persistence envelope and restores its snapshot", async () => {
+		const plugin = new VaultInspectorPlugin({} as any, {} as any);
+		const snapshot = createScanSnapshot({
+			startedAt: 1,
+			finishedAt: 2,
+			issues: [],
+			ignoredIssues: [],
+			filesScanned: 0,
+			scannersRun: [],
+		}, "profile", "0.5.0", 100);
+		plugin.loadData = vi.fn(async () => ({
+			settings: {
+				enabledScanners: { "broken-links": false },
+				ignoredFoldersByScanner: { "empty-notes": ["Templates"] },
+			},
+			lastSuccessfulSnapshot: snapshot,
+		}));
+
+		await plugin.loadSettings();
+
+		expect(plugin.settings.enabledScanners["broken-links"]).toBe(false);
+		expect(plugin.settings.enabledScanners["duplicate-files"]).toBe(
+			DEFAULT_SETTINGS.enabledScanners["duplicate-files"],
+		);
+		expect(plugin.settings.ignoredFoldersByScanner["empty-notes"])
+			.toEqual(["Templates"]);
+		expect(plugin.settings.ignoredFoldersByScanner["broken-links"]).toEqual([]);
+		expect(plugin.lastSuccessfulSnapshot).toEqual(snapshot);
 	});
 });

@@ -12,9 +12,13 @@ import { generateMarkdownReport } from "./report/markdown-export";
 import { executeFixAction } from "./fix/fix-executor";
 import { showConfirmModal } from "./fix/confirm-modal";
 import { getFreshFixAction } from "./fix/fix-decisions";
+import { parsePluginData, type PersistedPluginData } from "./settings/plugin-data";
+import type { ScanSnapshot } from "./snapshot/scan-snapshot";
 
 export default class VaultInspectorPlugin extends Plugin {
 	settings: InspectorSettings = DEFAULT_SETTINGS;
+	lastSuccessfulSnapshot: ScanSnapshot | null = null;
+	private saveQueue: Promise<void> = Promise.resolve();
 	scanRunner = new ScanRunner(async (url) => {
 		const response = await requestUrl({ url, method: "HEAD" });
 		return response.status;
@@ -49,7 +53,8 @@ export default class VaultInspectorPlugin extends Plugin {
 	onunload() {}
 
 	async loadSettings() {
-		const loaded = (await this.loadData() as Partial<InspectorSettings> | null) ?? {};
+		const parsed = parsePluginData(await this.loadData());
+		const loaded = parsed.settings;
 		this.settings = {
 			...DEFAULT_SETTINGS,
 			...loaded,
@@ -62,6 +67,7 @@ export default class VaultInspectorPlugin extends Plugin {
 				...loaded.ignoredFoldersByScanner,
 			},
 		};
+		this.lastSuccessfulSnapshot = parsed.lastSuccessfulSnapshot;
 
 		if (migrateExcalidrawFrontmatterKey(this.settings, loaded)) {
 			await this.saveSettings();
@@ -69,7 +75,21 @@ export default class VaultInspectorPlugin extends Plugin {
 	}
 
 	async saveSettings() {
-		await this.saveData(this.settings);
+		await this.persistPluginData();
+	}
+
+	private persistPluginData(): Promise<void> {
+		const write = this.saveQueue.catch(() => undefined).then(async () => {
+			const data: PersistedPluginData = {
+				settings: structuredClone(this.settings),
+				...(this.lastSuccessfulSnapshot
+					? { lastSuccessfulSnapshot: structuredClone(this.lastSuccessfulSnapshot) }
+					: {}),
+			};
+			await this.saveData(data);
+		});
+		this.saveQueue = write;
+		return write;
 	}
 
 	private async runScan() {

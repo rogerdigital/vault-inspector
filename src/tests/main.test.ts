@@ -7,6 +7,7 @@ import { DEFAULT_SETTINGS } from "../settings/settings";
 import type { InspectorSettings } from "../settings/settings";
 import type { InspectorView } from "../report/InspectorView";
 import type { FixAction, Issue, ScanResult } from "../scanner/Issue";
+import { createScanSnapshot } from "../snapshot/scan-snapshot";
 
 const { executeFixActionMock, noticeMessages, showConfirmModalMock } = vi.hoisted(() => ({
 	executeFixActionMock: vi.fn(),
@@ -314,7 +315,105 @@ describe("VaultInspectorPlugin", () => {
 			"No items were fixed; skipped 1 changed issue",
 		);
 	});
+
+	it("saves settings in an envelope without an absent snapshot key", async () => {
+		const plugin = new VaultInspectorPlugin({} as any, {} as any);
+		plugin.settings = {
+			...structuredClone(DEFAULT_SETTINGS),
+			reportFolderPath: "Custom reports",
+		};
+		plugin.saveData = vi.fn(async () => {});
+
+		await plugin.saveSettings();
+
+		expect(plugin.saveData).toHaveBeenCalledWith({
+			settings: plugin.settings,
+		});
+		expect((plugin.saveData as ReturnType<typeof vi.fn>).mock.calls[0][0])
+			.not.toHaveProperty("lastSuccessfulSnapshot");
+	});
+
+	it("saves settings and a successful snapshot in one envelope", async () => {
+		const plugin = new VaultInspectorPlugin({} as any, {} as any);
+		plugin.settings = structuredClone(DEFAULT_SETTINGS);
+		plugin.lastSuccessfulSnapshot = makeSnapshot("first-profile");
+		plugin.saveData = vi.fn(async () => {});
+
+		await plugin.saveSettings();
+
+		expect(plugin.saveData).toHaveBeenCalledWith({
+			settings: plugin.settings,
+			lastSuccessfulSnapshot: plugin.lastSuccessfulSnapshot,
+		});
+	});
+
+	it("serializes saves and captures each payload when its write begins", async () => {
+		const plugin = new VaultInspectorPlugin({} as any, {} as any);
+		plugin.settings = {
+			...structuredClone(DEFAULT_SETTINGS),
+			reportFolderPath: "First reports",
+		};
+		plugin.lastSuccessfulSnapshot = makeSnapshot("first-profile");
+		let releaseFirst!: () => void;
+		const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+		let activeWrites = 0;
+		let maxActiveWrites = 0;
+		plugin.saveData = vi.fn(async () => {
+			activeWrites++;
+			maxActiveWrites = Math.max(maxActiveWrites, activeWrites);
+			if ((plugin.saveData as ReturnType<typeof vi.fn>).mock.calls.length === 1) {
+				await firstGate;
+			}
+			activeWrites--;
+		});
+
+		const firstSave = plugin.saveSettings();
+		await vi.waitFor(() => {
+			expect(plugin.saveData).toHaveBeenCalledTimes(1);
+		});
+		plugin.settings.reportFolderPath = "Latest reports";
+		plugin.lastSuccessfulSnapshot = makeSnapshot("latest-profile");
+		const secondSave = plugin.saveSettings();
+		await Promise.resolve();
+
+		expect(plugin.saveData).toHaveBeenCalledTimes(1);
+		releaseFirst();
+		await Promise.all([firstSave, secondSave]);
+
+		expect(maxActiveWrites).toBe(1);
+		expect(plugin.saveData).toHaveBeenCalledTimes(2);
+		expect((plugin.saveData as ReturnType<typeof vi.fn>).mock.calls[0][0])
+			.toMatchObject({
+				settings: { reportFolderPath: "First reports" },
+				lastSuccessfulSnapshot: { scanProfile: "first-profile" },
+			});
+		expect((plugin.saveData as ReturnType<typeof vi.fn>).mock.calls[1][0])
+			.toMatchObject({
+				settings: { reportFolderPath: "Latest reports" },
+				lastSuccessfulSnapshot: { scanProfile: "latest-profile" },
+			});
+	});
+
+	it("continues the save queue after a rejected write", async () => {
+		const plugin = new VaultInspectorPlugin({} as any, {} as any);
+		plugin.settings = structuredClone(DEFAULT_SETTINGS);
+		plugin.saveData = vi.fn()
+			.mockRejectedValueOnce(new Error("disk unavailable"))
+			.mockResolvedValueOnce(undefined);
+
+		await expect(plugin.saveSettings()).rejects.toThrow("disk unavailable");
+		plugin.settings.reportFolderPath = "Recovered reports";
+		await expect(plugin.saveSettings()).resolves.toBeUndefined();
+
+		expect(plugin.saveData).toHaveBeenCalledTimes(2);
+		expect((plugin.saveData as ReturnType<typeof vi.fn>).mock.calls[1][0])
+			.toMatchObject({ settings: { reportFolderPath: "Recovered reports" } });
+	});
 });
+
+function makeSnapshot(scanProfile: string) {
+	return createScanSnapshot(makeScanResult([]), scanProfile, "0.5.0", 100);
+}
 
 function makeDuplicateIssue(fingerprint: string, paths: string[]): Issue {
 	const sorted = paths.slice().sort();
@@ -449,5 +548,29 @@ describe("migrateExcalidrawFrontmatterKey", () => {
 		});
 		expect(changed).toBe(false);
 		expect(settings.ignoredLargeMarkdownFrontmatterKeys).toEqual(original);
+	});
+
+	it("migrates the legacy key inside an envelope without losing its snapshot", async () => {
+		const plugin = new VaultInspectorPlugin({} as any, {} as any);
+		const snapshot = makeSnapshot("migration-profile");
+		plugin.loadData = vi.fn(async () => ({
+			settings: {
+				ignoredLargeMarkdownFrontmatterKeys: ["excalidraw", "canvas"],
+			},
+			lastSuccessfulSnapshot: snapshot,
+		}));
+		plugin.saveData = vi.fn(async () => {});
+
+		await plugin.loadSettings();
+
+		expect(plugin.settings.ignoredLargeMarkdownFrontmatterKeys).toEqual([
+			"excalidraw-plugin",
+			"canvas",
+		]);
+		expect(plugin.lastSuccessfulSnapshot).toEqual(snapshot);
+		expect(plugin.saveData).toHaveBeenCalledWith({
+			settings: plugin.settings,
+			lastSuccessfulSnapshot: snapshot,
+		});
 	});
 });
