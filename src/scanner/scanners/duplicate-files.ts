@@ -1,5 +1,6 @@
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
+import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
 import { hashContent } from "../../utils/hash";
 import { getBasename, getExtension, isIgnoredPath } from "../../utils/paths";
@@ -74,6 +75,12 @@ export const duplicateFilesScanner = {
 					count: paths.length,
 					paths: paths.join(", "),
 				},
+				...describeFinding(
+					"confirmed",
+					`SHA-256 content hashes match across ${paths.length} files.`,
+					"Choose the file to keep before moving the remaining copies to trash.",
+					"The files are byte-identical, but their locations can still serve different workflows.",
+				),
 				fingerprint: generateFingerprint("duplicate-files", undefined, {
 					paths: sorted.join(","),
 				}),
@@ -107,6 +114,12 @@ export const duplicateFilesScanner = {
 					count: paths.length,
 					paths: paths.join(", "),
 				},
+				...describeFinding(
+					"candidate",
+					`${paths.length} files share the same filename.`,
+					"Compare their content and usage before deciding whether either file is redundant.",
+					"Matching names do not prove matching content.",
+				),
 				fingerprint: generateFingerprint("duplicate-files", undefined, {
 					nameCandidates: paths.slice().sort().join(","),
 				}),
@@ -130,6 +143,12 @@ export const duplicateFilesScanner = {
 					size,
 					paths: paths.join(", "),
 				},
+				...describeFinding(
+					"candidate",
+					`${paths.length} files share the same byte size.`,
+					"Compare their content and usage before deciding whether either file is redundant.",
+					"Matching sizes do not prove matching content.",
+				),
 				fingerprint: generateFingerprint("duplicate-files", undefined, {
 					sizeCandidates: paths.slice().sort().join(","),
 				}),

@@ -50,6 +50,16 @@ describe("duplicateFilesScanner", () => {
 		const hashIssues = issues.filter((i) => i.severity === "warning");
 		expect(hashIssues).toHaveLength(1);
 		expect(hashIssues[0].evidence.count).toBe(2);
+		expect(hashIssues[0]).toMatchObject({
+			classification: "confirmed",
+			explanation: {
+				why: "SHA-256 content hashes match across 2 files.",
+				caveat:
+					"The files are byte-identical, but their locations can still serve different workflows.",
+				nextStep:
+					"Choose the file to keep before moving the remaining copies to trash.",
+			},
+		});
 		expect(hashIssues[0].fixAction).toEqual({
 			kind: "trash-file",
 			label: "Delete duplicates",
@@ -117,6 +127,13 @@ describe("duplicateFilesScanner", () => {
 		);
 		expect(nameIssues).toHaveLength(1);
 		expect(nameIssues[0].severity).toBe("info");
+		expect(nameIssues[0]).toMatchObject({
+			classification: "candidate",
+			explanation: {
+				why: expect.stringContaining("share the same filename"),
+				caveat: "Matching names do not prove matching content.",
+			},
+		});
 		expect(nameIssues[0].fixAction).toBeUndefined();
 	});
 
@@ -139,6 +156,13 @@ describe("duplicateFilesScanner", () => {
 		);
 		expect(sizeIssues).toHaveLength(1);
 		expect(sizeIssues[0].severity).toBe("info");
+		expect(sizeIssues[0]).toMatchObject({
+			classification: "candidate",
+			explanation: {
+				why: expect.stringContaining("share the same byte size"),
+				caveat: "Matching sizes do not prove matching content.",
+			},
+		});
 		expect(sizeIssues[0].fixAction).toBeUndefined();
 	});
 
