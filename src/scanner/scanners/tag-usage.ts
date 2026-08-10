@@ -1,6 +1,7 @@
 import type { CachedMetadata } from "obsidian";
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
+import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
 import { isIgnoredPath } from "../../utils/paths";
 
@@ -11,7 +12,10 @@ export const tagUsageScanner = {
 		const issues: Issue[] = [];
 		const tagCounts = new Map<string, number>();
 		const tagPaths = new Map<string, Set<string>>();
-		const watchedSet = new Set(ctx.watchedTags);
+		const watchedTags = Array.from(
+			new Set(ctx.watchedTags.map(normalizeWatchedTag).filter(Boolean)),
+		);
+		const watchedSet = new Set(watchedTags);
 
 		// Collect tags from metadata (tags frontmatter field and inline tags)
 		for (const file of ctx.markdownFiles) {
@@ -43,6 +47,12 @@ export const tagUsageScanner = {
 				primaryPath: paths[0],
 				relatedPaths: paths.slice(1),
 				evidence: { tag, count, threshold: ctx.lowUsageTagThreshold },
+				...describeFinding(
+					"confirmed",
+					`Tag "${tag}" appears ${count} time${count === 1 ? "" : "s"}, below the configured threshold of ${ctx.lowUsageTagThreshold}.`,
+					"Review the tagged notes, then consolidate, keep, or ignore the tag.",
+					"Rare tags can be intentional and do not require cleanup.",
+				),
 				fingerprint: generateFingerprint("tag-usage", undefined, {
 					tag,
 					lowUsage: true,
@@ -51,7 +61,7 @@ export const tagUsageScanner = {
 		}
 
 		// Report watched tags that do not appear in the vault
-		for (const watchedTag of ctx.watchedTags) {
+		for (const watchedTag of watchedTags) {
 			const count = tagCounts.get(watchedTag) ?? 0;
 			if (count > 0) continue;
 			issues.push({
@@ -61,6 +71,12 @@ export const tagUsageScanner = {
 				message: `Watched tag "${watchedTag}" does not appear in the vault`,
 				relatedPaths: [],
 				evidence: { tag: watchedTag, count: 0, watched: true },
+				...describeFinding(
+					"confirmed",
+					`Tag "${watchedTag}" is in the configured watchlist but does not appear in the vault.`,
+					"Add the tag where expected or remove it from the watchlist.",
+					"The tag may have been intentionally retired or renamed.",
+				),
 				fingerprint: generateFingerprint("tag-usage", undefined, {
 					tag: watchedTag,
 					watched: true,
@@ -71,6 +87,10 @@ export const tagUsageScanner = {
 		return issues;
 	},
 };
+
+function normalizeWatchedTag(value: string): string {
+	return value.trim().replace(/^#/, "");
+}
 
 function collectTags(cache: CachedMetadata): string[] {
 	const tags: string[] = [];

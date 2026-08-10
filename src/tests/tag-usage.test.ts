@@ -42,6 +42,14 @@ describe("tagUsageScanner", () => {
 		expect(issues[0].title).toBe("Low-usage tag");
 		expect(issues[0].primaryPath).toBe("notes/a.md");
 		expect(issues[0].evidence.tag).toBe("rare");
+		expect(issues[0].classification).toBe("confirmed");
+		expect(issues[0].explanation?.why).toContain("appears 1 time");
+		expect(issues[0].explanation?.caveat).toBe(
+			"Rare tags can be intentional and do not require cleanup.",
+		);
+		expect(issues[0].explanation?.nextStep).toBe(
+			"Review the tagged notes, then consolidate, keep, or ignore the tag.",
+		);
 	});
 
 	it("includes related paths for low-usage tags used in multiple files", async () => {
@@ -64,6 +72,8 @@ describe("tagUsageScanner", () => {
 		expect(issues).toHaveLength(1);
 		expect(issues[0].primaryPath).toBe("notes/a.md");
 		expect(issues[0].relatedPaths).toEqual(["notes/b.md"]);
+		expect(issues[0].explanation?.why).toContain("appears 2 times");
+		expect(issues[0].explanation?.why).toContain("configured threshold of 3");
 	});
 
 	it("does not report tags at or above threshold", async () => {
@@ -103,6 +113,31 @@ describe("tagUsageScanner", () => {
 		expect(watched).toHaveLength(0);
 	});
 
+	it("treats a hash-prefixed watched tag as equivalent to an inline tag", async () => {
+		const file = { path: "notes/a.md" } as any;
+		const sharedContext = {
+			markdownFiles: [file],
+			allFiles: [file],
+			metadataCache: {
+				getFileCache: () => ({
+					tags: [{ tag: "#important" }],
+					frontmatter: {},
+				}),
+			} as any,
+		};
+		const normalizedIssues = await tagUsageScanner.scan(
+			makeCtx({ ...sharedContext, watchedTags: ["important"] }),
+		);
+		const hashPrefixedIssues = await tagUsageScanner.scan(
+			makeCtx({ ...sharedContext, watchedTags: ["#important"] }),
+		);
+
+		expect(hashPrefixedIssues).toEqual(normalizedIssues);
+		expect(
+			hashPrefixedIssues.filter((issue) => issue.title === "Missing watched tag"),
+		).toHaveLength(0);
+	});
+
 	it("reports watched tags that do not appear in the vault", async () => {
 		const ctx = makeCtx({
 			markdownFiles: [],
@@ -116,6 +151,28 @@ describe("tagUsageScanner", () => {
 		const watched = issues.filter((i) => i.title === "Missing watched tag");
 		expect(watched).toHaveLength(1);
 		expect(watched[0].evidence.count).toBe(0);
+		expect(watched[0].classification).toBe("confirmed");
+		expect(watched[0].explanation?.why).toContain("configured watchlist");
+		expect(watched[0].explanation?.caveat).toBe(
+			"The tag may have been intentionally retired or renamed.",
+		);
+		expect(watched[0].explanation?.nextStep).toBe(
+			"Add the tag where expected or remove it from the watchlist.",
+		);
+	});
+
+	it("deduplicates equivalent missing watched tags", async () => {
+		const ctx = makeCtx({
+			watchedTags: ["missing", "#missing"],
+			metadataCache: { getFileCache: () => null } as any,
+		});
+
+		const issues = await tagUsageScanner.scan(ctx);
+		const repeatedIssues = await tagUsageScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].evidence.tag).toBe("missing");
+		expect(issues[0].fingerprint).toBe(repeatedIssues[0].fingerprint);
 	});
 
 	it("reads tags from frontmatter tags field", async () => {
