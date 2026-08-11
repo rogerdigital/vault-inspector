@@ -142,11 +142,11 @@ describe("InspectorView report filter wiring", () => {
 		expect.soft(renderSummaryMock).toHaveBeenLastCalledWith(
 			container,
 			result,
-			expect.objectContaining({ issues: [duplicateWarning, duplicateInfo] }),
+			expect.objectContaining({ issues: [duplicateInfo, duplicateWarning] }),
 		);
 		expect.soft(renderIssueListMock).toHaveBeenLastCalledWith(
 			expect.any(FakeElement),
-			expect.objectContaining({ issues: [duplicateWarning, duplicateInfo] }),
+			expect.objectContaining({ issues: [duplicateInfo, duplicateWarning] }),
 		);
 	});
 
