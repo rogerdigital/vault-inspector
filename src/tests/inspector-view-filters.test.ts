@@ -718,6 +718,85 @@ describe("InspectorView report filter wiring", () => {
 		);
 	});
 
+	it("renders outcomes after the summary, before actions, and dismisses cloned state", () => {
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.result = result;
+		(view as any).model.selectionMode = true;
+		const affectedPaths = ["Notes/source.md"];
+		renderSummaryMock.mockImplementationOnce((summaryContainer: FakeElement) => {
+			summaryContainer.createDiv({ cls: "summary-marker" });
+		});
+
+		view.setOperationOutcomes([{
+			fingerprint: "broken-error",
+			outcome: "failed",
+			phase: "execution",
+			message: "Permission denied",
+			affectedPaths,
+		}]);
+		affectedPaths.push("mutated-after-set.md");
+
+		const summaryIndex = container.children.findIndex(
+			(child) => child.cls === "summary-marker",
+		);
+		const outcomesIndex = container.children.findIndex(
+			(child) => child.cls === "vi-outcomes",
+		);
+		const actionsIndex = container.children.findIndex(
+			(child) => child.cls === "vi-action-bar",
+		);
+		expect(summaryIndex).toBeGreaterThanOrEqual(0);
+		expect(outcomesIndex).toBeGreaterThan(summaryIndex);
+		expect(actionsIndex).toBeGreaterThan(outcomesIndex);
+		expect(findByText(container, "Notes/source.md")).toBeDefined();
+		expect(findByText(container, "mutated-after-set.md")).toBeUndefined();
+
+		const dismiss = findByClass(container, "vi-outcomes-dismiss")[0];
+		expect(dismiss).toMatchObject({ tag: "button", attr: { type: "button" } });
+		dismiss.click();
+
+		expect((view as any).model.operationOutcomes).toEqual([]);
+		expect(findByClass(container, "vi-outcomes")).toHaveLength(0);
+	});
+
+	it("reports an unexpected batch-fix callback rejection", async () => {
+		const fixableIssue: Issue = {
+			...makeIssue("broken-links", "warning", "fixable"),
+			fixAction: {
+				kind: "remove-link-text",
+				label: "Remove link",
+				description: "Remove a broken link",
+				targetPaths: ["Source.md"],
+				linkText: "Missing",
+			},
+		};
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.result = { ...result, issues: [fixableIssue] };
+		(view as any).model.selectionMode = true;
+		(view as any).model.selectedFingerprints = new Set([fixableIssue.fingerprint]);
+		view.setCallbacks({
+			onIgnoreAllIssues: vi.fn(),
+			onRestoreIssues: vi.fn(),
+			onFixAllIssues: vi.fn().mockRejectedValue(new Error("original")),
+			onRevealIssue: vi.fn(),
+			onRunScan: vi.fn(),
+			onIgnoreIssue: vi.fn(),
+			onExcludeFolder: vi.fn(),
+			onOpenScannerSettings: vi.fn(),
+		});
+
+		(view as any).render();
+		findByClass(container, "vi-action-delete")[0].click();
+
+		await vi.waitFor(() => expect(inspectorNoticeMessages).toEqual([
+			"Fixing issues failed: original",
+		]));
+	});
+
 	it("describes mixed fix actions without claiming every action trashes a file", () => {
 		const modifyIssue: Issue = {
 			...makeIssue("broken-links", "warning", "modify-link"),

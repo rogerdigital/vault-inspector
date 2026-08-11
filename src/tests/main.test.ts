@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import VaultInspectorPlugin, {
-	formatFixResultNotice,
-	migrateExcalidrawFrontmatterKey,
-} from "../main";
+import VaultInspectorPlugin, { migrateExcalidrawFrontmatterKey } from "../main";
 import { DEFAULT_SETTINGS } from "../settings/settings";
 import type { InspectorSettings } from "../settings/settings";
 import { InspectorView } from "../report/InspectorView";
@@ -149,6 +146,16 @@ describe("VaultInspectorPlugin", () => {
 		});
 	});
 
+	it("clears old operation outcomes when an ordinary queued scan starts", async () => {
+		const { plugin, run, view } = makeScanSubject(makeScanResult([]));
+
+		await (plugin as any).scanAndRender(view);
+
+		expect(run).toHaveBeenCalledOnce();
+		expect(view.setOperationOutcomes).toHaveBeenCalledOnce();
+		expect(view.setOperationOutcomes).toHaveBeenCalledWith([]);
+	});
+
 	it("compares against a compatible snapshot and replaces the accepted baseline", async () => {
 		const persisting = makeLifecycleIssue("persisting");
 		const resolved = makeLifecycleIssue("resolved");
@@ -232,6 +239,23 @@ describe("VaultInspectorPlugin", () => {
 		expect(saveData).not.toHaveBeenCalled();
 		expect(view.setResult).not.toHaveBeenCalled();
 		expect(noticeMessages).toContain("Vault Inspector scan failed: scanner exploded");
+	});
+
+	it("reports one scan notice and recovers the operation queue when scan startup throws", async () => {
+		const result = makeScanResult([makeLifecycleIssue("recovered")]);
+		const { plugin, run, view } = makeScanSubject(result);
+		view.setScanning.mockImplementationOnce(() => {
+			throw new Error("scan view unavailable");
+		});
+
+		await (plugin as any).scanAndRender(view);
+		await (plugin as any).scanAndRender(view);
+
+		expect(run).toHaveBeenCalledOnce();
+		expect(view.setResult).toHaveBeenCalledOnce();
+		expect(noticeMessages.filter(
+			(message) => message === "Vault Inspector scan failed: scan view unavailable",
+		)).toHaveLength(1);
 	});
 
 	it("keeps a completed result visible, rolls back a failed snapshot save, and recovers", async () => {
@@ -348,7 +372,7 @@ describe("VaultInspectorPlugin", () => {
 			.toBe(`threshold:${initialThreshold}`);
 	});
 
-	it("clones current settings for each fix-all preflight scan", async () => {
+	it("awaits one fixed profile and clones its settings for every fix scan", async () => {
 		const action: FixAction = {
 			kind: "remove-link-text",
 			label: "Remove link",
@@ -356,30 +380,45 @@ describe("VaultInspectorPlugin", () => {
 			targetPaths: ["Source.md"],
 			linkText: "Missing",
 		};
-		const issue = makeFixIssue("stale", action);
-		const { plugin, run, view } = makeScanSubject(makeScanResult([]));
+		const issue = makeFixIssue("current", action);
+		const finalResult = makeScanResult([]);
+		const { plugin, run, view } = makeScanSubject(finalResult);
 		const initialThreshold = plugin.settings.lowUsageTagThreshold;
-		let finishPreflight!: (result: ScanResult) => void;
-		const preflight = new Promise<ScanResult>((resolve) => { finishPreflight = resolve; });
+		let profileSettings: InspectorSettings | undefined;
+		let finishProfile!: () => void;
+		const profileGate = new Promise<void>((resolve) => { finishProfile = resolve; });
+		createScanProfileMock.mockImplementationOnce(async (settings: InspectorSettings) => {
+			profileSettings = settings;
+			await profileGate;
+			return "fixed-profile";
+		});
 		run.mockReset()
-			.mockImplementationOnce(() => preflight)
-			.mockResolvedValueOnce(makeScanResult([]));
+			.mockResolvedValueOnce(makeScanResult([issue]))
+			.mockResolvedValueOnce(finalResult);
 		showConfirmModalMock.mockResolvedValue([{ fingerprint: issue.fingerprint }]);
+		executeFixActionMock.mockResolvedValue(1);
 		let callbacks: any;
 		view.setCallbacks.mockImplementation((value) => { callbacks = value; });
 		(plugin as any).configureView(view);
 
 		const fixing = callbacks.onFixAllIssues([issue]);
-		await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
-		const preflightSettings = run.mock.calls[0][1] as InspectorSettings;
+		await vi.waitFor(() => expect(createScanProfileMock).toHaveBeenCalledOnce());
+		expect(run).not.toHaveBeenCalled();
 		plugin.settings.lowUsageTagThreshold = initialThreshold + 10;
-		const remainedStable = preflightSettings.lowUsageTagThreshold === initialThreshold;
-		const wasCloned = preflightSettings !== plugin.settings;
-		finishPreflight(makeScanResult([]));
+		finishProfile();
 		await fixing;
 
-		expect(wasCloned).toBe(true);
-		expect(remainedStable).toBe(true);
+		expect(profileSettings).not.toBe(plugin.settings);
+		expect(profileSettings?.lowUsageTagThreshold).toBe(initialThreshold);
+		expect(run).toHaveBeenCalledTimes(2);
+		const scanSettings = run.mock.calls.map((call) => call[1] as InspectorSettings);
+		expect(scanSettings[0]).not.toBe(profileSettings);
+		expect(scanSettings[1]).not.toBe(profileSettings);
+		expect(scanSettings[0]).not.toBe(scanSettings[1]);
+		expect(scanSettings.map((settings) => settings.lowUsageTagThreshold))
+			.toEqual([initialThreshold, initialThreshold]);
+		expect(view.setResult).toHaveBeenCalledWith(finalResult, expect.any(Object));
+		expect(plugin.lastSuccessfulSnapshot?.scanProfile).toBe("fixed-profile");
 	});
 
 	it.each([
@@ -567,6 +606,108 @@ describe("VaultInspectorPlugin", () => {
 			affectedPaths: ["target.md"],
 		}]);
 		expect(noticeMessages.some((message) => message.includes("Ignored"))).toBe(false);
+	});
+
+	it("bulk ignores each unique fingerprint, persists once, and rescans once", async () => {
+		const { plugin, callbacks, saveSettings, scanAndRender, view } = makeContextualSubject();
+		plugin.settings.ignoredIssueFingerprints = ["existing"];
+		const first = {
+			...makeLifecycleIssue("first"),
+			primaryPath: "notes/first.md",
+			relatedPaths: ["notes/related.md", "notes/first.md"],
+		};
+		const second = makeLifecycleIssue("second");
+
+		await callbacks.onIgnoreAllIssues([first, second, first]);
+
+		expect(plugin.settings.ignoredIssueFingerprints).toEqual([
+			"existing",
+			"first",
+			"second",
+		]);
+		expect(saveSettings).toHaveBeenCalledOnce();
+		expect(scanAndRender).toHaveBeenCalledOnce();
+		expect(view.setOperationOutcomes).toHaveBeenCalledWith([
+			{
+				fingerprint: "first",
+				outcome: "ignored",
+				message: expect.stringContaining("Ignored"),
+				affectedPaths: ["notes/first.md", "notes/related.md"],
+			},
+			{
+				fingerprint: "second",
+				outcome: "ignored",
+				message: expect.stringContaining("Ignored"),
+				affectedPaths: ["second.md"],
+			},
+		]);
+		expect(noticeMessages.some((message) => message.startsWith("Ignored ")))
+			.toBe(false);
+	});
+
+	it("reports only per-item failures when a bulk ignore cannot be saved", async () => {
+		const { plugin, callbacks, saveSettings, scanAndRender, view } = makeContextualSubject();
+		plugin.settings.ignoredIssueFingerprints = ["existing"];
+		saveSettings.mockRejectedValueOnce(new Error("read only"));
+		const first = makeLifecycleIssue("first");
+		const second = makeLifecycleIssue("second");
+
+		await callbacks.onIgnoreAllIssues([first, second]);
+
+		expect(plugin.settings.ignoredIssueFingerprints).toEqual(["existing"]);
+		expect(scanAndRender).not.toHaveBeenCalled();
+		expect(view.setOperationOutcomes).toHaveBeenCalledWith([
+			expect.objectContaining({
+				fingerprint: "first",
+				outcome: "failed",
+				message: expect.stringContaining("read only"),
+			}),
+			expect.objectContaining({
+				fingerprint: "second",
+				outcome: "failed",
+				message: expect.stringContaining("read only"),
+			}),
+		]);
+	});
+
+	it("bulk restores each unique fingerprint and rescans once", async () => {
+		const { plugin, callbacks, saveSettings, scanAndRender, view } = makeContextualSubject();
+		plugin.settings.ignoredIssueFingerprints = ["first", "second", "keep"];
+		const first = makeLifecycleIssue("first");
+		const second = makeLifecycleIssue("second");
+
+		await callbacks.onRestoreIssues([first, second, first]);
+
+		expect(plugin.settings.ignoredIssueFingerprints).toEqual(["keep"]);
+		expect(saveSettings).toHaveBeenCalledOnce();
+		expect(scanAndRender).toHaveBeenCalledOnce();
+		expect(view.setOperationOutcomes).toHaveBeenCalledWith([
+			expect.objectContaining({ fingerprint: "first", outcome: "restored" }),
+			expect.objectContaining({ fingerprint: "second", outcome: "restored" }),
+		]);
+		expect(noticeMessages.some((message) => message.startsWith("Restored ")))
+			.toBe(false);
+	});
+
+	it("reports only per-item failures when a bulk restore cannot be saved", async () => {
+		const { plugin, callbacks, saveSettings, scanAndRender, view } = makeContextualSubject();
+		plugin.settings.ignoredIssueFingerprints = ["first", "second", "keep"];
+		saveSettings.mockRejectedValueOnce(new Error("disk unavailable"));
+		const first = makeLifecycleIssue("first");
+		const second = makeLifecycleIssue("second");
+
+		await callbacks.onRestoreIssues([first, second]);
+
+		expect(plugin.settings.ignoredIssueFingerprints).toEqual([
+			"first",
+			"second",
+			"keep",
+		]);
+		expect(scanAndRender).not.toHaveBeenCalled();
+		expect(view.setOperationOutcomes).toHaveBeenCalledWith([
+			expect.objectContaining({ fingerprint: "first", outcome: "failed" }),
+			expect.objectContaining({ fingerprint: "second", outcome: "failed" }),
+		]);
 	});
 
 	it("serializes contextual dispositions so a failed rollback cannot erase a later success", async () => {
@@ -758,61 +899,7 @@ describe("VaultInspectorPlugin", () => {
 		]);
 	});
 
-	it("rescans before fixing and executes only issues whose fingerprint and action still match", async () => {
-		const exactAction: FixAction = {
-			kind: "remove-link-text",
-			label: "Remove link",
-			description: "Remove missing link",
-			targetPaths: ["Source.md"],
-			linkText: "Missing",
-		};
-		const changedAction: FixAction = {
-			...exactAction,
-			linkText: "Different",
-		};
-		const staleIssues = [
-			makeFixIssue("still-current", exactAction),
-			makeFixIssue("changed", exactAction),
-			makeFixIssue("gone", exactAction),
-		];
-		const freshResult = makeScanResult([
-			makeFixIssue("still-current", { ...exactAction, targetPaths: [...exactAction.targetPaths] }),
-			makeFixIssue("changed", changedAction),
-		]);
-	const run = vi.fn().mockResolvedValue(freshResult);
-	const plugin = new VaultInspectorPlugin({} as any, {} as any);
-	(plugin as any).app = {};
-	(plugin as any).manifest = { version: "0.5.0" };
-	(plugin as any).scanRunner = { run };
-	showConfirmModalMock.mockResolvedValue(
-		staleIssues.map((issue) => ({ fingerprint: issue.fingerprint })),
-	);
-	executeFixActionMock.mockResolvedValue(1);
-
-	let callbacks: any;
-	const view = {
-		setCallbacks: vi.fn((value) => { callbacks = value; }),
-		setEnableFixActions: vi.fn(),
-		setScanning: vi.fn(),
-		setScanProgress: vi.fn(),
-		setResult: vi.fn(),
-	};
-	(plugin as any).configureView(view);
-
-	await callbacks.onFixAllIssues(staleIssues);
-
-	expect(run).toHaveBeenCalledTimes(4);
-	expect(run.mock.invocationCallOrder[0]).toBeLessThan(
-		executeFixActionMock.mock.invocationCallOrder[0],
-	);
-	expect(executeFixActionMock).toHaveBeenCalledTimes(1);
-	expect(executeFixActionMock).toHaveBeenCalledWith(
-		(plugin as any).app,
-		exactAction,
-	);
-});
-
-	it("revalidates each action after earlier fixes may have changed later issues", async () => {
+	it("continues after execution errors and accepts the only final verification result", async () => {
 		const firstAction: FixAction = {
 			kind: "remove-link-text",
 			label: "Remove first link",
@@ -829,84 +916,326 @@ describe("VaultInspectorPlugin", () => {
 		};
 		const firstIssue = makeFixIssue("first", firstAction);
 		const secondIssue = makeFixIssue("second", secondAction);
-	const run = vi.fn()
-		.mockResolvedValueOnce(makeScanResult([firstIssue, secondIssue]))
-		.mockResolvedValueOnce(makeScanResult([firstIssue]))
-		.mockResolvedValueOnce(makeScanResult([]));
-	const plugin = new VaultInspectorPlugin({} as any, {} as any);
-	(plugin as any).app = {};
-	(plugin as any).manifest = { version: "0.5.0" };
-	(plugin as any).scanRunner = { run };
-	showConfirmModalMock.mockResolvedValue([
-		{ fingerprint: firstIssue.fingerprint },
-		{ fingerprint: secondIssue.fingerprint },
-	]);
-	executeFixActionMock.mockResolvedValue(1);
-
+		const finalResult = makeScanResult([]);
+		const { plugin, run, view } = makeScanSubject(finalResult);
+		run.mockReset()
+			.mockResolvedValueOnce(makeScanResult([firstIssue, secondIssue]))
+			.mockResolvedValueOnce(makeScanResult([secondIssue]))
+			.mockResolvedValueOnce(finalResult);
+		showConfirmModalMock.mockResolvedValue([
+			{ fingerprint: firstIssue.fingerprint },
+			{ fingerprint: secondIssue.fingerprint },
+		]);
+		executeFixActionMock
+			.mockRejectedValueOnce(new Error("write denied"))
+			.mockResolvedValueOnce(2);
 		let callbacks: any;
-		const view = {
-			setCallbacks: vi.fn((value) => { callbacks = value; }),
-			setEnableFixActions: vi.fn(),
-			setScanning: vi.fn(),
-			setScanProgress: vi.fn(),
-			setResult: vi.fn(),
-		};
+		view.setCallbacks.mockImplementation((value) => { callbacks = value; });
 		(plugin as any).configureView(view);
 
 		await callbacks.onFixAllIssues([firstIssue, secondIssue]);
 
 		expect(run).toHaveBeenCalledTimes(3);
-		expect(executeFixActionMock).toHaveBeenCalledTimes(1);
-		expect(executeFixActionMock).toHaveBeenCalledWith(
-			(plugin as any).app,
-			firstAction,
-		);
+		expect(executeFixActionMock).toHaveBeenCalledTimes(2);
+		expect(view.setResult).toHaveBeenCalledOnce();
+		expect(view.setResult.mock.calls[0][0]).toBe(finalResult);
+		expect(view.setOperationOutcomes).toHaveBeenCalledWith([
+			{
+				fingerprint: "first",
+				outcome: "failed",
+				phase: "execution",
+				message: "write denied",
+				affectedPaths: ["Shared.md"],
+			},
+			{
+				fingerprint: "second",
+				outcome: "fixed",
+				message: "Verified after 2 change(s).",
+				affectedPaths: ["Shared.md"],
+			},
+		]);
+		expect(noticeMessages).not.toEqual(expect.arrayContaining([
+			expect.stringMatching(/^Fixed|^No items were fixed/),
+		]));
 	});
 
-	it("adds executor return values and does not report zero-result actions as successes", async () => {
-		const firstAction: FixAction = {
+	it("publishes exact fix outcomes before rethrowing an acceptance failure", async () => {
+		const fixAction: FixAction = {
 			kind: "remove-link-text",
 			label: "Remove link",
 			description: "Remove missing link",
 			targetPaths: ["Source.md"],
 			linkText: "Missing",
 		};
-		const secondAction: FixAction = {
-			kind: "trash-file",
-			label: "Delete duplicates",
-			description: "Move duplicate files to trash",
-			targetPaths: ["one.png", "two.png", "three.png"],
-		};
-		const issues = [
-			makeFixIssue("link", firstAction),
-			makeFixIssue("duplicates", secondAction),
-		];
-	const run = vi.fn().mockResolvedValue(makeScanResult(issues));
-	const plugin = new VaultInspectorPlugin({} as any, {} as any);
-	(plugin as any).app = {};
-	(plugin as any).manifest = { version: "0.5.0" };
-	(plugin as any).scanRunner = { run };
-	showConfirmModalMock.mockResolvedValue(
-		issues.map((issue) => ({ fingerprint: issue.fingerprint })),
-	);
-	executeFixActionMock
-		.mockResolvedValueOnce(0)
-		.mockResolvedValueOnce(3);
-
+		const issue = makeFixIssue("link", fixAction);
+		const finalResult = makeScanResult([]);
+		const { plugin, run, view } = makeScanSubject(finalResult);
+		run.mockReset()
+			.mockResolvedValueOnce(makeScanResult([issue]))
+			.mockResolvedValueOnce(finalResult);
+		showConfirmModalMock.mockResolvedValue([{ fingerprint: "link" }]);
+		executeFixActionMock.mockResolvedValueOnce(1);
+		const original = new Error("original acceptance failure");
+		view.setResult.mockImplementationOnce(() => { throw original; });
 		let callbacks: any;
-		const view = {
-			setCallbacks: vi.fn((value) => { callbacks = value; }),
-			setEnableFixActions: vi.fn(),
-			setScanning: vi.fn(),
-			setScanProgress: vi.fn(),
-			setResult: vi.fn(),
-		};
+		view.setCallbacks.mockImplementation((value) => { callbacks = value; });
 		(plugin as any).configureView(view);
 
-		await callbacks.onFixAllIssues(issues);
+		await expect(callbacks.onFixAllIssues([issue])).rejects.toBe(original);
 
-		expect(noticeMessages).toContain("Fixed 3 items");
-		expect(noticeMessages).not.toContain("Fixed 2 issue(s)");
+		expect(view.setOperationOutcomes).toHaveBeenCalledWith([{
+			fingerprint: "link",
+			outcome: "fixed",
+			message: "Verified after 1 change(s).",
+			affectedPaths: ["Source.md"],
+		}]);
+	});
+
+	it("preserves the acceptance error when outcome publication also throws", async () => {
+		const fixAction: FixAction = {
+			kind: "remove-link-text",
+			label: "Remove link",
+			description: "Remove missing link",
+			targetPaths: ["Source.md"],
+			linkText: "Missing",
+		};
+		const issue = makeFixIssue("link", fixAction);
+		const finalResult = makeScanResult([]);
+		const { plugin, run, view } = makeScanSubject(finalResult);
+		run.mockReset()
+			.mockResolvedValueOnce(makeScanResult([issue]))
+			.mockResolvedValueOnce(finalResult);
+		showConfirmModalMock.mockResolvedValue([{ fingerprint: "link" }]);
+		executeFixActionMock.mockResolvedValueOnce(1);
+		const original = new Error("original acceptance failure");
+		view.setResult.mockImplementationOnce(() => { throw original; });
+		view.setOperationOutcomes.mockImplementationOnce(() => {
+			throw new Error("outcome publication failure");
+		});
+		let callbacks: any;
+		view.setCallbacks.mockImplementation((value) => { callbacks = value; });
+		(plugin as any).configureView(view);
+
+		await expect(callbacks.onFixAllIssues([issue])).rejects.toBe(original);
+
+		expect(view.setOperationOutcomes).toHaveBeenCalledOnce();
+	});
+
+	it("propagates an outcome publication failure after successful acceptance", async () => {
+		const fixAction: FixAction = {
+			kind: "remove-link-text",
+			label: "Remove link",
+			description: "Remove missing link",
+			targetPaths: ["Source.md"],
+			linkText: "Missing",
+		};
+		const issue = makeFixIssue("link", fixAction);
+		const finalResult = makeScanResult([]);
+		const { plugin, run, view } = makeScanSubject(finalResult);
+		run.mockReset()
+			.mockResolvedValueOnce(makeScanResult([issue]))
+			.mockResolvedValueOnce(finalResult);
+		showConfirmModalMock.mockResolvedValue([{ fingerprint: "link" }]);
+		executeFixActionMock.mockResolvedValueOnce(1);
+		const publicationError = new Error("outcome publication failure");
+		view.setOperationOutcomes.mockImplementationOnce(() => {
+			throw publicationError;
+		});
+		let callbacks: any;
+		view.setCallbacks.mockImplementation((value) => { callbacks = value; });
+		(plugin as any).configureView(view);
+
+		await expect(callbacks.onFixAllIssues([issue])).rejects.toBe(publicationError);
+
+		expect(view.setResult.mock.calls[0][0]).toBe(finalResult);
+		expect(plugin.lastSuccessfulSnapshot?.issues).toEqual([]);
+	});
+
+	it("reports a one-shot fix preflight startup failure as a skipped outcome", async () => {
+		const fixAction: FixAction = {
+			kind: "remove-link-text",
+			label: "Remove link",
+			description: "Remove missing link",
+			targetPaths: ["Source.md"],
+			linkText: "Missing",
+		};
+		const issue = makeFixIssue("link", fixAction);
+		const finalResult = makeScanResult([]);
+		const { plugin, run, view } = makeScanSubject(finalResult);
+		view.setScanning.mockImplementationOnce(() => {
+			throw new Error("preflight view unavailable");
+		});
+		showConfirmModalMock.mockResolvedValue([{ fingerprint: "link" }]);
+		let callbacks: any;
+		view.setCallbacks.mockImplementation((value) => { callbacks = value; });
+		(plugin as any).configureView(view);
+
+		await callbacks.onFixAllIssues([issue]);
+
+		expect(run).toHaveBeenCalledOnce();
+		expect(view.setResult.mock.calls[0][0]).toBe(finalResult);
+		expect(view.setOperationOutcomes).toHaveBeenCalledWith([{
+			fingerprint: "link",
+			outcome: "skipped",
+			phase: "preflight",
+			message: "The preflight scan did not complete.",
+			affectedPaths: ["Source.md"],
+		}]);
+		expect(noticeMessages).toContain(
+			"Vault Inspector scan failed: preflight view unavailable",
+		);
+	});
+
+	it("keeps a skipped preflight outcome when every fix scan startup fails", async () => {
+		const fixAction: FixAction = {
+			kind: "remove-link-text",
+			label: "Remove link",
+			description: "Remove missing link",
+			targetPaths: ["Source.md"],
+			linkText: "Missing",
+		};
+		const issue = makeFixIssue("link", fixAction);
+		const { plugin, run, view } = makeScanSubject(makeScanResult([]));
+		view.setScanning.mockImplementation((scanning: boolean) => {
+			if (scanning) throw new Error("scan view unavailable");
+		});
+		showConfirmModalMock.mockResolvedValue([{ fingerprint: "link" }]);
+		let callbacks: any;
+		view.setCallbacks.mockImplementation((value) => { callbacks = value; });
+		(plugin as any).configureView(view);
+
+		await callbacks.onFixAllIssues([issue]);
+
+		expect(run).not.toHaveBeenCalled();
+		expect(view.setResult).not.toHaveBeenCalled();
+		expect(view.setOperationOutcomes).toHaveBeenCalledWith([{
+			fingerprint: "link",
+			outcome: "skipped",
+			phase: "preflight",
+			message: "The preflight scan did not complete.",
+			affectedPaths: ["Source.md"],
+		}]);
+		expect(noticeMessages.filter(
+			(message) => message === "Vault Inspector scan failed: scan view unavailable",
+		)).toHaveLength(2);
+	});
+
+	it("reports a pending fix as failed when final verification startup throws", async () => {
+		const fixAction: FixAction = {
+			kind: "remove-link-text",
+			label: "Remove link",
+			description: "Remove missing link",
+			targetPaths: ["Source.md"],
+			linkText: "Missing",
+		};
+		const issue = makeFixIssue("link", fixAction);
+		const { plugin, run, view } = makeScanSubject(makeScanResult([]));
+		let scanStarts = 0;
+		view.setScanning.mockImplementation((scanning: boolean) => {
+			if (scanning && ++scanStarts === 2) {
+				throw new Error("verification view unavailable");
+			}
+		});
+		run.mockReset().mockResolvedValueOnce(makeScanResult([issue]));
+		showConfirmModalMock.mockResolvedValue([{ fingerprint: "link" }]);
+		executeFixActionMock.mockResolvedValueOnce(1);
+		let callbacks: any;
+		view.setCallbacks.mockImplementation((value) => { callbacks = value; });
+		(plugin as any).configureView(view);
+
+		await callbacks.onFixAllIssues([issue]);
+
+		expect(run).toHaveBeenCalledOnce();
+		expect(view.setResult).not.toHaveBeenCalled();
+		expect(view.setOperationOutcomes).toHaveBeenCalledWith([{
+			fingerprint: "link",
+			outcome: "failed",
+			phase: "verification",
+			message: "The final verification scan did not complete.",
+			affectedPaths: ["Source.md"],
+		}]);
+		expect(noticeMessages).toContain(
+			"Vault Inspector scan failed: verification view unavailable",
+		);
+	});
+
+	it("does not accept a null verification result and reports verification failure", async () => {
+		const fixAction: FixAction = {
+			kind: "remove-link-text",
+			label: "Remove link",
+			description: "Remove missing link",
+			targetPaths: ["Source.md"],
+			linkText: "Missing",
+		};
+		const issue = makeFixIssue("link", fixAction);
+		const { plugin, run, view } = makeScanSubject(makeScanResult([]));
+		run.mockReset()
+			.mockResolvedValueOnce(makeScanResult([issue]))
+			.mockRejectedValueOnce(new Error("verification unavailable"));
+		showConfirmModalMock.mockResolvedValue([{ fingerprint: "link" }]);
+		executeFixActionMock.mockResolvedValueOnce(1);
+		let callbacks: any;
+		view.setCallbacks.mockImplementation((value) => { callbacks = value; });
+		(plugin as any).configureView(view);
+
+		await callbacks.onFixAllIssues([issue]);
+
+		expect(run).toHaveBeenCalledTimes(2);
+		expect(view.setResult).not.toHaveBeenCalled();
+		expect(view.setOperationOutcomes).toHaveBeenCalledWith([{
+			fingerprint: "link",
+			outcome: "failed",
+			phase: "verification",
+			message: "The final verification scan did not complete.",
+			affectedPaths: ["Source.md"],
+		}]);
+		expect(noticeMessages).toContain(
+			"Vault Inspector scan failed: verification unavailable",
+		);
+	});
+
+	it("keeps a manual scan queued until fix preflight and verification finish", async () => {
+		const fixAction: FixAction = {
+			kind: "remove-link-text",
+			label: "Remove link",
+			description: "Remove missing link",
+			targetPaths: ["Source.md"],
+			linkText: "Missing",
+		};
+		const issue = makeFixIssue("link", fixAction);
+		const finalResult = makeScanResult([]);
+		const { plugin, run, view } = makeScanSubject(finalResult);
+		let finishPreflight!: (result: ScanResult) => void;
+		const preflight = new Promise<ScanResult>((resolve) => {
+			finishPreflight = resolve;
+		});
+		run.mockReset()
+			.mockImplementationOnce(() => preflight)
+			.mockResolvedValueOnce(finalResult)
+			.mockResolvedValueOnce(finalResult);
+		showConfirmModalMock.mockResolvedValue([{ fingerprint: "link" }]);
+		executeFixActionMock.mockResolvedValue(1);
+		let callbacks: any;
+		view.setCallbacks.mockImplementation((value) => { callbacks = value; });
+		(plugin as any).configureView(view);
+
+		const fixing = callbacks.onFixAllIssues([issue]);
+		await vi.waitFor(() => expect(run).toHaveBeenCalledOnce());
+		const manualScan = (plugin as any).scanAndRender(view);
+		await flushMicrotasks();
+		expect(run).toHaveBeenCalledOnce();
+
+		finishPreflight(makeScanResult([issue]));
+		await Promise.all([fixing, manualScan]);
+
+		expect(run).toHaveBeenCalledTimes(3);
+		expect(view.setResult.mock.calls[0][0]).toBe(finalResult);
+		expect(view.setOperationOutcomes.mock.calls).toEqual([
+			[expect.arrayContaining([
+				expect.objectContaining({ fingerprint: "link", outcome: "fixed" }),
+			])],
+			[[]],
+		]);
 	});
 
 	it("executes a fresh duplicate action using the selected keep path", async () => {
@@ -914,10 +1243,11 @@ describe("VaultInspectorPlugin", () => {
 			"duplicates",
 			["a.md", "b.md", "c.md"],
 		);
-		const run = vi.fn().mockResolvedValue(makeScanResult([duplicate]));
-		const plugin = new VaultInspectorPlugin({} as any, {} as any);
-		(plugin as any).app = {};
-		(plugin as any).scanRunner = { run };
+		const finalResult = makeScanResult([]);
+		const { plugin, run, view } = makeScanSubject(finalResult);
+		run.mockReset()
+			.mockResolvedValueOnce(makeScanResult([duplicate]))
+			.mockResolvedValueOnce(finalResult);
 		plugin.settings = {
 			...structuredClone(DEFAULT_SETTINGS),
 			duplicateKeepMode: "always-ask",
@@ -927,7 +1257,9 @@ describe("VaultInspectorPlugin", () => {
 		]);
 		executeFixActionMock.mockResolvedValue(2);
 
-		const callbacks = configureCallbacks(plugin);
+		let callbacks: any;
+		view.setCallbacks.mockImplementation((value) => { callbacks = value; });
+		(plugin as any).configureView(view);
 		await callbacks.onFixAllIssues([duplicate]);
 
 		expect(showConfirmModalMock).toHaveBeenCalledWith(
@@ -941,10 +1273,12 @@ describe("VaultInspectorPlugin", () => {
 				targetPaths: ["a.md", "b.md"],
 			}),
 		);
-		expect(noticeMessages).toContain("Fixed 2 items");
+		expect(view.setOperationOutcomes).toHaveBeenCalledWith([
+			expect.objectContaining({ fingerprint: "duplicates", outcome: "fixed" }),
+		]);
 	});
 
-	it("skips a duplicate group whose candidates changed after confirmation", async () => {
+	it("reports a changed duplicate group as a preflight outcome", async () => {
 		const stale = makeDuplicateIssue(
 			"duplicates",
 			["a.md", "b.md", "c.md"],
@@ -953,21 +1287,28 @@ describe("VaultInspectorPlugin", () => {
 			"duplicates",
 			["a.md", "b.md"],
 		);
-		const run = vi.fn().mockResolvedValue(makeScanResult([changed]));
-		const plugin = new VaultInspectorPlugin({} as any, {} as any);
-		(plugin as any).app = {};
-		(plugin as any).scanRunner = { run };
+		const finalResult = makeScanResult([changed]);
+		const { plugin, run, view } = makeScanSubject(finalResult);
+		run.mockReset()
+			.mockResolvedValueOnce(makeScanResult([changed]))
+			.mockResolvedValueOnce(finalResult);
 		showConfirmModalMock.mockResolvedValue([
 			{ fingerprint: "duplicates", keepPath: "b.md" },
 		]);
 
-		const callbacks = configureCallbacks(plugin);
+		let callbacks: any;
+		view.setCallbacks.mockImplementation((value) => { callbacks = value; });
+		(plugin as any).configureView(view);
 		await callbacks.onFixAllIssues([stale]);
 
 		expect(executeFixActionMock).not.toHaveBeenCalled();
-		expect(noticeMessages).toContain(
-			"No items were fixed; skipped 1 changed issue",
-		);
+		expect(view.setOperationOutcomes).toHaveBeenCalledWith([{
+			fingerprint: "duplicates",
+			outcome: "skipped",
+			phase: "preflight",
+			message: "The finding or fix evidence changed before execution.",
+			affectedPaths: ["b.md", "c.md"],
+		}]);
 	});
 
 	it("saves settings in an envelope without an absent snapshot key", async () => {
@@ -1121,6 +1462,7 @@ function makeScanSubject(result: ScanResult) {
 	const view = {
 		setCallbacks: vi.fn(),
 		setEnableFixActions: vi.fn(),
+		setOperationOutcomes: vi.fn(),
 		setScanning: vi.fn(),
 		setScanProgress: vi.fn(),
 		setResult: vi.fn(),
@@ -1212,44 +1554,6 @@ function makeDuplicateIssue(fingerprint: string, paths: string[]): Issue {
 		},
 	};
 }
-
-function configureCallbacks(plugin: VaultInspectorPlugin) {
-	(plugin as any).manifest ??= { version: "0.5.0" };
-	let callbacks: any;
-	const view = {
-		setCallbacks: vi.fn((value) => { callbacks = value; }),
-		setEnableFixActions: vi.fn(),
-		setScanning: vi.fn(),
-		setScanProgress: vi.fn(),
-		setResult: vi.fn(),
-	};
-	(plugin as any).configureView(view);
-	return callbacks;
-}
-
-describe("formatFixResultNotice", () => {
-	it("reports no items fixed when nothing was done", () => {
-		expect(formatFixResultNotice(0, 0)).toBe("No items were fixed");
-	});
-
-	it("pluralizes fixed counts", () => {
-		expect(formatFixResultNotice(2, 0)).toBe("Fixed 2 items");
-	});
-
-	it("uses singular form for a single item", () => {
-		expect(formatFixResultNotice(1, 0)).toBe("Fixed 1 item");
-	});
-
-	it("reports skipped items alongside no fixes", () => {
-		expect(formatFixResultNotice(0, 1))
-			.toBe("No items were fixed; skipped 1 changed issue");
-	});
-
-	it("pluralizes skipped issues", () => {
-		expect(formatFixResultNotice(1, 2))
-			.toBe("Fixed 1 item; skipped 2 changed issues");
-	});
-});
 
 describe("migrateExcalidrawFrontmatterKey", () => {
 	function makeSettings(keys: string[]): InspectorSettings {

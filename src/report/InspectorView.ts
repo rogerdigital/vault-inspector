@@ -9,6 +9,7 @@ import {
 import { renderSummary } from "./render-summary";
 import { renderIssueList } from "./render-issues";
 import { renderResolvedChanges } from "./render-changes";
+import { renderOperationOutcomes } from "./render-outcomes";
 import { setIcon } from "obsidian";
 import { formatDuration } from "../utils/format";
 import { describeFixActions } from "../fix/confirm-modal";
@@ -252,6 +253,11 @@ export class InspectorView extends ItemView {
 				this.render();
 			},
 		});
+		renderOperationOutcomes(
+			container,
+			this.model.operationOutcomes,
+			() => this.setOperationOutcomes([]),
+		);
 
 		if (this.model.selectionMode) {
 			this.renderMainActionBar(container);
@@ -480,7 +486,11 @@ export class InspectorView extends ItemView {
 				describeFixActions(selectedFixable.map((issue) => issue.fixAction!)),
 			);
 			fixBtn.addEventListener("click", () => {
-				if (this.onFixAllIssues) void this.onFixAllIssues(selectedFixable);
+				void this.handleBatchAction(
+					this.onFixAllIssues,
+					selectedFixable,
+					"Fixing issues",
+				);
 			});
 		}
 
@@ -490,7 +500,11 @@ export class InspectorView extends ItemView {
 			ignoreBtn.createSpan({ text: `(${selectedIssues.length})` });
 			setTooltip(ignoreBtn, "Hide selected issues from future scans");
 			ignoreBtn.addEventListener("click", () => {
-				if (this.onIgnoreAllIssues) void this.onIgnoreAllIssues(selectedIssues);
+				void this.handleBatchAction(
+					this.onIgnoreAllIssues,
+					selectedIssues,
+					"Ignoring issues",
+				);
 			});
 		}
 
@@ -613,7 +627,11 @@ export class InspectorView extends ItemView {
 			restoreBtn.createSpan({ text: `(${selectedIssues.length})` });
 			setTooltip(restoreBtn, "Stop ignoring selected issues");
 			restoreBtn.addEventListener("click", () => {
-				if (this.onRestoreIssues) void this.onRestoreIssues(selectedIssues);
+				void this.handleBatchAction(
+					this.onRestoreIssues,
+					selectedIssues,
+					"Restoring issues",
+				);
 			});
 		}
 
@@ -677,6 +695,20 @@ export class InspectorView extends ItemView {
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			new Notice(`Ignoring issue failed: ${message}`);
+		}
+	}
+
+	private async handleBatchAction(
+		callback: ((issues: Issue[]) => void | Promise<void>) | null,
+		issues: Issue[],
+		label: string,
+	): Promise<void> {
+		if (!callback) return;
+		try {
+			await callback(issues);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			new Notice(`${label} failed: ${message}`);
 		}
 	}
 
