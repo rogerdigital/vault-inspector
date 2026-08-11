@@ -1,6 +1,8 @@
 import type { Issue, ScannerId } from "../scanner/Issue";
+import type { CurrentFindingStatus } from "../scanner/result-diff";
 import { SCANNER_LABELS } from "../scanner/Issue";
 import { formatSize } from "../utils/format";
+import { renderFindingEvidence } from "./render-evidence";
 import { setTooltip } from "obsidian";
 
 export type IssueListConfig = {
@@ -8,6 +10,7 @@ export type IssueListConfig = {
 	scannersRun: ScannerId[];
 	selectionMode: boolean;
 	selectedFingerprints: Set<string>;
+	statuses?: ReadonlyMap<string, CurrentFindingStatus>;
 	onOpenIssue: (issue: Issue) => void;
 	onToggleSelect: (issue: Issue) => void;
 };
@@ -48,6 +51,13 @@ export function renderIssueList(container: HTMLElement, config: IssueListConfig)
 				cls: `vi-severity-badge vi-severity-${issue.severity}`,
 				text: issue.severity.toUpperCase(),
 			});
+			const status = config.statuses?.get(issue.fingerprint);
+			if (status) {
+				li.createSpan({
+					cls: `vi-status-badge vi-status-${status}`,
+					text: status.toUpperCase(),
+				});
+			}
 			li.createSpan({ cls: "vi-issue-title", text: issue.title });
 
 			const issuePath = getIssuePath(issue);
@@ -101,6 +111,8 @@ function renderIssueDetails(container: HTMLElement, issue: Issue, config: IssueL
 			}
 		}
 	}
+
+	renderFindingEvidence(details, issue);
 }
 
 function getIssueSummary(issue: Issue): string {

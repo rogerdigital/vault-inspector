@@ -195,6 +195,57 @@ describe("InspectorView report filter wiring", () => {
 		expect(findByText(container, "confirmed (3)")).toBeDefined();
 	});
 
+	it("passes the same lifecycle statuses to active and ignored issue lists", () => {
+		const ignoredIssue = makeIssue("empty-notes", "info", "ignored-item");
+		const statuses = new Map<string, "new" | "persisting">([
+			["broken-error", "new"],
+			["ignored-item", "persisting"],
+		]);
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.result = { ...result, ignoredIssues: [ignoredIssue] };
+		(view as any).model.comparison = {
+			available: true,
+			statuses,
+			resolvedIssues: [],
+		};
+		(view as any).model.ignoredExpanded = true;
+
+		(view as any).render();
+
+		const calls = renderIssueListMock.mock.calls;
+		const activeCall = calls.find(([, config]) =>
+			config.issues.some((issue: Issue) => issue.fingerprint === "broken-error"));
+		const ignoredCall = calls.find(([, config]) =>
+			config.issues.some((issue: Issue) => issue.fingerprint === "ignored-item"));
+		expect(activeCall?.[1].statuses).toBe(statuses);
+		expect(ignoredCall?.[1].statuses).toBe(statuses);
+	});
+
+	it("passes the unavailable comparison's empty status map to issue lists", () => {
+		const ignoredIssue = makeIssue("empty-notes", "info", "ignored-item");
+		const statuses = new Map<string, "new" | "persisting">();
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.result = { ...result, ignoredIssues: [ignoredIssue] };
+		(view as any).model.comparison = {
+			available: false,
+			reason: "first-scan",
+			statuses,
+			resolvedIssues: [],
+		};
+		(view as any).model.ignoredExpanded = true;
+
+		(view as any).render();
+
+		expect(renderIssueListMock.mock.calls).toHaveLength(2);
+		for (const [, config] of renderIssueListMock.mock.calls) {
+			expect(config.statuses).toBe(statuses);
+		}
+	});
+
 	it("filters the same visible issue list from lifecycle and classification controls", () => {
 		const candidateNew = makeIssue("duplicate-files", "warning", "candidate-new", "candidate");
 		const confirmedNew = makeIssue("broken-links", "error", "confirmed-new");

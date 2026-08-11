@@ -234,6 +234,7 @@ export class InspectorView extends ItemView {
 			scannersRun: this.model.result.scannersRun,
 			selectionMode: this.model.selectionMode,
 			selectedFingerprints: this.model.selectedFingerprints,
+			statuses: this.model.comparison.statuses,
 			onOpenIssue: (issue) => { void this.handleOpenIssue(issue); },
 			onToggleSelect: (issue) => this.handleToggleSelect(issue),
 		});
@@ -519,6 +520,7 @@ export class InspectorView extends ItemView {
 			scannersRun: this.model.result.scannersRun,
 			selectionMode: this.model.ignoredSelectionMode,
 			selectedFingerprints: this.model.ignoredSelectedFingerprints,
+			statuses: this.model.comparison.statuses,
 			onOpenIssue: (issue) => { void this.handleOpenIssue(issue); },
 			onToggleSelect: (issue) => this.handleIgnoredToggleSelect(issue),
 		});
