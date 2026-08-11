@@ -9,11 +9,29 @@ import type {
 import type { LifecycleComparison } from "../scanner/result-diff";
 import type { SnapshotIssue } from "../snapshot/scan-snapshot";
 
-const { renderIssueListMock, renderResolvedChangesMock, renderSummaryMock } = vi.hoisted(() => ({
+const {
+	renderIssueListMock,
+	renderResolvedChangesMock,
+	renderSummaryMock,
+	showFolderExclusionModalMock,
+	inspectorNoticeMessages,
+} = vi.hoisted(() => ({
 	renderIssueListMock: vi.fn(),
 	renderResolvedChangesMock: vi.fn(),
 	renderSummaryMock: vi.fn(),
+	showFolderExclusionModalMock: vi.fn(),
+	inspectorNoticeMessages: [] as string[],
 }));
+
+vi.mock("obsidian", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("obsidian")>();
+	return {
+		...actual,
+		Notice: class {
+			constructor(message: string) { inspectorNoticeMessages.push(message); }
+		},
+	};
+});
 
 vi.mock("../report/render-issues", () => ({
 	renderIssueList: renderIssueListMock,
@@ -26,6 +44,11 @@ vi.mock("../report/render-summary", () => ({
 vi.mock("../report/render-changes", () => ({
 	renderResolvedChanges: renderResolvedChangesMock,
 }));
+
+vi.mock("../report/exclude-folder-modal", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../report/exclude-folder-modal")>();
+	return { ...actual, showFolderExclusionModal: showFolderExclusionModalMock };
+});
 
 import { InspectorView } from "../report/InspectorView";
 
@@ -179,6 +202,8 @@ describe("InspectorView report filter wiring", () => {
 		renderIssueListMock.mockClear();
 		renderResolvedChangesMock.mockClear();
 		renderSummaryMock.mockClear();
+		showFolderExclusionModalMock.mockReset();
+		inspectorNoticeMessages.length = 0;
 		vi.mocked(setTooltip).mockClear();
 	});
 
@@ -264,6 +289,192 @@ describe("InspectorView report filter wiring", () => {
 			config.issues.some((issue: Issue) => issue.fingerprint === "ignored-item"));
 		expect(activeCall?.[1].statuses).toBe(statuses);
 		expect(ignoredCall?.[1].statuses).toBe(statuses);
+	});
+
+	it("wires contextual controls only to active findings and confirms folder scope", async () => {
+		const activeIssue = {
+			...makeIssue("broken-links", "error", "active-item"),
+			primaryPath: "notes/project/file.md",
+		};
+		const nestedIssue = {
+			...makeIssue("broken-links", "warning", "nested-item"),
+			primaryPath: "notes/project/nested/file.md",
+		};
+		const ignoredIssue = {
+			...makeIssue("empty-notes", "info", "ignored-item"),
+			primaryPath: "templates/empty.md",
+		};
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.result = {
+			...result,
+			issues: [activeIssue, nestedIssue],
+			ignoredIssues: [ignoredIssue],
+		};
+		(view as any).model.ignoredExpanded = true;
+		const onIgnoreIssue = vi.fn();
+		const onExcludeFolder = vi.fn();
+		const onOpenScannerSettings = vi.fn();
+		view.setCallbacks({
+			onIgnoreAllIssues: vi.fn(),
+			onRestoreIssues: vi.fn(),
+			onFixAllIssues: vi.fn(),
+			onRevealIssue: vi.fn(),
+			onRunScan: vi.fn(),
+			onIgnoreIssue,
+			onExcludeFolder,
+			onOpenScannerSettings,
+		});
+		showFolderExclusionModalMock.mockResolvedValue(true);
+
+		(view as any).render();
+
+		const activeConfig = renderIssueListMock.mock.calls.find(([, config]) =>
+			config.issues.some((issue: Issue) => issue.fingerprint === "active-item"))?.[1];
+		const ignoredConfig = renderIssueListMock.mock.calls.find(([, config]) =>
+			config.issues.some((issue: Issue) => issue.fingerprint === "ignored-item"))?.[1];
+		expect(activeConfig).toEqual(expect.objectContaining({
+			onIgnoreIssue: expect.any(Function),
+			onExcludeFolder: expect.any(Function),
+			onOpenScannerSettings: expect.any(Function),
+		}));
+		expect(ignoredConfig).not.toHaveProperty("onIgnoreIssue");
+		expect(ignoredConfig).not.toHaveProperty("onExcludeFolder");
+		expect(ignoredConfig).not.toHaveProperty("onOpenScannerSettings");
+
+		activeConfig.onIgnoreIssue(activeIssue);
+		activeConfig.onOpenScannerSettings("broken-links");
+		await activeConfig.onExcludeFolder(activeIssue);
+		expect(onIgnoreIssue).toHaveBeenCalledWith(activeIssue);
+		expect(onOpenScannerSettings).toHaveBeenCalledWith("broken-links");
+		expect(showFolderExclusionModalMock).toHaveBeenCalledWith(view.app, {
+			scannerId: "broken-links",
+			folder: "notes/project",
+			affectedCount: 2,
+		});
+		expect(onExcludeFolder).toHaveBeenCalledWith({
+			scannerId: "broken-links",
+			folder: "notes/project",
+			affectedCount: 2,
+		});
+	});
+
+	it("does not dispatch a folder exclusion when confirmation is cancelled", async () => {
+		const issue = {
+			...makeIssue("broken-links", "error", "active-item"),
+			primaryPath: "notes/project/file.md",
+		};
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.result = { ...result, issues: [issue] };
+		const onExcludeFolder = vi.fn();
+		view.setCallbacks({
+			onIgnoreAllIssues: vi.fn(),
+			onRestoreIssues: vi.fn(),
+			onFixAllIssues: vi.fn(),
+			onRevealIssue: vi.fn(),
+			onRunScan: vi.fn(),
+			onIgnoreIssue: vi.fn(),
+			onExcludeFolder,
+			onOpenScannerSettings: vi.fn(),
+		});
+		showFolderExclusionModalMock.mockResolvedValue(false);
+		(view as any).render();
+
+		await renderIssueListMock.mock.lastCall?.[1].onExcludeFolder(issue);
+
+		expect(onExcludeFolder).not.toHaveBeenCalled();
+		expect(inspectorNoticeMessages).toEqual([]);
+	});
+
+	it("reports a rejected folder exclusion without dispatching the mutation", async () => {
+		const issue = {
+			...makeIssue("broken-links", "error", "active-item"),
+			primaryPath: "notes/project/file.md",
+		};
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.result = { ...result, issues: [issue] };
+		const onExcludeFolder = vi.fn();
+		view.setCallbacks({
+			onIgnoreAllIssues: vi.fn(),
+			onRestoreIssues: vi.fn(),
+			onFixAllIssues: vi.fn(),
+			onRevealIssue: vi.fn(),
+			onRunScan: vi.fn(),
+			onIgnoreIssue: vi.fn(),
+			onExcludeFolder,
+			onOpenScannerSettings: vi.fn(),
+		});
+		showFolderExclusionModalMock.mockRejectedValue(new Error("modal unavailable"));
+		(view as any).render();
+
+		await renderIssueListMock.mock.lastCall?.[1].onExcludeFolder(issue);
+
+		expect(onExcludeFolder).not.toHaveBeenCalled();
+		expect(inspectorNoticeMessages).toEqual([
+			"Folder exclusion failed: modal unavailable",
+		]);
+	});
+
+	it("reports an unexpected single-ignore rejection without leaking it", async () => {
+		const issue = {
+			...makeIssue("broken-links", "error", "active-item"),
+			primaryPath: "notes/project/file.md",
+		};
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.result = { ...result, issues: [issue] };
+		view.setCallbacks({
+			onIgnoreAllIssues: vi.fn(),
+			onRestoreIssues: vi.fn(),
+			onFixAllIssues: vi.fn(),
+			onRevealIssue: vi.fn(),
+			onRunScan: vi.fn(),
+			onIgnoreIssue: vi.fn().mockRejectedValue(new Error("unexpected failure")),
+			onExcludeFolder: vi.fn(),
+			onOpenScannerSettings: vi.fn(),
+		});
+		(view as any).render();
+
+		await renderIssueListMock.mock.lastCall?.[1].onIgnoreIssue(issue);
+
+		await vi.waitFor(() => {
+			expect(inspectorNoticeMessages).toEqual([
+				"Ignoring issue failed: unexpected failure",
+			]);
+		});
+	});
+
+	it("clones operation outcome state before rendering", () => {
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).render = vi.fn();
+		const outcomes = [{
+			fingerprint: "active-item",
+			outcome: "ignored" as const,
+			message: "Ignored",
+			affectedPaths: ["notes/file.md"],
+		}];
+
+		view.setOperationOutcomes(outcomes);
+		outcomes.push({
+			fingerprint: "later",
+			outcome: "ignored",
+			message: "Later",
+			affectedPaths: [],
+		});
+
+		expect((view as any).model.operationOutcomes).toEqual([{
+			fingerprint: "active-item",
+			outcome: "ignored",
+			message: "Ignored",
+			affectedPaths: ["notes/file.md"],
+		}]);
+		expect((view as any).render).toHaveBeenCalledOnce();
 	});
 
 	it("passes the unavailable comparison's empty status map to issue lists", () => {

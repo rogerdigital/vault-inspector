@@ -1,4 +1,4 @@
-import { ItemView, MarkdownView, WorkspaceLeaf, TFile, setTooltip } from "obsidian";
+import { ItemView, MarkdownView, Notice, WorkspaceLeaf, TFile, setTooltip } from "obsidian";
 import type { ScanProgress, ScanResult, Issue } from "../scanner/Issue";
 import { SCANNER_LABELS } from "../scanner/Issue";
 import {
@@ -13,6 +13,13 @@ import { setIcon } from "obsidian";
 import { formatDuration } from "../utils/format";
 import { describeFixActions } from "../fix/confirm-modal";
 import type { LifecycleComparison } from "../scanner/result-diff";
+import type { ScannerId } from "../scanner/Issue";
+import type { OperationOutcome } from "../fix/action-outcomes";
+import {
+	buildFolderExclusionRequest,
+	showFolderExclusionModal,
+	type FolderExclusionRequest,
+} from "./exclude-folder-modal";
 
 export const VIEW_TYPE_INSPECTOR = "vault-inspector";
 
@@ -72,6 +79,7 @@ export class InspectorView extends ItemView {
 		resolvedExpanded: false,
 		ignoredSelectionMode: false,
 		ignoredSelectedFingerprints: new Set(),
+		operationOutcomes: [],
 	};
 
 	private onIgnoreAllIssues: ((issues: Issue[]) => void | Promise<void>) | null = null;
@@ -79,6 +87,9 @@ export class InspectorView extends ItemView {
 	private onFixAllIssues: ((issues: Issue[]) => void | Promise<void>) | null = null;
 	private onRevealIssue: ((issue: Issue) => void | Promise<void>) | null = null;
 	private onRunScan: (() => void) | null = null;
+	private onIgnoreIssue: ((issue: Issue) => void | Promise<void>) | null = null;
+	private onExcludeFolder: ((request: FolderExclusionRequest) => void | Promise<void>) | null = null;
+	private onOpenScannerSettings: ((scannerId: ScannerId) => void) | null = null;
 	private backToTopHandler: (() => void) | null = null;
 	private scanTimer: number | null = null;
 
@@ -111,6 +122,9 @@ export class InspectorView extends ItemView {
 		this.onFixAllIssues = null;
 		this.onRevealIssue = null;
 		this.onRunScan = null;
+		this.onIgnoreIssue = null;
+		this.onExcludeFolder = null;
+		this.onOpenScannerSettings = null;
 	}
 
 	setScanning(scanning: boolean) {
@@ -169,18 +183,32 @@ export class InspectorView extends ItemView {
 		this.model.enableFixActions = enabled;
 	}
 
+	setOperationOutcomes(outcomes: OperationOutcome[]) {
+		this.model.operationOutcomes = outcomes.map((outcome) => ({
+			...outcome,
+			affectedPaths: [...outcome.affectedPaths],
+		}));
+		this.render();
+	}
+
 	setCallbacks(callbacks: {
 		onIgnoreAllIssues: (issues: Issue[]) => void | Promise<void>;
 		onRestoreIssues: (issues: Issue[]) => void | Promise<void>;
 		onFixAllIssues: (issues: Issue[]) => void | Promise<void>;
 		onRevealIssue: (issue: Issue) => void | Promise<void>;
 		onRunScan: () => void;
+		onIgnoreIssue: (issue: Issue) => void | Promise<void>;
+		onExcludeFolder: (request: FolderExclusionRequest) => void | Promise<void>;
+		onOpenScannerSettings: (scannerId: ScannerId) => void;
 	}) {
 		this.onIgnoreAllIssues = callbacks.onIgnoreAllIssues;
 		this.onRestoreIssues = callbacks.onRestoreIssues;
 		this.onFixAllIssues = callbacks.onFixAllIssues;
 		this.onRevealIssue = callbacks.onRevealIssue;
 		this.onRunScan = callbacks.onRunScan;
+		this.onIgnoreIssue = callbacks.onIgnoreIssue;
+		this.onExcludeFolder = callbacks.onExcludeFolder;
+		this.onOpenScannerSettings = callbacks.onOpenScannerSettings;
 	}
 
 	hasResult(): boolean { return this.model.result !== null; }
@@ -238,6 +266,11 @@ export class InspectorView extends ItemView {
 			statuses: this.model.comparison.statuses,
 			onOpenIssue: (issue) => { void this.handleOpenIssue(issue); },
 			onToggleSelect: (issue) => this.handleToggleSelect(issue),
+			onIgnoreIssue: (issue) => { void this.handleIgnoreIssue(issue); },
+			onExcludeFolder: (issue) => { void this.handleExcludeFolder(issue); },
+			onOpenScannerSettings: (scannerId) => {
+				this.onOpenScannerSettings?.(scannerId);
+			},
 		});
 
 		this.renderResolvedSection(container);
@@ -623,6 +656,28 @@ export class InspectorView extends ItemView {
 			status: this.model.filterStatus,
 			classification: this.model.filterClassification,
 		}, this.model.comparison.statuses);
+	}
+
+	private async handleExcludeFolder(issue: Issue): Promise<void> {
+		const request = buildFolderExclusionRequest(issue, this.getVisibleIssues());
+		if (!request) return;
+		try {
+			if (!await showFolderExclusionModal(this.app, request)) return;
+			if (this.onExcludeFolder) await this.onExcludeFolder(request);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			new Notice(`Folder exclusion failed: ${message}`);
+		}
+	}
+
+	private async handleIgnoreIssue(issue: Issue): Promise<void> {
+		if (!this.onIgnoreIssue) return;
+		try {
+			await this.onIgnoreIssue(issue);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			new Notice(`Ignoring issue failed: ${message}`);
+		}
 	}
 
 	private async handleOpenIssue(issue: Issue) {

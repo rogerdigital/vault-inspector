@@ -17,11 +17,13 @@ const {
 	createScanProfileMock,
 	executeFixActionMock,
 	noticeMessages,
+	openPluginSettingsMock,
 	showConfirmModalMock,
 } = vi.hoisted(() => ({
 	createScanProfileMock: vi.fn(),
 	executeFixActionMock: vi.fn(),
 	noticeMessages: [] as string[],
+	openPluginSettingsMock: vi.fn(),
 	showConfirmModalMock: vi.fn(),
 }));
 
@@ -48,6 +50,10 @@ vi.mock("../fix/confirm-modal", async (importOriginal) => {
 
 vi.mock("../scanner/scan-profile", () => ({
 	createScanProfile: createScanProfileMock,
+}));
+
+vi.mock("../utils/open-plugin-settings", () => ({
+	openPluginSettings: openPluginSettingsMock,
 }));
 
 function makeFixIssue(fingerprint: string, fixAction: FixAction): Issue {
@@ -86,6 +92,7 @@ describe("VaultInspectorPlugin", () => {
 		createScanProfileMock.mockResolvedValue("current-profile");
 		executeFixActionMock.mockReset();
 		showConfirmModalMock.mockReset();
+		openPluginSettingsMock.mockReset();
 		noticeMessages.length = 0;
 	});
 
@@ -447,9 +454,9 @@ describe("VaultInspectorPlugin", () => {
 		const settingsSave = plugin.saveSettings();
 		await vi.waitFor(() => expect(saveData).toHaveBeenCalledTimes(1));
 		const first = (plugin as any).scanAndRender(view);
-		await vi.waitFor(() => expect(view.setResult).toHaveBeenCalledTimes(1));
 		const second = (plugin as any).scanAndRender(view);
 		await flushMicrotasks();
+		expect(view.setResult).toHaveBeenCalledOnce();
 		releaseBlockingSave();
 		await Promise.all([settingsSave, first, second]);
 
@@ -519,6 +526,236 @@ describe("VaultInspectorPlugin", () => {
 
 		expect(app.workspace.revealLeaf).toHaveBeenCalledWith(leaf);
 		expect((plugin as any).scanAndRender).toHaveBeenCalledWith(leaf.view);
+	});
+
+	it("ignores one issue with deduped paths, rescans once, and reports a disposition outcome", async () => {
+		const { plugin, callbacks, saveSettings, scanAndRender, view } = makeContextualSubject();
+		plugin.settings.ignoredIssueFingerprints = ["existing", "target", "target"];
+		const issue = {
+			...makeLifecycleIssue("target"),
+			primaryPath: "notes/source.md",
+			relatedPaths: ["notes/source.md", "notes/related.md"],
+		};
+
+		await callbacks.onIgnoreIssue(issue);
+
+		expect(plugin.settings.ignoredIssueFingerprints).toEqual(["existing", "target"]);
+		expect(saveSettings).toHaveBeenCalledOnce();
+		expect(scanAndRender).toHaveBeenCalledOnce();
+		expect(view.setOperationOutcomes).toHaveBeenCalledWith([{
+			fingerprint: "target",
+			outcome: "ignored",
+			message: expect.stringContaining("Ignored"),
+			affectedPaths: ["notes/source.md", "notes/related.md"],
+		}]);
+	});
+
+	it("rolls back a failed single-issue ignore without rescanning", async () => {
+		const { plugin, callbacks, saveSettings, scanAndRender, view } = makeContextualSubject();
+		plugin.settings.ignoredIssueFingerprints = ["existing"];
+		saveSettings.mockRejectedValueOnce(new Error("disk unavailable"));
+		const issue = makeLifecycleIssue("target");
+
+		await callbacks.onIgnoreIssue(issue);
+
+		expect(plugin.settings.ignoredIssueFingerprints).toEqual(["existing"]);
+		expect(scanAndRender).not.toHaveBeenCalled();
+		expect(view.setOperationOutcomes).toHaveBeenCalledWith([{
+			fingerprint: "target",
+			outcome: "failed",
+			message: expect.stringContaining("disk unavailable"),
+			affectedPaths: ["target.md"],
+		}]);
+		expect(noticeMessages.some((message) => message.includes("Ignored"))).toBe(false);
+	});
+
+	it("serializes contextual dispositions so a failed rollback cannot erase a later success", async () => {
+		const { plugin, callbacks, saveSettings, scanAndRender, view } = makeContextualSubject();
+		let rejectFirst!: (error: Error) => void;
+		const firstSave = new Promise<void>((_resolve, reject) => { rejectFirst = reject; });
+		saveSettings
+			.mockImplementationOnce(() => firstSave)
+			.mockResolvedValueOnce(undefined);
+		const first = callbacks.onIgnoreIssue(makeLifecycleIssue("first"));
+		await vi.waitFor(() => expect(saveSettings).toHaveBeenCalledTimes(1));
+		const second = callbacks.onIgnoreIssue(makeLifecycleIssue("second"));
+
+		expect(plugin.settings.ignoredIssueFingerprints).toEqual([]);
+		expect(saveSettings).toHaveBeenCalledTimes(1);
+		rejectFirst(new Error("first failed"));
+		await Promise.all([first, second]);
+
+		expect(plugin.settings.ignoredIssueFingerprints).toEqual(["second"]);
+		expect(saveSettings).toHaveBeenCalledTimes(2);
+		expect(scanAndRender).toHaveBeenCalledOnce();
+		expect(view.setOperationOutcomes.mock.calls.map(([outcomes]) => outcomes[0].outcome))
+			.toEqual(["failed", "ignored"]);
+	});
+
+	it("keeps a queued bulk ignore after an earlier single-ignore save fails", async () => {
+		const { plugin, callbacks, saveData, performScanAndRender } = makeCoordinatedSubject();
+		let rejectFirst!: (error: Error) => void;
+		const firstSave = new Promise<void>((_resolve, reject) => { rejectFirst = reject; });
+		saveData.mockImplementationOnce(() => firstSave).mockResolvedValueOnce(undefined);
+		const firstIssue = makeLifecycleIssue("single");
+		const bulkIssue = makeLifecycleIssue("bulk");
+
+		const single = callbacks.onIgnoreIssue(firstIssue);
+		await vi.waitFor(() => expect(saveData).toHaveBeenCalledTimes(1));
+		const bulk = callbacks.onIgnoreAllIssues([bulkIssue]);
+		await Promise.resolve();
+
+		expect(saveData).toHaveBeenCalledTimes(1);
+		rejectFirst(new Error("single failed"));
+		await Promise.all([single, bulk]);
+
+		expect(plugin.settings.ignoredIssueFingerprints).toEqual(["bulk"]);
+		expect(saveData).toHaveBeenCalledTimes(2);
+		expect((saveData.mock.calls[0][0] as any).settings.ignoredIssueFingerprints)
+			.toEqual(["single"]);
+		expect((saveData.mock.calls[1][0] as any).settings.ignoredIssueFingerprints)
+			.toEqual(["bulk"]);
+		expect(performScanAndRender).toHaveBeenCalledOnce();
+	});
+
+	it("persists both a successful disposition and a settings-tab change queued during its save", async () => {
+		const { plugin, callbacks, saveData } = makeCoordinatedSubject();
+		let releaseFirst!: () => void;
+		const firstSave = new Promise<void>((resolve) => { releaseFirst = resolve; });
+		saveData.mockImplementationOnce(() => firstSave).mockResolvedValueOnce(undefined);
+
+		const disposition = callbacks.onIgnoreIssue(makeLifecycleIssue("single"));
+		await vi.waitFor(() => expect(saveData).toHaveBeenCalledOnce());
+		plugin.settings.ignoredIssueFingerprints.push("settings-tab");
+		const settingsSave = plugin.saveSettings();
+		await Promise.resolve();
+		expect(saveData).toHaveBeenCalledOnce();
+
+		releaseFirst();
+		await Promise.all([disposition, settingsSave]);
+
+		expect(plugin.settings.ignoredIssueFingerprints).toEqual([
+			"settings-tab",
+			"single",
+		]);
+		expect(saveData).toHaveBeenCalledTimes(2);
+		expect((saveData.mock.calls[1][0] as any).settings.ignoredIssueFingerprints)
+			.toEqual(["settings-tab", "single"]);
+	});
+
+	it("queues a manual scan until a failed single ignore leaves stable settings", async () => {
+		const { plugin, callbacks, saveData, performScanAndRender, view } = makeCoordinatedSubject();
+		let rejectSave!: (error: Error) => void;
+		saveData.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+			rejectSave = reject;
+		}));
+		const observedSettings: string[][] = [];
+		performScanAndRender.mockImplementation(async () => {
+			observedSettings.push([...plugin.settings.ignoredIssueFingerprints]);
+		});
+
+		const ignore = callbacks.onIgnoreIssue(makeLifecycleIssue("temporary"));
+		await vi.waitFor(() => expect(saveData).toHaveBeenCalledOnce());
+		const scan = (plugin as any).scanAndRender(view);
+		await Promise.resolve();
+		expect(performScanAndRender).not.toHaveBeenCalled();
+
+		rejectSave(new Error("save failed"));
+		await Promise.all([ignore, scan]);
+
+		expect(observedSettings).toEqual([[]]);
+		expect(plugin.settings.ignoredIssueFingerprints).toEqual([]);
+	});
+
+	it("queues a manual scan until a failed folder exclusion leaves stable settings", async () => {
+		const { plugin, callbacks, saveData, performScanAndRender, view } = makeCoordinatedSubject();
+		plugin.settings.ignoredFoldersByScanner["broken-links"] = ["stable"];
+		let rejectSave!: (error: Error) => void;
+		saveData.mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+			rejectSave = reject;
+		}));
+		const observedSettings: string[][] = [];
+		performScanAndRender.mockImplementation(async () => {
+			observedSettings.push([
+				...plugin.settings.ignoredFoldersByScanner["broken-links"],
+			]);
+		});
+
+		const exclusion = callbacks.onExcludeFolder({
+			scannerId: "broken-links",
+			folder: "temporary",
+			affectedCount: 1,
+		});
+		await vi.waitFor(() => expect(saveData).toHaveBeenCalledOnce());
+		const scan = (plugin as any).scanAndRender(view);
+		await Promise.resolve();
+		expect(performScanAndRender).not.toHaveBeenCalled();
+
+		rejectSave(new Error("save failed"));
+		await Promise.all([exclusion, scan]);
+
+		expect(observedSettings).toEqual([["stable"]]);
+		expect(plugin.settings.ignoredFoldersByScanner["broken-links"])
+			.toEqual(["stable"]);
+	});
+
+	it("excludes one scanner folder with dedupe, rescans once, and reports affected scope", async () => {
+		const { plugin, callbacks, saveSettings, scanAndRender, view } = makeContextualSubject();
+		plugin.settings.ignoredFoldersByScanner["broken-links"] = ["notes/project", "notes/project"];
+
+		await callbacks.onExcludeFolder({
+			scannerId: "broken-links",
+			folder: "notes/project",
+			affectedCount: 3,
+		});
+
+		expect(plugin.settings.ignoredFoldersByScanner["broken-links"]).toEqual(["notes/project"]);
+		expect(saveSettings).toHaveBeenCalledOnce();
+		expect(scanAndRender).toHaveBeenCalledOnce();
+		expect(view.setOperationOutcomes).toHaveBeenCalledWith([{
+			scannerId: "broken-links",
+			outcome: "excluded",
+			message: expect.stringMatching(/Broken Links.*notes\/project.*3/),
+			affectedPaths: ["notes/project"],
+		}]);
+	});
+
+	it("rolls back a failed scanner-folder exclusion without rescanning", async () => {
+		const { plugin, callbacks, saveSettings, scanAndRender, view } = makeContextualSubject();
+		plugin.settings.ignoredFoldersByScanner["empty-notes"] = ["archive"];
+		saveSettings.mockRejectedValueOnce(new Error("read only"));
+
+		await callbacks.onExcludeFolder({
+			scannerId: "empty-notes",
+			folder: "templates",
+			affectedCount: 2,
+		});
+
+		expect(plugin.settings.ignoredFoldersByScanner["empty-notes"]).toEqual(["archive"]);
+		expect(scanAndRender).not.toHaveBeenCalled();
+		expect(view.setOperationOutcomes).toHaveBeenCalledWith([{
+			scannerId: "empty-notes",
+			outcome: "failed",
+			message: expect.stringContaining("read only"),
+			affectedPaths: ["templates"],
+		}]);
+	});
+
+	it("opens scanner settings when available and shows exact recovery guidance otherwise", () => {
+		const { plugin, callbacks } = makeContextualSubject();
+		openPluginSettingsMock.mockReturnValueOnce(true).mockReturnValueOnce(false);
+
+		callbacks.onOpenScannerSettings("broken-links");
+		expect(openPluginSettingsMock).toHaveBeenLastCalledWith(
+			(plugin as any).app,
+			"vault-inspector",
+		);
+		expect(noticeMessages).toEqual([]);
+
+		callbacks.onOpenScannerSettings("broken-links");
+		expect(noticeMessages).toEqual([
+			"Open Settings → Vault Inspector → Scanner-specific ignored folders.",
+		]);
 	});
 
 	it("rescans before fixing and executes only issues whose fingerprint and action still match", async () => {
@@ -750,6 +987,28 @@ describe("VaultInspectorPlugin", () => {
 			.not.toHaveProperty("lastSuccessfulSnapshot");
 	});
 
+	it("persists settings while a long-running scan is still in progress", async () => {
+		const result = makeScanResult([makeLifecycleIssue("current")]);
+		const { plugin, run, saveData, view } = makeScanSubject(result);
+		let finishScan!: (value: ScanResult) => void;
+		const blockedScan = new Promise<ScanResult>((resolve) => { finishScan = resolve; });
+		run.mockReset().mockImplementation(() => blockedScan);
+
+		const scan = (plugin as any).scanAndRender(view);
+		await vi.waitFor(() => expect(run).toHaveBeenCalledOnce());
+		plugin.settings.reportFolderPath = "Updated during scan";
+		const settingsSave = plugin.saveSettings();
+
+		await vi.waitFor(() => expect(saveData).toHaveBeenCalledOnce());
+		expect((saveData.mock.calls[0][0] as any).settings.reportFolderPath)
+			.toBe("Updated during scan");
+		expect(view.setResult).not.toHaveBeenCalled();
+
+		finishScan(result);
+		await Promise.all([scan, settingsSave]);
+		expect(view.setResult).toHaveBeenCalledOnce();
+	});
+
 	it("saves settings and a successful snapshot in one envelope", async () => {
 		const plugin = new VaultInspectorPlugin({} as any, {} as any);
 		plugin.settings = structuredClone(DEFAULT_SETTINGS);
@@ -857,7 +1116,7 @@ function makeScanSubject(result: ScanResult) {
 	plugin.settings = structuredClone(DEFAULT_SETTINGS);
 	const run = vi.fn().mockResolvedValue(result);
 	(plugin as any).scanRunner = { run };
-	const saveData = vi.fn(async () => {});
+	const saveData = vi.fn(async (_data: unknown) => {});
 	plugin.saveData = saveData;
 	const view = {
 		setCallbacks: vi.fn(),
@@ -867,6 +1126,50 @@ function makeScanSubject(result: ScanResult) {
 		setResult: vi.fn(),
 	};
 	return { plugin, run, saveData, view };
+}
+
+function makeContextualSubject() {
+	const plugin = new VaultInspectorPlugin({} as any, {} as any);
+	(plugin as any).app = {};
+	(plugin as any).manifest = { id: "vault-inspector", version: "0.5.0" };
+	plugin.settings = structuredClone(DEFAULT_SETTINGS);
+	const saveSettings = vi.fn(async () => {});
+	plugin.saveData = saveSettings;
+	const scanAndRender = vi.fn(async () => {});
+	(plugin as any).performScanAndRender = scanAndRender;
+	let callbacks: any;
+	const view = {
+		setCallbacks: vi.fn((value) => { callbacks = value; }),
+		setEnableFixActions: vi.fn(),
+		setOperationOutcomes: vi.fn(),
+		setScanning: vi.fn(),
+		setScanProgress: vi.fn(),
+		setResult: vi.fn(),
+	};
+	(plugin as any).configureView(view);
+	return { plugin, callbacks, saveSettings, scanAndRender, view };
+}
+
+function makeCoordinatedSubject() {
+	const plugin = new VaultInspectorPlugin({} as any, {} as any);
+	(plugin as any).app = {};
+	(plugin as any).manifest = { id: "vault-inspector", version: "0.5.0" };
+	plugin.settings = structuredClone(DEFAULT_SETTINGS);
+	const saveData = vi.fn(async (_data: unknown) => {});
+	plugin.saveData = saveData;
+	const performScanAndRender = vi.fn(async () => {});
+	(plugin as any).performScanAndRender = performScanAndRender;
+	let callbacks: any;
+	const view = {
+		setCallbacks: vi.fn((value) => { callbacks = value; }),
+		setEnableFixActions: vi.fn(),
+		setOperationOutcomes: vi.fn(),
+		setScanning: vi.fn(),
+		setScanProgress: vi.fn(),
+		setResult: vi.fn(),
+	};
+	(plugin as any).configureView(view);
+	return { plugin, callbacks, saveData, performScanAndRender, view };
 }
 
 async function flushMicrotasks(count = 20): Promise<void> {

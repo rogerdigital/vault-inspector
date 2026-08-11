@@ -1,12 +1,30 @@
 import { describe, it, expect } from "vitest";
 import {
 	normalizePath,
+	getParentFolder,
 	getExtension,
 	getBasename,
 	isInFolder,
 	isIgnoredPath,
 	matchesGlob,
 } from "../utils/paths";
+
+describe("getParentFolder", () => {
+	it("returns the normalized parent folder for a nested file", () => {
+		expect(getParentFolder("notes/project/file.md")).toBe("notes/project");
+	});
+
+	it("returns null for root-level files and empty paths", () => {
+		expect(getParentFolder("file.md")).toBeNull();
+		expect(getParentFolder("")).toBeNull();
+		expect(getParentFolder("/")).toBeNull();
+	});
+
+	it("normalizes separators and trailing slashes before finding the parent", () => {
+		expect(getParentFolder("notes\\project\\file.md")).toBe("notes/project");
+		expect(getParentFolder("notes/project/")).toBe("notes");
+	});
+});
 
 describe("normalizePath", () => {
 	it("replaces backslashes with forward slashes", () => {

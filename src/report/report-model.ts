@@ -11,6 +11,7 @@ import type {
 	CurrentFindingStatus,
 	LifecycleComparison,
 } from "../scanner/result-diff";
+import type { OperationOutcome } from "../fix/action-outcomes";
 
 const SEVERITIES: IssueSeverity[] = ["error", "warning", "info"];
 const STATUSES: CurrentFindingStatus[] = ["new", "persisting"];
@@ -171,4 +172,5 @@ export type ReportModel = {
 	resolvedExpanded: boolean;
 	ignoredSelectionMode: boolean;
 	ignoredSelectedFingerprints: Set<string>;
+	operationOutcomes: OperationOutcome[];
 };
