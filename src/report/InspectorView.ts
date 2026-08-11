@@ -8,6 +8,7 @@ import {
 } from "./report-model";
 import { renderSummary } from "./render-summary";
 import { renderIssueList } from "./render-issues";
+import { renderResolvedChanges } from "./render-changes";
 import { setIcon } from "obsidian";
 import { formatDuration } from "../utils/format";
 import { describeFixActions } from "../fix/confirm-modal";
@@ -239,6 +240,7 @@ export class InspectorView extends ItemView {
 			onToggleSelect: (issue) => this.handleToggleSelect(issue),
 		});
 
+		this.renderResolvedSection(container);
 		this.renderIgnoredSection(container);
 		this.addBackToTop(container);
 	}
@@ -469,7 +471,33 @@ export class InspectorView extends ItemView {
 		});
 	}
 
-	// ─── Ignored Section ─────────────────────────────────────
+	// ─── Resolved and ignored sections ───────────────────────
+
+	private renderResolvedSection(container: HTMLElement) {
+		const comparison = this.model.comparison;
+		if (!comparison.available || comparison.resolvedIssues.length === 0) return;
+
+		const section = container.createDiv({ cls: "vi-resolved-section" });
+		const header = section.createEl("button", {
+			cls: "vi-resolved-header",
+			text: `Resolved items (${comparison.resolvedIssues.length})`,
+			attr: {
+				type: "button",
+				"aria-expanded": String(this.model.resolvedExpanded),
+			},
+		});
+		const chevron = header.createSpan({ cls: "vi-resolved-chevron" });
+		setIcon(chevron, this.model.resolvedExpanded ? "chevron-down" : "chevron-right");
+		header.addEventListener("click", () => {
+			this.model.resolvedExpanded = !this.model.resolvedExpanded;
+			this.render();
+		});
+
+		if (!this.model.resolvedExpanded) return;
+
+		const body = section.createDiv({ cls: "vi-resolved-body" });
+		renderResolvedChanges(body, comparison.resolvedIssues);
+	}
 
 	private renderIgnoredSection(container: HTMLElement) {
 		if (!this.model.result) return;

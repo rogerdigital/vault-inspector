@@ -7,9 +7,11 @@ import type {
 	ScannerId,
 } from "../scanner/Issue";
 import type { LifecycleComparison } from "../scanner/result-diff";
+import type { SnapshotIssue } from "../snapshot/scan-snapshot";
 
-const { renderIssueListMock, renderSummaryMock } = vi.hoisted(() => ({
+const { renderIssueListMock, renderResolvedChangesMock, renderSummaryMock } = vi.hoisted(() => ({
 	renderIssueListMock: vi.fn(),
+	renderResolvedChangesMock: vi.fn(),
 	renderSummaryMock: vi.fn(),
 }));
 
@@ -21,37 +23,52 @@ vi.mock("../report/render-summary", () => ({
 	renderSummary: renderSummaryMock,
 }));
 
+vi.mock("../report/render-changes", () => ({
+	renderResolvedChanges: renderResolvedChangesMock,
+}));
+
 import { InspectorView } from "../report/InspectorView";
 
 type Listener = () => void;
+
+type ElementOptions = {
+	cls?: string;
+	text?: string;
+	attr?: Record<string, string>;
+};
 
 class FakeElement {
 	children: FakeElement[] = [];
 	cls: string;
 	text: string | null;
+	attr: Record<string, string>;
 	style = { display: "" };
 	scrollTop = 0;
 	private listeners = new Map<string, Listener>();
 
-	constructor(options: { cls?: string; text?: string } = {}) {
+	constructor(
+		readonly tag = "div",
+		options: ElementOptions = {},
+	) {
 		this.cls = options.cls ?? "";
 		this.text = options.text ?? null;
+		this.attr = options.attr ?? {};
 	}
 
-	createDiv(options: { cls?: string; text?: string } = {}): FakeElement {
-		const child = new FakeElement(options);
+	createDiv(options: ElementOptions = {}): FakeElement {
+		const child = new FakeElement("div", options);
 		this.children.push(child);
 		return child;
 	}
 
-	createSpan(options: { cls?: string; text?: string } = {}): FakeElement {
-		const child = new FakeElement(options);
+	createSpan(options: ElementOptions = {}): FakeElement {
+		const child = new FakeElement("span", options);
 		this.children.push(child);
 		return child;
 	}
 
-	createEl(_tag: string, options: { cls?: string; text?: string } = {}): FakeElement {
-		const child = new FakeElement(options);
+	createEl(tag: string, options: ElementOptions = {}): FakeElement {
+		const child = new FakeElement(tag, options);
 		this.children.push(child);
 		return child;
 	}
@@ -132,9 +149,35 @@ function findByText(element: FakeElement, text: string): FakeElement | undefined
 	return undefined;
 }
 
+function findByClass(element: FakeElement, cls: string): FakeElement[] {
+	const matches = element.cls.split(/\s+/).includes(cls) ? [element] : [];
+	return matches.concat(element.children.flatMap((child) => findByClass(child, cls)));
+}
+
+function snapshotIssue(
+	fingerprint: string,
+	ignored: boolean,
+	primaryPath: string,
+): SnapshotIssue {
+	return {
+		fingerprint,
+		scannerId: ignored ? "empty-notes" : "broken-links",
+		severity: ignored ? "info" : "error",
+		classification: "confirmed",
+		title: fingerprint,
+		message: fingerprint,
+		primaryPath,
+		relatedPaths: [],
+		evidence: {},
+		explanation: { why: "Previous finding.", nextStep: "No action required." },
+		ignored,
+	};
+}
+
 describe("InspectorView report filter wiring", () => {
 	beforeEach(() => {
 		renderIssueListMock.mockClear();
+		renderResolvedChangesMock.mockClear();
 		renderSummaryMock.mockClear();
 		vi.mocked(setTooltip).mockClear();
 	});
@@ -366,6 +409,102 @@ describe("InspectorView report filter wiring", () => {
 		expect((view as any).model.filterStatus).toBeNull();
 		expect((view as any).model.filterClassification).toBeNull();
 		expect((view as any).model.resolvedExpanded).toBe(false);
+	});
+
+	it("expands and collapses an accessible read-only resolved section before ignored items", () => {
+		const activeResolved = snapshotIssue("active-resolved", false, "Notes/source.md");
+		const ignoredResolved = snapshotIssue("ignored-resolved", true, "Archive/empty.md");
+		const currentIgnored = makeIssue("empty-notes", "info", "current-ignored");
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.result = { ...result, ignoredIssues: [currentIgnored] };
+		(view as any).model.comparison = {
+			available: true,
+			statuses: new Map(),
+			resolvedIssues: [activeResolved, ignoredResolved],
+		};
+
+		(view as any).render();
+
+		let header = findByText(container, "Resolved items (2)");
+		expect(header?.tag).toBe("button");
+		expect(header?.attr).toMatchObject({ type: "button", "aria-expanded": "false" });
+		expect(renderResolvedChangesMock).not.toHaveBeenCalled();
+		expect(findByClass(container, "vi-resolved-section")).toHaveLength(1);
+		expect(container.children.findIndex((child) => child.cls === "vi-issues"))
+			.toBeLessThan(container.children.findIndex((child) => child.cls === "vi-resolved-section"));
+		expect(container.children.findIndex((child) => child.cls === "vi-resolved-section"))
+			.toBeLessThan(container.children.findIndex((child) => child.cls === "vi-ignored-section"));
+		expect(header?.children.some((child) =>
+			["input", "select"].includes(child.tag) || /vi-(?:select|action|filter)/.test(child.cls)))
+			.toBe(false);
+
+		header?.click();
+
+		expect((view as any).model.resolvedExpanded).toBe(true);
+		expect(renderResolvedChangesMock).toHaveBeenCalledOnce();
+		expect(renderResolvedChangesMock).toHaveBeenCalledWith(
+			expect.any(FakeElement),
+			[activeResolved, ignoredResolved],
+		);
+		header = findByText(container, "Resolved items (2)");
+		expect(header?.attr["aria-expanded"]).toBe("true");
+
+		header?.click();
+
+		expect((view as any).model.resolvedExpanded).toBe(false);
+		expect(renderResolvedChangesMock).toHaveBeenCalledOnce();
+	});
+
+	it("hides resolved findings for unavailable and empty comparisons", () => {
+		for (const comparison of [
+			{
+				available: false,
+				reason: "first-scan" as const,
+				statuses: new Map(),
+				resolvedIssues: [snapshotIssue("stale", false, "Notes/stale.md")],
+			},
+			{ available: true, statuses: new Map(), resolvedIssues: [] },
+		]) {
+			const container = new FakeElement();
+			const view = new InspectorView(new WorkspaceLeaf());
+			(view as any).containerEl.children[1] = container;
+			(view as any).model.result = result;
+			(view as any).model.comparison = comparison;
+
+			(view as any).render();
+
+			expect(findByClass(container, "vi-resolved-section")).toHaveLength(0);
+		}
+	});
+
+	it("never passes snapshot resolved findings to active or ignored issue lists", () => {
+		const currentIgnored = makeIssue("empty-notes", "info", "current-ignored");
+		const resolved = snapshotIssue("snapshot-resolved", false, "Notes/resolved.md");
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.result = { ...result, ignoredIssues: [currentIgnored] };
+		(view as any).model.comparison = {
+			available: true,
+			statuses: new Map(),
+			resolvedIssues: [resolved],
+		};
+		(view as any).model.ignoredExpanded = true;
+
+		(view as any).render();
+
+		expect(renderIssueListMock.mock.calls).toHaveLength(2);
+		for (const [, config] of renderIssueListMock.mock.calls) {
+			expect(config.issues.map((issue: Issue) => issue.fingerprint)).not.toContain(
+				"snapshot-resolved",
+			);
+		}
+		expect(renderIssueListMock.mock.calls.flatMap(([, config]) =>
+			config.issues.map((issue: Issue) => issue.fingerprint))).toEqual(
+			expect.arrayContaining(["broken-error", "current-ignored"]),
+		);
 	});
 
 	it("describes mixed fix actions without claiming every action trashes a file", () => {
