@@ -62,10 +62,13 @@ export class InspectorView extends ItemView {
 		scanStartedAt: null,
 		filterScanner: null,
 		filterSeverity: null,
+		filterStatus: null,
+		filterClassification: null,
 		enableFixActions: true,
 		selectionMode: false,
 		selectedFingerprints: new Set(),
 		ignoredExpanded: false,
+		resolvedExpanded: false,
 		ignoredSelectionMode: false,
 		ignoredSelectedFingerprints: new Set(),
 	};
@@ -131,6 +134,24 @@ export class InspectorView extends ItemView {
 	setResult(result: ScanResult, comparison: LifecycleComparison) {
 		this.model.result = result;
 		this.model.comparison = comparison;
+		if (
+			this.model.filterStatus
+			&& (
+				!comparison.available
+				|| !result.issues.some((issue) =>
+					comparison.statuses.get(issue.fingerprint) === this.model.filterStatus)
+			)
+		) {
+			this.model.filterStatus = null;
+		}
+		if (
+			this.model.filterClassification
+			&& !result.issues.some(
+				(issue) => issue.classification === this.model.filterClassification,
+			)
+		) {
+			this.model.filterClassification = null;
+		}
 		this.model.isScanning = false;
 		this.model.scanProgress = null;
 		this.model.scanStartedAt = null;
@@ -139,6 +160,7 @@ export class InspectorView extends ItemView {
 		this.model.selectedFingerprints = new Set();
 		this.model.ignoredSelectionMode = false;
 		this.model.ignoredSelectedFingerprints = new Set();
+		this.model.resolvedExpanded = false;
 		this.render();
 	}
 
@@ -195,9 +217,9 @@ export class InspectorView extends ItemView {
 		const filterView = this.getIssueFilterView();
 		this.renderToolbar(container, filterView);
 		renderSummary(container, this.model.result, {
-			issues: filterView.visibleIssues,
-			onFilterSeverity: (severity) => {
-				this.model.filterSeverity = this.model.filterSeverity === severity ? null : severity;
+			comparison: this.model.comparison,
+			onFilterStatus: (status) => {
+				this.model.filterStatus = this.model.filterStatus === status ? null : status;
 				this.render();
 			},
 		});
@@ -298,6 +320,12 @@ export class InspectorView extends ItemView {
 		const toolbar = container.createDiv({ cls: "vi-toolbar" });
 		this.renderScannerFilter(toolbar, filterView);
 		this.renderSeverityFilter(toolbar, filterView);
+		if (this.model.comparison.available) {
+			this.renderLifecycleFilter(toolbar, filterView);
+		}
+		if ((this.model.result?.issues.length ?? 0) > 0) {
+			this.renderClassificationFilter(toolbar, filterView);
+		}
 
 		if (filterView.visibleIssues.length > 0) {
 			const selectBtn = toolbar.createEl("button", {
@@ -342,6 +370,34 @@ export class InspectorView extends ItemView {
 				text: `${severity} (${count})`,
 			}).addEventListener("click", () => {
 				this.model.filterSeverity = this.model.filterSeverity === severity ? null : severity;
+				this.render();
+			});
+		}
+	}
+
+	private renderLifecycleFilter(toolbar: HTMLElement, filterView: IssueFilterView) {
+		const group = toolbar.createDiv({ cls: "vi-filter-group vi-lifecycle-filter" });
+		for (const { status, count } of filterView.statusFacets) {
+			group.createEl("button", {
+				cls: `vi-filter-btn ${this.model.filterStatus === status ? "vi-active" : ""}`,
+				text: `${status} (${count})`,
+			}).addEventListener("click", () => {
+				this.model.filterStatus = this.model.filterStatus === status ? null : status;
+				this.render();
+			});
+		}
+	}
+
+	private renderClassificationFilter(toolbar: HTMLElement, filterView: IssueFilterView) {
+		const group = toolbar.createDiv({ cls: "vi-filter-group vi-classification-filter" });
+		for (const { classification, count } of filterView.classificationFacets) {
+			group.createEl("button", {
+				cls: `vi-filter-btn ${this.model.filterClassification === classification ? "vi-active" : ""}`,
+				text: `${classification} (${count})`,
+			}).addEventListener("click", () => {
+				this.model.filterClassification = this.model.filterClassification === classification
+					? null
+					: classification;
 				this.render();
 			});
 		}
@@ -534,7 +590,9 @@ export class InspectorView extends ItemView {
 		return buildIssueFilterView(this.model.result?.issues ?? [], {
 			scanner: this.model.filterScanner,
 			severity: this.model.filterSeverity,
-		});
+			status: this.model.filterStatus,
+			classification: this.model.filterClassification,
+		}, this.model.comparison.statuses);
 	}
 
 	private async handleOpenIssue(issue: Issue) {

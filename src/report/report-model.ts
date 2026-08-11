@@ -24,13 +24,6 @@ export type IssueFilters = {
 	classification: FindingClassification | null;
 };
 
-export type IssueSummary = {
-	total: number;
-	errors: number;
-	warnings: number;
-	infos: number;
-};
-
 export type IssueFilterView = {
 	visibleIssues: Issue[];
 	scannerCounts: Map<ScannerId, number>;
@@ -39,29 +32,13 @@ export type IssueFilterView = {
 	classificationFacets: Array<{ classification: FindingClassification; count: number }>;
 };
 
-type BaseIssueFilters = Pick<IssueFilters, "scanner" | "severity">;
-type LegacyIssueFilters = BaseIssueFilters & {
-	status?: never;
-	classification?: never;
-};
-
 export function buildIssueFilterView(
 	issues: Issue[],
 	filters: IssueFilters,
-	statuses?: ReadonlyMap<string, CurrentFindingStatus>,
-): IssueFilterView;
-export function buildIssueFilterView(
-	issues: Issue[],
-	filters: LegacyIssueFilters,
-	statuses?: ReadonlyMap<string, CurrentFindingStatus>,
-): IssueFilterView;
-export function buildIssueFilterView(
-	issues: Issue[],
-	filters: BaseIssueFilters & Partial<Pick<IssueFilters, "status" | "classification">>,
 	statuses: ReadonlyMap<string, CurrentFindingStatus> = new Map(),
 ): IssueFilterView {
-	const statusFilter = filters.status ?? null;
-	const classificationFilter = filters.classification ?? null;
+	const statusFilter = filters.status;
+	const classificationFilter = filters.classification;
 	const matchesScanner = (issue: Issue) =>
 		!filters.scanner || issue.scannerId === filters.scanner;
 	const matchesSeverity = (issue: Issue) =>
@@ -177,15 +154,6 @@ function compareStrings(left: string, right: string): number {
 	return 0;
 }
 
-export function summarizeIssues(issues: Issue[]): IssueSummary {
-	return {
-		total: issues.length,
-		errors: issues.filter((issue) => issue.severity === "error").length,
-		warnings: issues.filter((issue) => issue.severity === "warning").length,
-		infos: issues.filter((issue) => issue.severity === "info").length,
-	};
-}
-
 export type ReportModel = {
 	result: ScanResult | null;
 	comparison: LifecycleComparison;
@@ -194,10 +162,13 @@ export type ReportModel = {
 	scanStartedAt: number | null;
 	filterScanner: ScannerId | null;
 	filterSeverity: IssueSeverity | null;
+	filterStatus: CurrentFindingStatus | null;
+	filterClassification: FindingClassification | null;
 	enableFixActions: boolean;
 	selectionMode: boolean;
 	selectedFingerprints: Set<string>;
 	ignoredExpanded: boolean;
+	resolvedExpanded: boolean;
 	ignoredSelectionMode: boolean;
 	ignoredSelectedFingerprints: Set<string>;
 };

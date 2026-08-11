@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setTooltip, WorkspaceLeaf } from "obsidian";
-import type { Issue, ScanResult, ScannerId } from "../scanner/Issue";
+import type {
+	FindingClassification,
+	Issue,
+	ScanResult,
+	ScannerId,
+} from "../scanner/Issue";
+import type { LifecycleComparison } from "../scanner/result-diff";
 
 const { renderIssueListMock, renderSummaryMock } = vi.hoisted(() => ({
 	renderIssueListMock: vi.fn(),
@@ -70,11 +76,16 @@ class FakeElement {
 	}
 }
 
-function makeIssue(scannerId: ScannerId, severity: Issue["severity"], fingerprint: string): Issue {
+function makeIssue(
+	scannerId: ScannerId,
+	severity: Issue["severity"],
+	fingerprint: string,
+	classification: FindingClassification = "confirmed",
+): Issue {
 	return {
 		scannerId,
 		severity,
-		classification: "confirmed",
+		classification,
 		explanation: {
 			why: "Test evidence confirms this fixture.",
 			nextStep: "Review the test fixture.",
@@ -102,6 +113,25 @@ const result: ScanResult = {
 	scannersRun: ["broken-links", "duplicate-files"],
 };
 
+function comparable(
+	statuses: Array<[string, "new" | "persisting"]>,
+): LifecycleComparison {
+	return {
+		available: true,
+		statuses: new Map(statuses),
+		resolvedIssues: [],
+	};
+}
+
+function findByText(element: FakeElement, text: string): FakeElement | undefined {
+	if (element.text === text) return element;
+	for (const child of element.children) {
+		const match = findByText(child, text);
+		if (match) return match;
+	}
+	return undefined;
+}
+
 describe("InspectorView report filter wiring", () => {
 	beforeEach(() => {
 		renderIssueListMock.mockClear();
@@ -109,21 +139,27 @@ describe("InspectorView report filter wiring", () => {
 		vi.mocked(setTooltip).mockClear();
 	});
 
-	it("passes the same filtered view to summary, toolbar, and issue list", () => {
+	it("passes the global comparison to summary and filtered issues only to the issue list", () => {
 		const container = new FakeElement();
 		const view = new InspectorView(new WorkspaceLeaf());
 		(view as any).containerEl.children[1] = container;
 		(view as any).model.result = result;
+		(view as any).model.comparison = comparable([
+			["broken-error", "new"],
+			["duplicate-warning", "persisting"],
+			["duplicate-info", "persisting"],
+		]);
 		(view as any).model.filterScanner = "duplicate-files";
 		(view as any).model.filterSeverity = "error";
 
 		(view as any).render();
 
-		expect.soft(renderSummaryMock).toHaveBeenLastCalledWith(
-			container,
-			result,
-			expect.objectContaining({ issues: [] }),
-		);
+		const summaryOptions = renderSummaryMock.mock.lastCall?.[2];
+		expect.soft(summaryOptions).toEqual({
+			comparison: (view as any).model.comparison,
+			onFilterStatus: expect.any(Function),
+		});
+		expect.soft(summaryOptions).not.toHaveProperty("issues");
 		expect.soft(renderIssueListMock).toHaveBeenLastCalledWith(
 			expect.any(FakeElement),
 			expect.objectContaining({ issues: [] }),
@@ -139,15 +175,146 @@ describe("InspectorView report filter wiring", () => {
 
 		severityButtons.find((button) => button.cls.includes("vi-active"))?.click();
 
-		expect.soft(renderSummaryMock).toHaveBeenLastCalledWith(
-			container,
-			result,
-			expect.objectContaining({ issues: [duplicateInfo, duplicateWarning] }),
-		);
+		expect.soft(renderSummaryMock.mock.lastCall?.[2]).not.toHaveProperty("issues");
 		expect.soft(renderIssueListMock).toHaveBeenLastCalledWith(
 			expect.any(FakeElement),
 			expect.objectContaining({ issues: [duplicateInfo, duplicateWarning] }),
 		);
+	});
+
+	it("hides lifecycle buttons when comparison is unavailable", () => {
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.result = result;
+
+		(view as any).render();
+
+		expect(findByText(container, "new (0)")).toBeUndefined();
+		expect(findByText(container, "persisting (0)")).toBeUndefined();
+		expect(findByText(container, "confirmed (3)")).toBeDefined();
+	});
+
+	it("filters the same visible issue list from lifecycle and classification controls", () => {
+		const candidateNew = makeIssue("duplicate-files", "warning", "candidate-new", "candidate");
+		const confirmedNew = makeIssue("broken-links", "error", "confirmed-new");
+		const confirmedPersisting = makeIssue("empty-notes", "info", "confirmed-persisting");
+		const lifecycleResult: ScanResult = {
+			...result,
+			issues: [candidateNew, confirmedNew, confirmedPersisting],
+			scannersRun: ["broken-links", "empty-notes", "duplicate-files"],
+		};
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.result = lifecycleResult;
+		(view as any).model.comparison = comparable([
+			["candidate-new", "new"],
+			["confirmed-new", "new"],
+			["confirmed-persisting", "persisting"],
+		]);
+
+		(view as any).render();
+		findByText(container, "new (2)")?.click();
+
+		expect(renderIssueListMock).toHaveBeenLastCalledWith(
+			expect.any(FakeElement),
+			expect.objectContaining({ issues: [confirmedNew, candidateNew] }),
+		);
+
+		findByText(container, "candidate (1)")?.click();
+
+		expect(renderIssueListMock).toHaveBeenLastCalledWith(
+			expect.any(FakeElement),
+			expect.objectContaining({ issues: [candidateNew] }),
+		);
+	});
+
+	it("toggles lifecycle filtering from the summary headline", () => {
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.result = result;
+		(view as any).model.comparison = comparable([
+			["broken-error", "new"],
+			["duplicate-warning", "persisting"],
+			["duplicate-info", "persisting"],
+		]);
+
+		(view as any).render();
+		const onFilterStatus = renderSummaryMock.mock.lastCall?.[2].onFilterStatus;
+		onFilterStatus("new");
+
+		expect(renderIssueListMock).toHaveBeenLastCalledWith(
+			expect.any(FakeElement),
+			expect.objectContaining({ issues: [result.issues[0]] }),
+		);
+
+		const nextCallback = renderSummaryMock.mock.lastCall?.[2].onFilterStatus;
+		nextCallback("new");
+		expect(renderIssueListMock.mock.lastCall?.[1].issues).toEqual([
+			result.issues[0],
+			duplicateInfo,
+			duplicateWarning,
+		]);
+	});
+
+	it("retains globally available facets across scans and resets vanished facets", () => {
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.filterScanner = "broken-links";
+		(view as any).model.filterSeverity = "error";
+		(view as any).model.filterStatus = "persisting";
+		(view as any).model.filterClassification = "candidate";
+
+		const hiddenCandidate = makeIssue("duplicate-files", "warning", "candidate", "candidate");
+		const retainedResult: ScanResult = {
+			...result,
+			issues: [result.issues[0], hiddenCandidate],
+		};
+		view.setResult(retainedResult, comparable([
+			["broken-error", "new"],
+			["candidate", "persisting"],
+		]));
+
+		expect((view as any).model.filterStatus).toBe("persisting");
+		expect((view as any).model.filterClassification).toBe("candidate");
+
+		view.setResult(result, comparable([
+			["broken-error", "new"],
+			["duplicate-warning", "new"],
+			["duplicate-info", "new"],
+		]));
+
+		expect((view as any).model.filterStatus).toBeNull();
+		expect((view as any).model.filterClassification).toBeNull();
+	});
+
+	it("resets lifecycle filters for unavailable comparisons but retains available classifications", () => {
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.filterStatus = "new";
+		(view as any).model.filterClassification = "confirmed";
+
+		view.setResult(result, {
+			available: false,
+			reason: "settings-changed",
+			statuses: new Map(),
+			resolvedIssues: [],
+		});
+
+		expect((view as any).model.filterStatus).toBeNull();
+		expect((view as any).model.filterClassification).toBe("confirmed");
+	});
+
+	it("initializes lifecycle filter state and resolved expansion", () => {
+		const view = new InspectorView(new WorkspaceLeaf());
+
+		expect((view as any).model.filterStatus).toBeNull();
+		expect((view as any).model.filterClassification).toBeNull();
+		expect((view as any).model.resolvedExpanded).toBe(false);
 	});
 
 	it("describes mixed fix actions without claiming every action trashes a file", () => {
