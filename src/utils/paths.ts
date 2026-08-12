@@ -2,6 +2,13 @@ export function normalizePath(path: string): string {
 	return path.replace(/\\/g, "/").replace(/\/+$/, "");
 }
 
+export function getParentFolder(path: string): string | null {
+	const normalized = normalizePath(path);
+	const slashIndex = normalized.lastIndexOf("/");
+	if (slashIndex <= 0) return null;
+	return normalized.slice(0, slashIndex);
+}
+
 export function getExtension(path: string): string {
 	const normalized = normalizePath(path);
 	const dotIndex = normalized.lastIndexOf(".");

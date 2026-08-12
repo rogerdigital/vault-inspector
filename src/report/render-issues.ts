@@ -1,15 +1,22 @@
 import type { Issue, ScannerId } from "../scanner/Issue";
+import type { CurrentFindingStatus } from "../scanner/result-diff";
 import { SCANNER_LABELS } from "../scanner/Issue";
 import { formatSize } from "../utils/format";
+import { renderFindingEvidence } from "./render-evidence";
 import { setTooltip } from "obsidian";
+import { getParentFolder } from "../utils/paths";
 
 export type IssueListConfig = {
 	issues: Issue[];
 	scannersRun: ScannerId[];
 	selectionMode: boolean;
 	selectedFingerprints: Set<string>;
+	statuses?: ReadonlyMap<string, CurrentFindingStatus>;
 	onOpenIssue: (issue: Issue) => void;
 	onToggleSelect: (issue: Issue) => void;
+	onIgnoreIssue?: (issue: Issue) => void;
+	onExcludeFolder?: (issue: Issue) => void;
+	onOpenScannerSettings?: (scannerId: ScannerId) => void;
 };
 
 export function renderIssueList(container: HTMLElement, config: IssueListConfig) {
@@ -48,6 +55,13 @@ export function renderIssueList(container: HTMLElement, config: IssueListConfig)
 				cls: `vi-severity-badge vi-severity-${issue.severity}`,
 				text: issue.severity.toUpperCase(),
 			});
+			const status = config.statuses?.get(issue.fingerprint);
+			if (status) {
+				li.createSpan({
+					cls: `vi-status-badge vi-status-${status}`,
+					text: status.toUpperCase(),
+				});
+			}
 			li.createSpan({ cls: "vi-issue-title", text: issue.title });
 
 			const issuePath = getIssuePath(issue);
@@ -101,6 +115,61 @@ function renderIssueDetails(container: HTMLElement, issue: Issue, config: IssueL
 			}
 		}
 	}
+
+	renderFindingEvidence(details, issue);
+	renderIssueActions(details, issue, config);
+}
+
+function renderIssueActions(
+	container: HTMLElement,
+	issue: Issue,
+	config: IssueListConfig,
+): void {
+	const issuePath = getIssuePath(issue);
+	const canExcludeFolder = Boolean(
+		config.onExcludeFolder
+		&& issuePath
+		&& getParentFolder(issuePath),
+	);
+	if (!config.onIgnoreIssue && !canExcludeFolder && !config.onOpenScannerSettings) {
+		return;
+	}
+
+	const disclosure = container.createEl("details", { cls: "vi-actions-disclosure" });
+	disclosure.addEventListener("click", (event) => event.stopPropagation());
+	disclosure.createEl("summary", { text: "Actions" });
+	const actions = disclosure.createDiv({ cls: "vi-context-actions" });
+
+	if (config.onIgnoreIssue) {
+		createActionButton(actions, "Ignore this issue", () => {
+			config.onIgnoreIssue?.(issue);
+		});
+	}
+	if (canExcludeFolder) {
+		createActionButton(actions, "Exclude parent folder", () => {
+			config.onExcludeFolder?.(issue);
+		});
+	}
+	if (config.onOpenScannerSettings) {
+		createActionButton(actions, "Scanner settings", () => {
+			config.onOpenScannerSettings?.(issue.scannerId);
+		});
+	}
+}
+
+function createActionButton(
+	container: HTMLElement,
+	text: string,
+	onClick: () => void,
+): void {
+	container.createEl("button", {
+		cls: "vi-action-btn",
+		text,
+		attr: { type: "button" },
+	}).addEventListener("click", (event) => {
+		event.stopPropagation();
+		onClick();
+	});
 }
 
 function getIssueSummary(issue: Issue): string {

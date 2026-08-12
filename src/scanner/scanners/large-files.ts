@@ -1,6 +1,7 @@
 import type { TFile } from "obsidian";
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
+import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
 import { isMarkdown } from "../../utils/file-types";
 import { isIgnoredPath, matchesGlob } from "../../utils/paths";
@@ -35,6 +36,12 @@ export const largeFilesScanner = {
 						threshold,
 						type: isMd ? "markdown" : "attachment",
 					},
+					...describeFinding(
+						"confirmed",
+						`The observed file size of ${formatSize(file.stat.size)} (${file.stat.size} bytes) exceeds the configured ${isMd ? "Markdown" : "attachment"} threshold of ${formatSize(threshold)} (${threshold} bytes).`,
+						"Review whether the file belongs in the vault or should be excluded from this scanner.",
+						"Large generated notes, media, and workflow artifacts can be expected.",
+					),
 					fingerprint: generateFingerprint("large-files", file.path, {
 						type: isMd ? "markdown" : "attachment",
 					}),

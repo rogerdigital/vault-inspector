@@ -1,4 +1,4 @@
-import { ItemView, MarkdownView, WorkspaceLeaf, TFile, setTooltip } from "obsidian";
+import { ItemView, MarkdownView, Notice, WorkspaceLeaf, TFile, setTooltip } from "obsidian";
 import type { ScanProgress, ScanResult, Issue } from "../scanner/Issue";
 import { SCANNER_LABELS } from "../scanner/Issue";
 import {
@@ -8,9 +8,19 @@ import {
 } from "./report-model";
 import { renderSummary } from "./render-summary";
 import { renderIssueList } from "./render-issues";
+import { renderResolvedChanges } from "./render-changes";
+import { renderOperationOutcomes } from "./render-outcomes";
 import { setIcon } from "obsidian";
 import { formatDuration } from "../utils/format";
 import { describeFixActions } from "../fix/confirm-modal";
+import type { LifecycleComparison } from "../scanner/result-diff";
+import type { ScannerId } from "../scanner/Issue";
+import type { OperationOutcome } from "../fix/action-outcomes";
+import {
+	buildFolderExclusionRequest,
+	showFolderExclusionModal,
+	type FolderExclusionRequest,
+} from "./exclude-folder-modal";
 
 export const VIEW_TYPE_INSPECTOR = "vault-inspector";
 
@@ -50,17 +60,27 @@ function findTextPosition(content: string, target: string): { line: number; ch: 
 export class InspectorView extends ItemView {
 	private model: ReportModel = {
 		result: null,
+		comparison: {
+			available: false,
+			reason: "first-scan",
+			statuses: new Map(),
+			resolvedIssues: [],
+		},
 		isScanning: false,
 		scanProgress: null,
 		scanStartedAt: null,
 		filterScanner: null,
 		filterSeverity: null,
+		filterStatus: null,
+		filterClassification: null,
 		enableFixActions: true,
 		selectionMode: false,
 		selectedFingerprints: new Set(),
 		ignoredExpanded: false,
+		resolvedExpanded: false,
 		ignoredSelectionMode: false,
 		ignoredSelectedFingerprints: new Set(),
+		operationOutcomes: [],
 	};
 
 	private onIgnoreAllIssues: ((issues: Issue[]) => void | Promise<void>) | null = null;
@@ -68,6 +88,9 @@ export class InspectorView extends ItemView {
 	private onFixAllIssues: ((issues: Issue[]) => void | Promise<void>) | null = null;
 	private onRevealIssue: ((issue: Issue) => void | Promise<void>) | null = null;
 	private onRunScan: (() => void) | null = null;
+	private onIgnoreIssue: ((issue: Issue) => void | Promise<void>) | null = null;
+	private onExcludeFolder: ((request: FolderExclusionRequest) => void | Promise<void>) | null = null;
+	private onOpenScannerSettings: ((scannerId: ScannerId) => void) | null = null;
 	private backToTopHandler: (() => void) | null = null;
 	private scanTimer: number | null = null;
 
@@ -100,6 +123,9 @@ export class InspectorView extends ItemView {
 		this.onFixAllIssues = null;
 		this.onRevealIssue = null;
 		this.onRunScan = null;
+		this.onIgnoreIssue = null;
+		this.onExcludeFolder = null;
+		this.onOpenScannerSettings = null;
 	}
 
 	setScanning(scanning: boolean) {
@@ -121,8 +147,27 @@ export class InspectorView extends ItemView {
 		this.render();
 	}
 
-	setResult(result: ScanResult) {
+	setResult(result: ScanResult, comparison: LifecycleComparison) {
 		this.model.result = result;
+		this.model.comparison = comparison;
+		if (
+			this.model.filterStatus
+			&& (
+				!comparison.available
+				|| !result.issues.some((issue) =>
+					comparison.statuses.get(issue.fingerprint) === this.model.filterStatus)
+			)
+		) {
+			this.model.filterStatus = null;
+		}
+		if (
+			this.model.filterClassification
+			&& !result.issues.some(
+				(issue) => issue.classification === this.model.filterClassification,
+			)
+		) {
+			this.model.filterClassification = null;
+		}
 		this.model.isScanning = false;
 		this.model.scanProgress = null;
 		this.model.scanStartedAt = null;
@@ -131,11 +176,20 @@ export class InspectorView extends ItemView {
 		this.model.selectedFingerprints = new Set();
 		this.model.ignoredSelectionMode = false;
 		this.model.ignoredSelectedFingerprints = new Set();
+		this.model.resolvedExpanded = false;
 		this.render();
 	}
 
 	setEnableFixActions(enabled: boolean) {
 		this.model.enableFixActions = enabled;
+	}
+
+	setOperationOutcomes(outcomes: OperationOutcome[]) {
+		this.model.operationOutcomes = outcomes.map((outcome) => ({
+			...outcome,
+			affectedPaths: [...outcome.affectedPaths],
+		}));
+		this.render();
 	}
 
 	setCallbacks(callbacks: {
@@ -144,12 +198,18 @@ export class InspectorView extends ItemView {
 		onFixAllIssues: (issues: Issue[]) => void | Promise<void>;
 		onRevealIssue: (issue: Issue) => void | Promise<void>;
 		onRunScan: () => void;
+		onIgnoreIssue: (issue: Issue) => void | Promise<void>;
+		onExcludeFolder: (request: FolderExclusionRequest) => void | Promise<void>;
+		onOpenScannerSettings: (scannerId: ScannerId) => void;
 	}) {
 		this.onIgnoreAllIssues = callbacks.onIgnoreAllIssues;
 		this.onRestoreIssues = callbacks.onRestoreIssues;
 		this.onFixAllIssues = callbacks.onFixAllIssues;
 		this.onRevealIssue = callbacks.onRevealIssue;
 		this.onRunScan = callbacks.onRunScan;
+		this.onIgnoreIssue = callbacks.onIgnoreIssue;
+		this.onExcludeFolder = callbacks.onExcludeFolder;
+		this.onOpenScannerSettings = callbacks.onOpenScannerSettings;
 	}
 
 	hasResult(): boolean { return this.model.result !== null; }
@@ -187,12 +247,17 @@ export class InspectorView extends ItemView {
 		const filterView = this.getIssueFilterView();
 		this.renderToolbar(container, filterView);
 		renderSummary(container, this.model.result, {
-			issues: filterView.visibleIssues,
-			onFilterSeverity: (severity) => {
-				this.model.filterSeverity = this.model.filterSeverity === severity ? null : severity;
+			comparison: this.model.comparison,
+			onFilterStatus: (status) => {
+				this.model.filterStatus = this.model.filterStatus === status ? null : status;
 				this.render();
 			},
 		});
+		renderOperationOutcomes(
+			container,
+			this.model.operationOutcomes,
+			() => this.setOperationOutcomes([]),
+		);
 
 		if (this.model.selectionMode) {
 			this.renderMainActionBar(container);
@@ -204,10 +269,17 @@ export class InspectorView extends ItemView {
 			scannersRun: this.model.result.scannersRun,
 			selectionMode: this.model.selectionMode,
 			selectedFingerprints: this.model.selectedFingerprints,
+			statuses: this.model.comparison.statuses,
 			onOpenIssue: (issue) => { void this.handleOpenIssue(issue); },
 			onToggleSelect: (issue) => this.handleToggleSelect(issue),
+			onIgnoreIssue: (issue) => { void this.handleIgnoreIssue(issue); },
+			onExcludeFolder: (issue) => { void this.handleExcludeFolder(issue); },
+			onOpenScannerSettings: (scannerId) => {
+				this.onOpenScannerSettings?.(scannerId);
+			},
 		});
 
+		this.renderResolvedSection(container);
 		this.renderIgnoredSection(container);
 		this.addBackToTop(container);
 	}
@@ -290,6 +362,12 @@ export class InspectorView extends ItemView {
 		const toolbar = container.createDiv({ cls: "vi-toolbar" });
 		this.renderScannerFilter(toolbar, filterView);
 		this.renderSeverityFilter(toolbar, filterView);
+		if (this.model.comparison.available) {
+			this.renderLifecycleFilter(toolbar, filterView);
+		}
+		if ((this.model.result?.issues.length ?? 0) > 0) {
+			this.renderClassificationFilter(toolbar, filterView);
+		}
 
 		if (filterView.visibleIssues.length > 0) {
 			const selectBtn = toolbar.createEl("button", {
@@ -339,6 +417,34 @@ export class InspectorView extends ItemView {
 		}
 	}
 
+	private renderLifecycleFilter(toolbar: HTMLElement, filterView: IssueFilterView) {
+		const group = toolbar.createDiv({ cls: "vi-filter-group vi-lifecycle-filter" });
+		for (const { status, count } of filterView.statusFacets) {
+			group.createEl("button", {
+				cls: `vi-filter-btn ${this.model.filterStatus === status ? "vi-active" : ""}`,
+				text: `${status} (${count})`,
+			}).addEventListener("click", () => {
+				this.model.filterStatus = this.model.filterStatus === status ? null : status;
+				this.render();
+			});
+		}
+	}
+
+	private renderClassificationFilter(toolbar: HTMLElement, filterView: IssueFilterView) {
+		const group = toolbar.createDiv({ cls: "vi-filter-group vi-classification-filter" });
+		for (const { classification, count } of filterView.classificationFacets) {
+			group.createEl("button", {
+				cls: `vi-filter-btn ${this.model.filterClassification === classification ? "vi-active" : ""}`,
+				text: `${classification} (${count})`,
+			}).addEventListener("click", () => {
+				this.model.filterClassification = this.model.filterClassification === classification
+					? null
+					: classification;
+				this.render();
+			});
+		}
+	}
+
 	// ─── Main Action Bar ─────────────────────────────────────
 
 	private renderMainActionBar(container: HTMLElement) {
@@ -380,7 +486,11 @@ export class InspectorView extends ItemView {
 				describeFixActions(selectedFixable.map((issue) => issue.fixAction!)),
 			);
 			fixBtn.addEventListener("click", () => {
-				if (this.onFixAllIssues) void this.onFixAllIssues(selectedFixable);
+				void this.handleBatchAction(
+					this.onFixAllIssues,
+					selectedFixable,
+					"Fixing issues",
+				);
 			});
 		}
 
@@ -390,7 +500,11 @@ export class InspectorView extends ItemView {
 			ignoreBtn.createSpan({ text: `(${selectedIssues.length})` });
 			setTooltip(ignoreBtn, "Hide selected issues from future scans");
 			ignoreBtn.addEventListener("click", () => {
-				if (this.onIgnoreAllIssues) void this.onIgnoreAllIssues(selectedIssues);
+				void this.handleBatchAction(
+					this.onIgnoreAllIssues,
+					selectedIssues,
+					"Ignoring issues",
+				);
 			});
 		}
 
@@ -404,7 +518,33 @@ export class InspectorView extends ItemView {
 		});
 	}
 
-	// ─── Ignored Section ─────────────────────────────────────
+	// ─── Resolved and ignored sections ───────────────────────
+
+	private renderResolvedSection(container: HTMLElement) {
+		const comparison = this.model.comparison;
+		if (!comparison.available || comparison.resolvedIssues.length === 0) return;
+
+		const section = container.createDiv({ cls: "vi-resolved-section" });
+		const header = section.createEl("button", {
+			cls: "vi-resolved-header",
+			text: `Resolved items (${comparison.resolvedIssues.length})`,
+			attr: {
+				type: "button",
+				"aria-expanded": String(this.model.resolvedExpanded),
+			},
+		});
+		const chevron = header.createSpan({ cls: "vi-resolved-chevron" });
+		setIcon(chevron, this.model.resolvedExpanded ? "chevron-down" : "chevron-right");
+		header.addEventListener("click", () => {
+			this.model.resolvedExpanded = !this.model.resolvedExpanded;
+			this.render();
+		});
+
+		if (!this.model.resolvedExpanded) return;
+
+		const body = section.createDiv({ cls: "vi-resolved-body" });
+		renderResolvedChanges(body, comparison.resolvedIssues);
+	}
 
 	private renderIgnoredSection(container: HTMLElement) {
 		if (!this.model.result) return;
@@ -455,6 +595,7 @@ export class InspectorView extends ItemView {
 			scannersRun: this.model.result.scannersRun,
 			selectionMode: this.model.ignoredSelectionMode,
 			selectedFingerprints: this.model.ignoredSelectedFingerprints,
+			statuses: this.model.comparison.statuses,
 			onOpenIssue: (issue) => { void this.handleOpenIssue(issue); },
 			onToggleSelect: (issue) => this.handleIgnoredToggleSelect(issue),
 		});
@@ -486,7 +627,11 @@ export class InspectorView extends ItemView {
 			restoreBtn.createSpan({ text: `(${selectedIssues.length})` });
 			setTooltip(restoreBtn, "Stop ignoring selected issues");
 			restoreBtn.addEventListener("click", () => {
-				if (this.onRestoreIssues) void this.onRestoreIssues(selectedIssues);
+				void this.handleBatchAction(
+					this.onRestoreIssues,
+					selectedIssues,
+					"Restoring issues",
+				);
 			});
 		}
 
@@ -526,7 +671,45 @@ export class InspectorView extends ItemView {
 		return buildIssueFilterView(this.model.result?.issues ?? [], {
 			scanner: this.model.filterScanner,
 			severity: this.model.filterSeverity,
-		});
+			status: this.model.filterStatus,
+			classification: this.model.filterClassification,
+		}, this.model.comparison.statuses);
+	}
+
+	private async handleExcludeFolder(issue: Issue): Promise<void> {
+		const request = buildFolderExclusionRequest(issue, this.getVisibleIssues());
+		if (!request) return;
+		try {
+			if (!await showFolderExclusionModal(this.app, request)) return;
+			if (this.onExcludeFolder) await this.onExcludeFolder(request);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			new Notice(`Folder exclusion failed: ${message}`);
+		}
+	}
+
+	private async handleIgnoreIssue(issue: Issue): Promise<void> {
+		if (!this.onIgnoreIssue) return;
+		try {
+			await this.onIgnoreIssue(issue);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			new Notice(`Ignoring issue failed: ${message}`);
+		}
+	}
+
+	private async handleBatchAction(
+		callback: ((issues: Issue[]) => void | Promise<void>) | null,
+		issues: Issue[],
+		label: string,
+	): Promise<void> {
+		if (!callback) return;
+		try {
+			await callback(issues);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			new Notice(`${label} failed: ${message}`);
+		}
 	}
 
 	private async handleOpenIssue(issue: Issue) {

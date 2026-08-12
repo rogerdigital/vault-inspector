@@ -1,5 +1,6 @@
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
+import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
 import { inferType, typesAreCompatible } from "../../utils/frontmatter-type";
 import type { PropType } from "../../utils/frontmatter-type";
@@ -77,6 +78,20 @@ export const frontmatterTypesScanner = {
 				allPaths.push(...paths);
 			}
 
+			const presentation = hasIncompatible
+				? describeFinding(
+						"confirmed",
+						`Property "${prop}" uses incompatible observed value types: ${typeSummary}.`,
+						"Review the sampled notes and normalize the property values or ignore this property.",
+						"Intentional schema variants can be valid when different notes serve different workflows.",
+					)
+				: describeFinding(
+						"candidate",
+						`Property "${prop}" mixes ISO date-like strings with other string values: ${typeSummary}.`,
+						"Review the sampled notes and choose one representation if consistency is required.",
+						"The ISO date heuristic may classify intentional string formats differently.",
+					);
+
 			issues.push({
 				scannerId: "frontmatter-types",
 				severity,
@@ -88,6 +103,7 @@ export const frontmatterTypesScanner = {
 					types: typeSummary,
 					fileCount: allPaths.length,
 				},
+				...presentation,
 				fingerprint: generateFingerprint("frontmatter-types", undefined, {
 					property: prop,
 					types: types.sort().join(","),

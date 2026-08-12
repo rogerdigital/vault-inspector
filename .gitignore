@@ -15,5 +15,8 @@ data.json
 .vscode/
 *.swp
 
+# Local worktrees
+.worktrees/
+
 # Claude
 .claude/

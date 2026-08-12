@@ -53,8 +53,15 @@ describe("runCli", () => {
 			expect(result.stderr).toBe("");
 
 			const payload = JSON.parse(result.stdout);
+			expect(payload).toMatchObject({
+				schemaVersion: 1,
+				toolVersion: expect.any(String),
+				summary: expect.objectContaining({
+					issues: expect.any(Number),
+					newIssues: expect.any(Number),
+				}),
+			});
 			expect(payload.tool).toBe("vault-inspector");
-			expect(payload.schemaVersion).toBe(1);
 			expect(payload.toolVersion).toMatch(/^\d+\.\d+\.\d+/);
 			expect(payload.vaultPath).toBe(vaultPath);
 			expect(payload.summary.filesScanned).toBe(1);
@@ -65,8 +72,18 @@ describe("runCli", () => {
 					scannerId: "empty-notes",
 					severity: "warning",
 					primaryPath: "empty.md",
+					relatedPaths: expect.any(Array),
+					evidence: expect.any(Object),
+					fingerprint: expect.any(String),
+					classification: expect.stringMatching(/^(confirmed|candidate|unverified)$/),
+					explanation: expect.objectContaining({
+						why: expect.any(String),
+						nextStep: expect.any(String),
+					}),
 				}),
 			]);
+			expect(payload).not.toHaveProperty("comparison");
+			expect(payload).not.toHaveProperty("resolvedIssues");
 		});
 	});
 
@@ -268,7 +285,7 @@ describe("runCli", () => {
 
 	it("uses fail-on to control exit status", async () => {
 		await withVault({ "empty.md": "" }, async (vaultPath) => {
-			const result = await runCli([
+			const belowThreshold = await runCli([
 				"scan",
 				vaultPath,
 				"--scanner",
@@ -277,8 +294,28 @@ describe("runCli", () => {
 				"error",
 			]);
 
-			expect(result.exitCode).toBe(0);
-			expect(JSON.parse(result.stdout).summary.warnings).toBe(1);
+			expect(belowThreshold.exitCode).toBe(0);
+			expect(JSON.parse(belowThreshold.stdout).summary.warnings).toBe(1);
+
+			const matchingThreshold = await runCli([
+				"scan",
+				vaultPath,
+				"--scanner",
+				"empty-notes",
+				"--fail-on",
+				"warning",
+			]);
+			expect(matchingThreshold.exitCode).toBe(1);
+
+			const disabled = await runCli([
+				"scan",
+				vaultPath,
+				"--scanner",
+				"empty-notes",
+				"--fail-on",
+				"none",
+			]);
+			expect(disabled.exitCode).toBe(0);
 		});
 	});
 

@@ -11,10 +11,24 @@ import { InspectorSettingTab } from "./settings/settings-tab";
 import { generateMarkdownReport } from "./report/markdown-export";
 import { executeFixAction } from "./fix/fix-executor";
 import { showConfirmModal } from "./fix/confirm-modal";
-import { getFreshFixAction } from "./fix/fix-decisions";
+import { runFixBatch } from "./fix/fix-runner";
+import type { DispositionOutcome } from "./fix/action-outcomes";
+import { parsePluginData, type PersistedPluginData } from "./settings/plugin-data";
+import {
+	createScanSnapshot,
+	type ScanSnapshot,
+} from "./snapshot/scan-snapshot";
+import { createScanProfile } from "./scanner/scan-profile";
+import { compareScanResult } from "./scanner/result-diff";
+import type { ScanResult } from "./scanner/Issue";
+import { SCANNER_LABELS } from "./scanner/Issue";
+import { openPluginSettings } from "./utils/open-plugin-settings";
 
 export default class VaultInspectorPlugin extends Plugin {
 	settings: InspectorSettings = DEFAULT_SETTINGS;
+	lastSuccessfulSnapshot: ScanSnapshot | null = null;
+	private saveQueue: Promise<void> = Promise.resolve();
+	private operationQueue: Promise<void> = Promise.resolve();
 	scanRunner = new ScanRunner(async (url) => {
 		const response = await requestUrl({ url, method: "HEAD" });
 		return response.status;
@@ -49,7 +63,8 @@ export default class VaultInspectorPlugin extends Plugin {
 	onunload() {}
 
 	async loadSettings() {
-		const loaded = (await this.loadData() as Partial<InspectorSettings> | null) ?? {};
+		const parsed = parsePluginData(await this.loadData());
+		const loaded = parsed.settings;
 		this.settings = {
 			...DEFAULT_SETTINGS,
 			...loaded,
@@ -62,6 +77,7 @@ export default class VaultInspectorPlugin extends Plugin {
 				...loaded.ignoredFoldersByScanner,
 			},
 		};
+		this.lastSuccessfulSnapshot = parsed.lastSuccessfulSnapshot;
 
 		if (migrateExcalidrawFrontmatterKey(this.settings, loaded)) {
 			await this.saveSettings();
@@ -69,7 +85,28 @@ export default class VaultInspectorPlugin extends Plugin {
 	}
 
 	async saveSettings() {
-		await this.saveData(this.settings);
+		await this.persistPluginData();
+	}
+
+	private persistPluginData(options?: {
+		acceptedSnapshot?: ScanSnapshot;
+		settings?: InspectorSettings;
+	}): Promise<void> {
+		const write = this.saveQueue.catch(() => undefined).then(async () => {
+			const snapshot = options?.acceptedSnapshot ?? this.lastSuccessfulSnapshot;
+			const data: PersistedPluginData = {
+				settings: structuredClone(options?.settings ?? this.settings),
+				...(snapshot
+					? { lastSuccessfulSnapshot: structuredClone(snapshot) }
+					: {}),
+			};
+			await this.saveData(data);
+			if (options?.acceptedSnapshot) {
+				this.lastSuccessfulSnapshot = options.acceptedSnapshot;
+			}
+		});
+		this.saveQueue = write;
+		return write;
 	}
 
 	private async runScan() {
@@ -89,23 +126,68 @@ export default class VaultInspectorPlugin extends Plugin {
 
 	private configureView(view: InspectorView) {
 		view.setCallbacks({
-			onIgnoreAllIssues: async (issues) => {
-				for (const issue of issues) {
-					this.settings.ignoredIssueFingerprints.push(issue.fingerprint);
+			onIgnoreAllIssues: (issues) => this.enqueueOperation(async () => {
+				const requestedIssues = uniqueIssuesByFingerprint(issues);
+				if (requestedIssues.length === 0) return;
+				const fingerprints = requestedIssues.map((issue) => issue.fingerprint);
+				const candidate = structuredClone(this.settings);
+				candidate.ignoredIssueFingerprints = mergeUnique(
+					candidate.ignoredIssueFingerprints,
+					fingerprints,
+				);
+				try {
+					await this.persistPluginData({ settings: candidate });
+				} catch (error) {
+					view.setOperationOutcomes(requestedIssues.map((issue): DispositionOutcome => ({
+						fingerprint: issue.fingerprint,
+						outcome: "failed",
+						message: `Failed to ignore issue: ${errorMessage(error)}`,
+						affectedPaths: getAffectedIssuePaths(issue),
+					})));
+					return;
 				}
-				await this.saveSettings();
-				new Notice(`Ignored ${issues.length} issue(s)`);
-				await this.scanAndRender(view);
-			},
-			onRestoreIssues: async (issues) => {
-				const toRestore = new Set(issues.map((i) => i.fingerprint));
+				this.settings.ignoredIssueFingerprints = mergeUnique(
+					this.settings.ignoredIssueFingerprints,
+					fingerprints,
+				);
+				await this.performScanAndRenderHandled(view);
+				view.setOperationOutcomes(requestedIssues.map((issue): DispositionOutcome => ({
+					fingerprint: issue.fingerprint,
+					outcome: "ignored",
+					message: `Ignored ${issue.title}`,
+					affectedPaths: getAffectedIssuePaths(issue),
+				})));
+			}),
+			onRestoreIssues: (issues) => this.enqueueOperation(async () => {
+				const requestedIssues = uniqueIssuesByFingerprint(issues);
+				if (requestedIssues.length === 0) return;
+				const toRestore = new Set(requestedIssues.map((issue) => issue.fingerprint));
+				const candidate = structuredClone(this.settings);
+				candidate.ignoredIssueFingerprints = candidate.ignoredIssueFingerprints.filter(
+					(fp) => !toRestore.has(fp),
+				);
+				try {
+					await this.persistPluginData({ settings: candidate });
+				} catch (error) {
+					view.setOperationOutcomes(requestedIssues.map((issue): DispositionOutcome => ({
+						fingerprint: issue.fingerprint,
+						outcome: "failed",
+						message: `Failed to restore issue: ${errorMessage(error)}`,
+						affectedPaths: getAffectedIssuePaths(issue),
+					})));
+					return;
+				}
 				this.settings.ignoredIssueFingerprints = this.settings.ignoredIssueFingerprints.filter(
 					(fp) => !toRestore.has(fp),
 				);
-				await this.saveSettings();
-				new Notice(`Restored ${issues.length} issue(s)`);
-				await this.scanAndRender(view);
-			},
+				await this.performScanAndRenderHandled(view);
+				view.setOperationOutcomes(requestedIssues.map((issue): DispositionOutcome => ({
+					fingerprint: issue.fingerprint,
+					outcome: "restored",
+					message: `Restored ${issue.title}`,
+					affectedPaths: getAffectedIssuePaths(issue),
+				})));
+			}),
 			onFixAllIssues: async (issues) => {
 				if (!issues.some((issue) => issue.fixAction)) return;
 				const decisions = await showConfirmModal(
@@ -114,36 +196,37 @@ export default class VaultInspectorPlugin extends Plugin {
 					this.settings.duplicateKeepMode,
 				);
 				if (!decisions) return;
-				const decisionsByFingerprint = new Map(
-					decisions.map((decision) => [decision.fingerprint, decision]),
-				);
-
-				let fixed = 0;
-				let skipped = 0;
-				for (const issue of issues) {
-					const decision = decisionsByFingerprint.get(issue.fingerprint);
-					if (!decision) {
-						skipped++;
-						continue;
+				await this.enqueueOperation(async () => {
+					const fixSettings = structuredClone(this.settings);
+					const scanProfile = await createScanProfile(fixSettings);
+					const batch = await runFixBatch(issues, decisions, {
+						scan: () => this.scan(view, structuredClone(fixSettings)),
+						execute: (action) => executeFixAction(this.app, action),
+					});
+					let acceptanceFailed = false;
+					let acceptanceError: unknown;
+					if (batch.verificationResult) {
+						try {
+							await this.acceptScanResult(
+								view,
+								batch.verificationResult,
+								scanProfile,
+							);
+						} catch (error) {
+							acceptanceFailed = true;
+							acceptanceError = error;
+						}
 					}
-					const freshResult = await this.scan(view);
-					if (!freshResult) return;
-					const freshIssue = freshResult.issues.find(
-						(candidate) => candidate.fingerprint === issue.fingerprint,
-					);
-					const freshAction = getFreshFixAction(issue, freshIssue, decision);
-					if (!freshAction) {
-						skipped++;
-						continue;
+					if (acceptanceFailed) {
+						try {
+							view.setOperationOutcomes(batch.outcomes);
+						} catch {
+							throw acceptanceError;
+						}
+						throw acceptanceError;
 					}
-					try {
-						fixed += await executeFixAction(this.app, freshAction);
-					} catch {
-						// continue on individual failures
-					}
-				}
-				new Notice(formatFixResultNotice(fixed, skipped));
-				await this.scanAndRender(view);
+					view.setOperationOutcomes(batch.outcomes);
+				});
 			},
 			onRevealIssue: async (issue) => {
 				const path = issue.primaryPath ?? issue.relatedPaths[0];
@@ -156,26 +239,160 @@ export default class VaultInspectorPlugin extends Plugin {
 				}
 			},
 			onRunScan: () => { void this.runScan(); },
+			onIgnoreIssue: (issue) => this.enqueueOperation(async () => {
+				const candidate = structuredClone(this.settings);
+				candidate.ignoredIssueFingerprints = mergeUnique(
+					candidate.ignoredIssueFingerprints,
+					[issue.fingerprint],
+				);
+				const affectedPaths = getAffectedIssuePaths(issue);
+				try {
+					await this.persistPluginData({ settings: candidate });
+				} catch (error) {
+					view.setOperationOutcomes([{
+						fingerprint: issue.fingerprint,
+						outcome: "failed",
+						message: `Failed to ignore issue: ${errorMessage(error)}`,
+						affectedPaths,
+					}]);
+					return;
+				}
+				this.settings.ignoredIssueFingerprints = mergeUnique(
+					this.settings.ignoredIssueFingerprints,
+					[issue.fingerprint],
+				);
+				await this.performScanAndRenderHandled(view);
+				view.setOperationOutcomes([{
+					fingerprint: issue.fingerprint,
+					outcome: "ignored",
+					message: `Ignored ${issue.title}`,
+					affectedPaths,
+				}]);
+			}),
+			onExcludeFolder: (request) => this.enqueueOperation(async () => {
+				const candidate = structuredClone(this.settings);
+				candidate.ignoredFoldersByScanner[request.scannerId] = mergeUnique(
+					candidate.ignoredFoldersByScanner[request.scannerId],
+					[request.folder],
+				);
+				try {
+					await this.persistPluginData({ settings: candidate });
+				} catch (error) {
+					view.setOperationOutcomes([{
+						scannerId: request.scannerId,
+						outcome: "failed",
+						message: `Failed to exclude folder: ${errorMessage(error)}`,
+						affectedPaths: [request.folder],
+					}]);
+					return;
+				}
+				this.settings.ignoredFoldersByScanner[request.scannerId] = mergeUnique(
+					this.settings.ignoredFoldersByScanner[request.scannerId],
+					[request.folder],
+				);
+				await this.performScanAndRenderHandled(view);
+				view.setOperationOutcomes([{
+					scannerId: request.scannerId,
+					outcome: "excluded",
+					message: `${SCANNER_LABELS[request.scannerId]} excluded ${request.folder}; ${request.affectedCount} affected finding(s).`,
+					affectedPaths: [request.folder],
+				}]);
+			}),
+			onOpenScannerSettings: () => {
+				if (openPluginSettings(this.app, this.manifest.id)) return;
+				new Notice([
+					"Open Settings",
+					"Vault Inspector",
+					"Scanner-specific ignored folders.",
+				].join(" → "));
+			},
 		});
 		view.setEnableFixActions(this.settings.enableFixActions);
 	}
 
-	private async scanAndRender(view: InspectorView) {
-		const result = await this.scan(view);
-		if (result) view.setResult(result);
+	private scanAndRender(view: InspectorView): Promise<void> {
+		return this.enqueueOperation(async () => {
+			view.setOperationOutcomes([]);
+			await this.performScanAndRenderHandled(view);
+		});
 	}
 
-	private async scan(view: InspectorView) {
-		view.setScanning(true);
+	private async performScanAndRenderHandled(view: InspectorView): Promise<void> {
 		try {
-			return await this.scanRunner.run(this.app, this.settings, {
+			await this.performScanAndRender(view);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			new Notice(`Vault Inspector scan failed: ${message}`);
+		}
+	}
+
+	private enqueueOperation(operation: () => Promise<void>): Promise<void> {
+		const run = this.operationQueue
+			.catch(() => undefined)
+			.then(operation);
+		this.operationQueue = run.catch(() => undefined);
+		return run;
+	}
+
+	private async performScanAndRender(view: InspectorView) {
+		const scanSettings = structuredClone(this.settings);
+		const scanProfile = await createScanProfile(scanSettings);
+		try {
+			const result = await this.scan(view, scanSettings);
+			if (!result) return;
+			await this.acceptScanResult(view, result, scanProfile);
+		} catch (error) {
+			this.stopScanningBestEffort(view);
+			throw error;
+		}
+	}
+
+	private async acceptScanResult(
+		view: InspectorView,
+		result: ScanResult,
+		scanProfile: string,
+	) {
+		const comparison = compareScanResult(
+			result,
+			this.lastSuccessfulSnapshot,
+			scanProfile,
+		);
+		view.setResult(result, comparison);
+
+		const nextSnapshot = createScanSnapshot(
+			result,
+			scanProfile,
+			this.manifest.version,
+		);
+		try {
+			await this.persistPluginData({ acceptedSnapshot: nextSnapshot });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			new Notice(
+				`Scan completed, but the comparison snapshot could not be saved: ${message}`,
+			);
+		}
+	}
+
+	private async scan(view: InspectorView, settings: InspectorSettings) {
+		try {
+			view.setScanning(true);
+			return await this.scanRunner.run(this.app, settings, {
 				onProgress: (progress) => view.setScanProgress(progress),
 			});
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			new Notice(`Vault Inspector scan failed: ${message}`);
-			view.setScanning(false);
+			this.stopScanningBestEffort(view);
 			return null;
+		}
+	}
+
+	private stopScanningBestEffort(view: InspectorView) {
+		try {
+			view.setScanning(false);
+		} catch {
+			// Preserve the original scan outcome when view cleanup is unavailable.
 		}
 	}
 
@@ -200,12 +417,28 @@ export default class VaultInspectorPlugin extends Plugin {
 	}
 }
 
-export function formatFixResultNotice(fixed: number, skipped: number): string {
-	const fixedText = fixed > 0
-		? `Fixed ${fixed} item${fixed === 1 ? "" : "s"}`
-		: "No items were fixed";
-	if (skipped === 0) return fixedText;
-	return `${fixedText}; skipped ${skipped} changed ${skipped === 1 ? "issue" : "issues"}`;
+function getAffectedIssuePaths(issue: { primaryPath?: string; relatedPaths: string[] }): string[] {
+	return [...new Set([
+		...(issue.primaryPath ? [issue.primaryPath] : []),
+		...issue.relatedPaths,
+	])];
+}
+
+function uniqueIssuesByFingerprint<T extends { fingerprint: string }>(issues: T[]): T[] {
+	const seen = new Set<string>();
+	return issues.filter((issue) => {
+		if (seen.has(issue.fingerprint)) return false;
+		seen.add(issue.fingerprint);
+		return true;
+	});
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+function mergeUnique(current: string[], additions: string[]): string[] {
+	return [...new Set([...current, ...additions])];
 }
 
 const LEGACY_EXCALIDRAW_KEY = "excalidraw";

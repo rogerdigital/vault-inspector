@@ -1,5 +1,6 @@
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
+import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
 import { isAttachment } from "../../utils/file-types";
 import { isIgnoredPath } from "../../utils/paths";
@@ -28,6 +29,12 @@ export const orphanAttachmentsScanner = {
 					evidence: {
 						lastModified: file.stat.mtime,
 					},
+					...describeFinding(
+						"candidate",
+						"No Markdown note references this attachment within the scanned vault metadata.",
+						"Review external and generated references before moving the file to trash.",
+						"CSS, Canvas, Dataview, publishing pipelines, and external tools can reference files outside this scan boundary.",
+					),
 					fingerprint: generateFingerprint("orphan-attachments", file.path, {
 						orphan: true,
 					}),

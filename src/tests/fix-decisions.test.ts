@@ -27,6 +27,11 @@ function makeDuplicateIssue(
 	return {
 		scannerId: "duplicate-files",
 		severity: "warning",
+		classification: "confirmed",
+		explanation: {
+			why: "Test evidence confirms this fixture.",
+			nextStep: "Review the test fixture.",
+		},
 		title: "Duplicate files (hash-identical)",
 		message: `${sorted.length} files have identical content`,
 		relatedPaths: sorted,
@@ -40,6 +45,11 @@ function makePlainIssue(): Issue {
 	return {
 		scannerId: "empty-notes",
 		severity: "warning",
+		classification: "confirmed",
+		explanation: {
+			why: "Test evidence confirms this fixture.",
+			nextStep: "Review the test fixture.",
+		},
 		title: "Empty note",
 		message: "Empty note",
 		primaryPath: "empty.md",

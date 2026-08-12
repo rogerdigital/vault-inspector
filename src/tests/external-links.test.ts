@@ -50,7 +50,16 @@ describe("externalLinksScanner", () => {
 		});
 		const issues = await externalLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
-		expect(issues[0].evidence.status).toBe(404);
+		const httpIssue = issues[0];
+		expect(httpIssue.evidence.status).toBe(404);
+		expect(httpIssue).toMatchObject({
+			classification: "candidate",
+			explanation: {
+				why: "The server returned HTTP 404 for this URL.",
+				caveat: "Authentication, rate limits, bot protection, and temporary outages can produce a non-success status.",
+				nextStep: "Open the URL manually, then update or remove it if the failure persists.",
+			},
+		});
 	});
 
 	it("does not report healthy links (HTTP 200)", async () => {
@@ -69,7 +78,7 @@ describe("externalLinksScanner", () => {
 		expect(issues).toHaveLength(0);
 	});
 
-	it("blocks non-public destinations before invoking the request adapter", async () => {
+	it("blocks unsafe destinations before invoking the request adapter", async () => {
 		const checkedUrls: string[] = [];
 		const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
 		const blockedUrls = [
@@ -79,6 +88,8 @@ describe("externalLinksScanner", () => {
 			"http://169.254.169.254/latest/meta-data/",
 			"http://localhost/service",
 			"http://[fd00::1]/private",
+			"http://user:pass@example.com/",
+			"http://",
 		];
 		const publicUrl = "https://example.com/good";
 		const ctx = makeCtx({
@@ -99,6 +110,7 @@ describe("externalLinksScanner", () => {
 
 		expect(checkedUrls).toEqual([publicUrl]);
 		expect(issues).toHaveLength(blockedUrls.length);
+		expect(issues.map((issue) => issue.evidence.url)).toEqual(blockedUrls);
 		expect(issues).toEqual(blockedUrls.map((url) => expect.objectContaining({
 			scannerId: "external-links",
 			severity: "info",
@@ -106,6 +118,14 @@ describe("externalLinksScanner", () => {
 			primaryPath: "a.md",
 			evidence: expect.objectContaining({ url }),
 		})));
+		for (const blockedIssue of issues) {
+			expect(blockedIssue.classification).toBe("unverified");
+			expect(blockedIssue.explanation).toEqual({
+				why: `The external-link safety policy blocked this destination (${blockedIssue.evidence.reason}).`,
+				nextStep: "Review or correct the URL based on the reported reason, then run the scanner again.",
+				caveat: "Availability was not tested because this URL was rejected before reaching the request adapter.",
+			});
+		}
 	});
 
 	it("checks bare URLs in Markdown body text", async () => {
@@ -174,6 +194,12 @@ describe("externalLinksScanner", () => {
 					timeoutMs: EXTERNAL_LINK_TIMEOUT_MS,
 				}),
 			}));
+			expect(issues[0].classification).toBe("unverified");
+			expect(issues[0].explanation).toEqual({
+				why: `The URL did not respond within ${EXTERNAL_LINK_TIMEOUT_MS}ms.`,
+				nextStep: "Retry the scan or open the URL manually.",
+				caveat: "Slow networks and temporary server load can cause timeouts.",
+			});
 		} finally {
 			vi.useRealTimers();
 		}
@@ -207,6 +233,12 @@ describe("externalLinksScanner", () => {
 				error: "network unavailable",
 			}),
 		}));
+		expect(issues[0].classification).toBe("unverified");
+		expect(issues[0].explanation).toEqual({
+			why: "The URL check failed before an HTTP status was received.",
+			nextStep: "Retry the scan or open the URL manually and inspect the reported error.",
+			caveat: "DNS, TLS, connectivity, and remote-server failures can be temporary.",
+		});
 	});
 
 	it("stops external link checks after the scan budget", async () => {
@@ -242,6 +274,12 @@ describe("externalLinksScanner", () => {
 					budgetMs: EXTERNAL_LINK_SCAN_BUDGET_MS,
 				}),
 			}));
+			expect(skipped?.classification).toBe("unverified");
+			expect(skipped?.explanation).toEqual({
+				why: `The scanner reached its ${EXTERNAL_LINK_SCAN_BUDGET_MS / 1000}-second scan budget before checking 5 URL(s).`,
+				nextStep: "Run the external-link scanner again or reduce the number of URLs checked at once.",
+				caveat: "Unchecked URLs may still be healthy or broken.",
+			});
 		} finally {
 			vi.useRealTimers();
 		}

@@ -41,6 +41,13 @@ describe("brokenLinksScanner", () => {
 		expect(issues).toHaveLength(1);
 		expect(issues[0].severity).toBe("error");
 		expect(issues[0].evidence.target).toBe("notes/missing");
+		expect(issues[0]).toMatchObject({
+			classification: "confirmed",
+			explanation: {
+				why: "The link target could not be resolved in the vault.",
+				nextStep: "Correct the target or remove the link from the source note.",
+			},
+		});
 	});
 
 	it("does not report links that resolve to existing files", async () => {
@@ -83,6 +90,13 @@ describe("brokenLinksScanner", () => {
 		expect(issues).toHaveLength(1);
 		expect(issues[0].severity).toBe("warning");
 		expect(issues[0].message).toContain("Heading");
+		expect(issues[0]).toMatchObject({
+			classification: "confirmed",
+			explanation: {
+				why: "The target note exists, but the referenced heading was not found.",
+				nextStep: "Correct the heading reference or remove it from the source note.",
+			},
+		});
 	});
 
 	it("does not report valid heading links", async () => {

@@ -1,5 +1,6 @@
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
+import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
 import { isIgnoredPath } from "../../utils/paths";
 import {
@@ -224,6 +225,15 @@ function makeIssue(
 		primaryPath: sourcePath,
 		relatedPaths: [targetPath],
 		evidence: { link: linkText, target: targetPath },
+		...describeFinding(
+			"confirmed",
+			severity === "error"
+				? "The link target could not be resolved in the vault."
+				: "The target note exists, but the referenced heading was not found.",
+			severity === "error"
+				? "Correct the target or remove the link from the source note."
+				: "Correct the heading reference or remove it from the source note.",
+		),
 		fingerprint: generateFingerprint("broken-links", sourcePath, {
 			link: linkText,
 			target: targetPath,
