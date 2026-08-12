@@ -86,5 +86,13 @@ describe("generateMarkdownReport", () => {
 		expect(report).toContain("- **Files:**\n  - `tags.md`");
 		expect(report).toContain("- **Property:** `priority`");
 		expect(report).toContain("- **Samples:**\n  - `one.md`\n  - `two.md`");
+		expect(report.match(/^- \*\*Classification:\*\*/gm)).toHaveLength(3);
+		expect(report.match(/^- \*\*Why:\*\*/gm)).toHaveLength(3);
+		expect(report.match(/^- \*\*Caveat:\*\*/gm)).toHaveLength(1);
+		expect(report.match(/^- \*\*Next step:\*\*/gm)).toHaveLength(3);
+		expect(report).not.toMatch(
+			/^- \*\*(?:Lifecycle|Status):\*\* (?:New|Persisting|Resolved)$/m,
+		);
+		expect(report).not.toMatch(/^## Resolved(?: items| findings)?/m);
 	});
 });
