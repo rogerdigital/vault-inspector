@@ -17,6 +17,9 @@ Use it before publishing, exporting, migrating, or cleaning up a long-lived vaul
 - **Tag Usage** — Watch for missing or underused tags from a configurable watchlist.
 - **Large Files** — Flag Markdown files and attachments exceeding configurable size thresholds.
 - **Scan Progress** — Show scanner progress in Obsidian and optional CLI progress on stderr.
+- **Explainable Findings** — Classify each finding as `confirmed`, `candidate`, or `unverified`, with **Why**, an optional **Caveat**, a **Next** step, and expandable raw evidence.
+- **Scan Lifecycle** — Compare successful scans made with the same detection profile to distinguish new, persisting, and resolved findings.
+- **Verified Actions** — Preflight fix actions against fresh scan data, then report each attempted fix as fixed, still present, skipped, or failed after final verification.
 
 ## Install
 
@@ -70,14 +73,30 @@ baselines, and avoid modifying vault files.
 
 1. Open the command palette and run **Vault Inspector: Run scan**.
 2. The Inspector view opens in the right sidebar.
-3. Filter results by scanner or severity. Click paths, URLs, targets, properties, or tags to jump to the relevant location.
-4. Click **Select** to enter selection mode, then batch delete or ignore issues.
-5. Expand **Ignored items** at the bottom to restore previously ignored issues.
-6. Run **Vault Inspector: Export report** to save results as Markdown.
+3. Filter results by scanner, severity, lifecycle, or classification. Expand **Evidence** to inspect the raw scanner evidence behind the explanation.
+4. Click paths, URLs, targets, properties, or tags to jump to the relevant location.
+5. Open an active finding's **Actions** menu to ignore it, choose **Exclude parent folder**, or open its scanner settings. Parent-folder exclusions apply only to that scanner and can be removed from **Scanner-specific ignored folders** in settings.
+6. Click **Select** to enter selection mode, then batch delete or ignore issues. Fix results remain visible until dismissed and show whether each item was fixed, still present, skipped, or failed after verification.
+7. Expand **Resolved items** to review read-only rows from the previous compatible successful scan. Expand **Ignored items** to restore previously ignored issues.
+8. Run **Vault Inspector: Export report** to save results as Markdown.
 
 Scan results are selectable for copying. Duplicate file results show each file
 separately, tag results show `#tag` chips, and exported Markdown reports include
 scanner-specific detail fields.
+
+Each finding is classified as `confirmed`, `candidate`, or `unverified` and
+includes a plain-language explanation: why it was reported, an optional caveat,
+and a suggested next step. Raw evidence remains available separately for deeper
+inspection.
+
+Lifecycle comparison is available only after a successful scan and only when the
+previous successful scan used the same detection profile. The first successful
+scan establishes a baseline; changing detection settings or scanner semantics
+also establishes a new baseline instead of marking every finding as new. Ignoring
+a finding does not resolve it: ignored findings remain part of the active
+lifecycle comparison. Resolved rows are read-only historical records from the
+previous compatible snapshot, not current findings or proof that an action fixed
+them.
 
 ## CLI
 
@@ -112,8 +131,8 @@ npx vault-inspector@0.4.11 /path/to/your/vault
 an explicit subcommand.
 
 The default output format is JSON. It includes summary counts, scanners run,
-issues, ignored issues, fingerprints, evidence, and available fix-action metadata
-so other tools can decide what to do next.
+issues, ignored issues, fingerprints, classification, explanation, evidence, and
+available fix-action metadata so other tools can decide what to do next.
 
 Common options:
 
@@ -161,13 +180,20 @@ JSON output has a stable top-level protocol for automation:
 - `schemaVersion` — currently `1`
 - `tool` — always `vault-inspector`
 - `toolVersion` — package version
-- `summary` — stable counts and scanner metadata
-- `issues` / `ignoredIssues` — issue records with stable `scannerId`, `severity`, `primaryPath`, `relatedPaths`, `evidence`, `fingerprint`, and `fixAction` fields
+- `summary` — stable counts and scanner metadata, including the issue count in `summary.issues`
+- `issues` / `ignoredIssues` — issue records with stable `scannerId`, `severity`, `classification`, `explanation`, `primaryPath`, `relatedPaths`, `evidence`, `fingerprint`, and `fixAction` fields
 - `generatedAt`, `durationMs`, titles, and messages are informational and should not be used as stable identifiers
+
+`classification` and `explanation` are additive stable fields. Existing stable
+fields have not been removed or renamed.
 
 Baseline comparison uses issue `fingerprint` values from a previous JSON report.
 When `--baseline` is provided, each issue includes `isNew`, and `summary.newIssues`
 counts issues not found in the baseline.
+
+CLI baseline comparison is separate from the Obsidian plugin lifecycle. In
+version 0.5.0, CLI output does not include plugin scan snapshots, persisting or
+resolved lifecycle rows, or the plugin's resolved-history view.
 
 Exit codes:
 

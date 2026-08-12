@@ -14,7 +14,7 @@ Use Vault Inspector as a read-only quality gate for Obsidian vault maintenance. 
 - Do not present `--fix` as available. The CLI currently exits with an error for fix execution.
 - Do not automatically delete orphan attachments, duplicate candidates, or large files. Summarize evidence and recommend manual review.
 - Do not treat `title`, `message`, `generatedAt`, or `durationMs` as stable automation identifiers.
-- Use stable fields for automation: `schemaVersion`, `toolVersion`, `summary`, `scannerId`, `severity`, `primaryPath`, `relatedPaths`, `evidence`, `fingerprint`, `fixAction`, `isNew`, and `summary.newIssues`.
+- Use stable fields for automation: `schemaVersion`, `toolVersion`, `summary`, `scannerId`, `severity`, `classification`, `explanation`, `primaryPath`, `relatedPaths`, `evidence`, `fingerprint`, `fixAction`, `isNew`, and `summary.newIssues`.
 - Keep scan progress on stderr with `--progress`; keep stdout machine-readable.
 
 ## When To Run
@@ -79,7 +79,7 @@ Fail only on new findings:
 vinspect . --baseline .vault-inspector-baseline.json --fail-on new --format json
 ```
 
-When a baseline is used, inspect `summary.newIssues` and each issue's `isNew` field. Report new issues before existing known issues.
+When a baseline is used, inspect `summary.newIssues` and each issue's `isNew` field. Report new issues before existing known issues. CLI `isNew` is a baseline annotation and is separate from the Obsidian plugin's scan lifecycle. The CLI does not output plugin snapshots or resolved-history rows.
 
 ## Exit Codes
 
@@ -91,18 +91,26 @@ If exit code is `2`, report the CLI error and do not interpret stdout as a succe
 
 ## Result Interpretation
 
-Prioritize findings in this order:
+Prioritize findings first by severity, then by classification:
 
-1. `error` severity broken links and missing attachment links.
-2. `warning` findings, including missing headings, large files, confirmed duplicate files, and older orphan attachments.
-3. `info` findings, including low-usage tags, skipped or timed-out external checks, recent orphan attachments, and duplicate candidates.
+1. Severity: `error`, then `warning`, then `info`.
+2. Within the same severity: `confirmed`, then `candidate`, then `unverified`.
+
+Interpret the presentation fields independently:
+
+- `classification` describes the scanner's confidence: `confirmed`, `candidate`, or `unverified`.
+- `explanation.why` states why the scanner reported the finding.
+- `explanation.caveat`, when present, states a limitation or alternative interpretation. A missing caveat must not be used to upgrade a `candidate` finding to `confirmed`.
+- `explanation.nextStep` states the recommended follow-up.
+- `evidence` contains the raw machine-readable facts behind the explanation.
 
 For each summary, include:
 
 - total issue count;
 - counts by severity;
 - scanners run;
-- high-confidence issues first;
+- findings ordered by severity and then classification;
+- the explanation's why and next step, plus any caveat that affects interpretation;
 - file paths and evidence needed for manual review;
 - baseline new issue counts when available.
 
@@ -116,7 +124,9 @@ Use this shape when reporting scan results:
 Vault Inspector found <N> issue(s): <E> error(s), <W> warning(s), <I> info.
 
 Highest-priority findings:
-- [<severity>] <scannerId>: <primaryPath> - <short evidence-based explanation>
+- [<severity>/<classification>] <scannerId>: <primaryPath> - <explanation.why>
+  - Caveat: <explanation.caveat, when present>
+  - Next step: <explanation.nextStep>
 
 Notes:
 - <baseline/new issue note if relevant>
