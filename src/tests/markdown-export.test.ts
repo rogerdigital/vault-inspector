@@ -15,6 +15,70 @@ function makeResult(overrides: Partial<ScanResult> = {}): ScanResult {
 }
 
 describe("generateMarkdownReport", () => {
+	it("renders compact summaries without finding details", () => {
+		const markers = [
+			"ACTIVE_TITLE_MARKER",
+			"ACTIVE_MESSAGE_MARKER",
+			"ACTIVE_PRIMARY_PATH_MARKER",
+			"ACTIVE_RELATED_PATH_MARKER",
+			"ACTIVE_TARGET_MARKER",
+			"unverified",
+			"ACTIVE_WHY_MARKER",
+			"ACTIVE_CAVEAT_MARKER",
+			"ACTIVE_NEXT_STEP_MARKER",
+			"IGNORED_TITLE_MARKER",
+			"IGNORED_MESSAGE_MARKER",
+			"IGNORED_PATH_MARKER",
+			"IGNORED_TARGET_MARKER",
+		];
+		const report = generateMarkdownReport(makeResult({
+			scannersRun: ["broken-links", "empty-notes"],
+			issues: [{
+				scannerId: "broken-links",
+				severity: "error",
+				classification: "unverified",
+				explanation: {
+					why: "ACTIVE_WHY_MARKER",
+					caveat: "ACTIVE_CAVEAT_MARKER",
+					nextStep: "ACTIVE_NEXT_STEP_MARKER",
+				},
+				title: "ACTIVE_TITLE_MARKER",
+				message: "ACTIVE_MESSAGE_MARKER",
+				primaryPath: "ACTIVE_PRIMARY_PATH_MARKER",
+				relatedPaths: ["ACTIVE_RELATED_PATH_MARKER"],
+				evidence: { target: "ACTIVE_TARGET_MARKER" },
+				fingerprint: "active",
+			}],
+			ignoredIssues: [{
+				scannerId: "empty-notes",
+				severity: "warning",
+				classification: "candidate",
+				explanation: {
+					why: "IGNORED_TITLE_MARKER",
+					nextStep: "IGNORED_MESSAGE_MARKER",
+				},
+				title: "IGNORED_TITLE_MARKER",
+				message: "IGNORED_MESSAGE_MARKER",
+				primaryPath: "IGNORED_PATH_MARKER",
+				relatedPaths: [],
+				evidence: { target: "IGNORED_TARGET_MARKER" },
+				fingerprint: "ignored",
+			}],
+		}), "summary");
+
+		expect(report).toContain("# Vault Inspector Summary");
+		expect(report).toContain("Finding details are omitted from this summary.");
+		expect(report).toContain("| Total | 1 |");
+		expect(report).toContain("| Errors | 1 |");
+		expect(report).toMatch(/\| Broken Links \| 1 \|[\s\S]*\| Empty Notes \| 0 \|/);
+		for (const marker of markers) expect(report).not.toContain(marker);
+		expect(report).not.toContain("- **Classification:**");
+		expect(report).not.toContain("- **Why:**");
+		expect(report).not.toContain("- **Next step:**");
+		expect(report).not.toMatch(/^- \*\*(?:Lifecycle|Status):\*\*/m);
+		expect(report).not.toMatch(/^## Resolved(?: items| findings)?/m);
+	});
+
 	it("renders scanner-specific details for human-readable reports", () => {
 		const report = generateMarkdownReport(makeResult({
 			issues: [
