@@ -201,6 +201,8 @@ button.vi-resolved-header:focus-visible { outline: 2px solid var(--interactive-a
 .vi-file-list-item { font-size: 12px; font-family: var(--font-monospace); padding: 2px 0; color: var(--text-muted); }
 .vi-confirm-buttons { display: flex; justify-content: flex-end; }
 .vi-confirm-buttons > * { margin-left: 8px; }
+.vi-large-report-buttons { flex-wrap: wrap; margin: -8px 0 0 -8px; }
+.vi-large-report-buttons > * { margin: 8px 0 0 8px; }
 .vi-confirm-destructive { background: var(--text-error); color: white; border: none; padding: 6px 16px; border-radius: 4px; cursor: pointer; }
 .vi-confirm-destructive:hover { opacity: 0.85; }
 .vi-confirm-destructive:disabled { cursor: not-allowed; opacity: 0.5; }
@@ -209,3 +211,9 @@ button.vi-resolved-header:focus-visible { outline: 2px solid var(--interactive-a
 .vi-keep-option { display: flex; align-items: flex-start; margin: 6px 0 0; }
 .vi-keep-option input { margin: 2px 8px 0 0; }
 .vi-keep-option-path { overflow-wrap: anywhere; font-family: var(--font-monospace); font-size: 12px; }
+
+@media (max-width: 500px) {
+	.vi-large-report-buttons { flex-direction: column; align-items: stretch; margin: 0; }
+	.vi-large-report-buttons > * { width: 100%; margin: 0; }
+	.vi-large-report-buttons > * + * { margin-top: 8px; }
+}
