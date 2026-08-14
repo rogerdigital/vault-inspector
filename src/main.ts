@@ -11,9 +11,8 @@ import { InspectorSettingTab } from "./settings/settings-tab";
 import { generateMarkdownReport } from "./report/markdown-export";
 import { showLargeReportWarningModal } from "./report/export-warning-modal";
 import {
-	getUtf8ByteLength,
+	getReportExportPreflight,
 	MAX_SAFE_VAULT_REPORT_BYTES,
-	requiresLargeReportConfirmation,
 } from "./report/report-export";
 import { executeFixAction } from "./fix/fix-executor";
 import { showConfirmModal } from "./fix/confirm-modal";
@@ -413,11 +412,12 @@ export default class VaultInspectorPlugin extends Plugin {
 		try {
 			const result = view.getResult()!;
 			const fullReport = generateMarkdownReport(result);
+			const preflight = getReportExportPreflight(fullReport);
 			let report = fullReport;
 			let exportKind = "Report";
-			if (requiresLargeReportConfirmation(fullReport)) {
+			if (preflight.requiresConfirmation) {
 				const decision = await showLargeReportWarningModal(this.app, {
-					reportBytes: getUtf8ByteLength(fullReport),
+					reportBytes: preflight.byteLength,
 					thresholdBytes: MAX_SAFE_VAULT_REPORT_BYTES,
 					findingCount: result.issues.length,
 				});

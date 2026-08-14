@@ -36,7 +36,7 @@ class LargeReportWarningModal extends Modal {
 		contentEl.addClass("vi-confirm-modal");
 		contentEl.createEl("h3", { text: "Large report warning" });
 		contentEl.createEl("p", {
-			text: "The full report may make Obsidian unresponsive while indexing it.",
+			text: "The full report exceeds the one-mebibyte threshold and may make Obsidian unresponsive while indexing it.",
 		});
 
 		this.renderDetail("Full report size", formatSize(this.details.reportBytes));

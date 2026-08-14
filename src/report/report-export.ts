@@ -6,6 +6,17 @@ export function getUtf8ByteLength(value: string): number {
 	return new TextEncoder().encode(value).byteLength;
 }
 
+export function getReportExportPreflight(report: string): {
+	byteLength: number;
+	requiresConfirmation: boolean;
+} {
+	const byteLength = getUtf8ByteLength(report);
+	return {
+		byteLength,
+		requiresConfirmation: byteLength > MAX_SAFE_VAULT_REPORT_BYTES,
+	};
+}
+
 export function requiresLargeReportConfirmation(report: string): boolean {
-	return getUtf8ByteLength(report) > MAX_SAFE_VAULT_REPORT_BYTES;
+	return getReportExportPreflight(report).requiresConfirmation;
 }

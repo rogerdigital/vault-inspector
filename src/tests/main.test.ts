@@ -1502,12 +1502,22 @@ describe("report export safety", () => {
 	});
 
 	it("exports the generated full report after the user chooses full", async () => {
-		const { create, plugin } = makeExportSubject(makeLargeExportResult());
+		const result = makeLargeExportResult();
+		const expectedReportBytes = getUtf8ByteLength(generateMarkdownReport(result));
+		const { create, plugin } = makeExportSubject(result);
 		showLargeReportWarningModalMock.mockResolvedValue("full");
+		const encodeSpy = vi.spyOn(TextEncoder.prototype, "encode");
 
-		await (plugin as any).exportReport();
+		try {
+			await (plugin as any).exportReport();
+			expect(encodeSpy).toHaveBeenCalledOnce();
+		} finally {
+			encodeSpy.mockRestore();
+		}
 
 		expect(showLargeReportWarningModalMock).toHaveBeenCalledOnce();
+		expect(showLargeReportWarningModalMock.mock.calls[0][1].reportBytes)
+			.toBe(expectedReportBytes);
 		expect(create).toHaveBeenCalledOnce();
 		const [filepath, content] = create.mock.calls[0];
 		expect(filepath).toMatch(/^Vault Inspector Reports\/Vault Inspector Report .+\.md$/);

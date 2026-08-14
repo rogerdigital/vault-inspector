@@ -54,6 +54,13 @@ function findByText(element: FakeElement, text: string): FakeElement | undefined
 	return undefined;
 }
 
+function findAllByText(element: FakeElement, text: string): FakeElement[] {
+	return [
+		...(element.text === text ? [element] : []),
+		...element.children.flatMap((child) => findAllByText(child, text)),
+	];
+}
+
 describe("showLargeReportWarningModal", () => {
 	beforeEach(() => { modalInstances.length = 0; });
 
@@ -67,7 +74,7 @@ describe("showLargeReportWarningModal", () => {
 
 		expect(content.cls).toContain("vi-confirm-modal");
 		expect(findByText(content, "Large report warning")).toBeDefined();
-		expect(findByText(content, "The full report may make Obsidian unresponsive while indexing it.")).toBeDefined();
+		expect(findByText(content, "The full report exceeds the one-mebibyte threshold and may make Obsidian unresponsive while indexing it.")).toBeDefined();
 		expect(findByText(content, "3.2 MB")).toBeDefined();
 		expect(findByText(content, "1.0 MB")).toBeDefined();
 		expect(findByText(content, "3881")).toBeDefined();
@@ -80,6 +87,25 @@ describe("showLargeReportWarningModal", () => {
 		expect(full.attr.type).toBe("button");
 		expect(summary.attr.type).toBe("button");
 		expect(summary.cls).toContain("mod-cta");
+
+		modalInstances[0].close();
+		await expect(result).resolves.toBeNull();
+	});
+
+	it("states that a threshold-plus-one-byte report exceeds the limit", async () => {
+		const thresholdBytes = 1024 * 1024;
+		const result = showLargeReportWarningModal({} as any, {
+			reportBytes: thresholdBytes + 1,
+			thresholdBytes,
+			findingCount: 1,
+		});
+		const content = modalInstances[0].contentEl as FakeElement;
+
+		expect(findAllByText(content, "1.0 MB")).toHaveLength(2);
+		expect(findByText(
+			content,
+			"The full report exceeds the one-mebibyte threshold and may make Obsidian unresponsive while indexing it.",
+		)).toBeDefined();
 
 		modalInstances[0].close();
 		await expect(result).resolves.toBeNull();
