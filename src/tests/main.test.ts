@@ -9,6 +9,11 @@ import {
 	type ScanSnapshot,
 } from "../snapshot/scan-snapshot";
 import type { LifecycleComparison } from "../scanner/result-diff";
+import {
+	getUtf8ByteLength,
+	MAX_SAFE_VAULT_REPORT_BYTES,
+} from "../report/report-export";
+import { generateMarkdownReport } from "../report/markdown-export";
 
 const {
 	createScanProfileMock,
@@ -16,12 +21,14 @@ const {
 	noticeMessages,
 	openPluginSettingsMock,
 	showConfirmModalMock,
+	showLargeReportWarningModalMock,
 } = vi.hoisted(() => ({
 	createScanProfileMock: vi.fn(),
 	executeFixActionMock: vi.fn(),
 	noticeMessages: [] as string[],
 	openPluginSettingsMock: vi.fn(),
 	showConfirmModalMock: vi.fn(),
+	showLargeReportWarningModalMock: vi.fn(),
 }));
 
 vi.mock("obsidian", async (importOriginal) => {
@@ -44,6 +51,10 @@ vi.mock("../fix/confirm-modal", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../fix/confirm-modal")>();
 	return { ...actual, showConfirmModal: showConfirmModalMock };
 });
+
+vi.mock("../report/export-warning-modal", () => ({
+	showLargeReportWarningModal: showLargeReportWarningModalMock,
+}));
 
 vi.mock("../scanner/scan-profile", () => ({
 	createScanProfile: createScanProfileMock,
@@ -89,6 +100,7 @@ describe("VaultInspectorPlugin", () => {
 		createScanProfileMock.mockResolvedValue("current-profile");
 		executeFixActionMock.mockReset();
 		showConfirmModalMock.mockReset();
+		showLargeReportWarningModalMock.mockReset();
 		openPluginSettingsMock.mockReset();
 		noticeMessages.length = 0;
 	});
@@ -1427,6 +1439,169 @@ describe("VaultInspectorPlugin", () => {
 			.toMatchObject({ settings: { reportFolderPath: "Recovered reports" } });
 	});
 });
+
+describe("report export safety", () => {
+	beforeEach(() => {
+		showLargeReportWarningModalMock.mockReset();
+		noticeMessages.length = 0;
+	});
+
+	it("exports a small full report without showing the large-report modal", async () => {
+		const { create, createFolder, plugin } = makeExportSubject(
+			makeScanResult([makeLifecycleIssue("small-fixture")]),
+		);
+
+		await (plugin as any).exportReport();
+
+		expect(showLargeReportWarningModalMock).not.toHaveBeenCalled();
+		expect(createFolder).not.toHaveBeenCalled();
+		expect(create).toHaveBeenCalledOnce();
+		const [filepath, content] = create.mock.calls[0];
+		expect(filepath).toMatch(/^Vault Inspector Reports\/Vault Inspector Report .+\.md$/);
+		expect(content).toContain("# Vault Inspector Report");
+		expect(noticeMessages).toHaveLength(1);
+		expect(noticeMessages[0]).toMatch(/^Report exported to /);
+	});
+
+	it("waits for the large-report decision before creating a summary export", async () => {
+		const result = makeLargeExportResult();
+		const { create, createFolder, getAbstractFileByPath, plugin } = makeExportSubject(
+			result,
+		);
+		getAbstractFileByPath.mockReturnValue(null);
+		let choose!: (decision: "summary") => void;
+		showLargeReportWarningModalMock.mockImplementation(
+			() => new Promise<"summary">((resolve) => { choose = resolve; }),
+		);
+
+		const exporting = (plugin as any).exportReport();
+		await vi.waitFor(() => expect(showLargeReportWarningModalMock).toHaveBeenCalledOnce());
+
+		expect(createFolder).not.toHaveBeenCalled();
+		expect(create).not.toHaveBeenCalled();
+		const details = showLargeReportWarningModalMock.mock.calls[0][1];
+		expect(details).toEqual({
+			reportBytes: expect.any(Number),
+			thresholdBytes: MAX_SAFE_VAULT_REPORT_BYTES,
+			findingCount: 1,
+		});
+		expect(details.reportBytes).toBe(getUtf8ByteLength(generateMarkdownReport(result)));
+
+		choose("summary");
+		await exporting;
+
+		expect(createFolder).toHaveBeenCalledOnce();
+		expect(create).toHaveBeenCalledOnce();
+		const [filepath, content] = create.mock.calls[0];
+		expect(filepath).toMatch(/^Vault Inspector Reports\/Vault Inspector Summary .+\.md$/);
+		expect(content).toContain("# Vault Inspector Summary");
+		expect(content).not.toContain("Full fixture title");
+		expect(content.length).toBeLessThan(4096);
+		expect(noticeMessages).toHaveLength(1);
+		expect(noticeMessages[0]).toMatch(/^Summary exported to /);
+	});
+
+	it("exports the generated full report after the user chooses full", async () => {
+		const { create, plugin } = makeExportSubject(makeLargeExportResult());
+		showLargeReportWarningModalMock.mockResolvedValue("full");
+
+		await (plugin as any).exportReport();
+
+		expect(showLargeReportWarningModalMock).toHaveBeenCalledOnce();
+		expect(create).toHaveBeenCalledOnce();
+		const [filepath, content] = create.mock.calls[0];
+		expect(filepath).toMatch(/^Vault Inspector Reports\/Vault Inspector Report .+\.md$/);
+		expect(content).toContain("Full fixture title");
+		expect(new TextEncoder().encode(content).byteLength)
+			.toBeGreaterThan(MAX_SAFE_VAULT_REPORT_BYTES);
+		expect(noticeMessages).toHaveLength(1);
+		expect(noticeMessages[0]).toMatch(/^Report exported to /);
+	});
+
+	it("does not mutate the vault when the large-report modal is cancelled", async () => {
+		const { create, createFolder, plugin } = makeExportSubject(makeLargeExportResult());
+		showLargeReportWarningModalMock.mockResolvedValue(null);
+
+		await (plugin as any).exportReport();
+
+		expect(createFolder).not.toHaveBeenCalled();
+		expect(create).not.toHaveBeenCalled();
+		expect(noticeMessages).toEqual([]);
+	});
+
+	it("requires a completed scan result before exporting", async () => {
+		const { create, createFolder, plugin } = makeExportSubject(null);
+
+		await (plugin as any).exportReport();
+
+		expect(showLargeReportWarningModalMock).not.toHaveBeenCalled();
+		expect(createFolder).not.toHaveBeenCalled();
+		expect(create).not.toHaveBeenCalled();
+		expect(noticeMessages).toEqual(["Run a scan first before exporting."]);
+	});
+
+	it("reports a modal failure without mutating the vault", async () => {
+		const { create, createFolder, plugin } = makeExportSubject(makeLargeExportResult());
+		showLargeReportWarningModalMock.mockRejectedValue(new Error("modal unavailable"));
+
+		await (plugin as any).exportReport();
+
+		expect(createFolder).not.toHaveBeenCalled();
+		expect(create).not.toHaveBeenCalled();
+		expect(noticeMessages).toEqual(["Report export failed: modal unavailable"]);
+	});
+
+	it("reports folder and file failures without a success notice", async () => {
+		const folderFailure = makeExportSubject(makeScanResult([]));
+		folderFailure.getAbstractFileByPath.mockReturnValue(null);
+		folderFailure.createFolder.mockRejectedValue(new Error("folder unavailable"));
+
+		await (folderFailure.plugin as any).exportReport();
+
+		expect(folderFailure.create).not.toHaveBeenCalled();
+		expect(noticeMessages).toEqual(["Report export failed: folder unavailable"]);
+
+		noticeMessages.length = 0;
+		const fileFailure = makeExportSubject(makeScanResult([]));
+		fileFailure.create.mockRejectedValue(new Error("file unavailable"));
+
+		await (fileFailure.plugin as any).exportReport();
+
+		expect(fileFailure.createFolder).not.toHaveBeenCalled();
+		expect(noticeMessages).toEqual(["Report export failed: file unavailable"]);
+	});
+});
+
+function makeLargeExportResult(): ScanResult {
+	const issue = makeLifecycleIssue("large-fixture");
+	issue.title = "Full fixture title";
+	issue.message = "x".repeat(MAX_SAFE_VAULT_REPORT_BYTES + 1);
+	return makeScanResult([issue]);
+}
+
+function makeExportSubject(result: ScanResult | null) {
+	const plugin = new VaultInspectorPlugin({} as any, {} as any);
+	plugin.settings = structuredClone(DEFAULT_SETTINGS);
+	const getAbstractFileByPath = vi.fn().mockReturnValue({ path: plugin.settings.reportFolderPath });
+	const createFolder = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined);
+	const create = vi.fn<(path: string, content: string) => Promise<void>>()
+		.mockResolvedValue(undefined);
+	const view = {
+		hasResult: vi.fn(() => result !== null),
+		getResult: vi.fn(() => result),
+	};
+	(plugin as any).app = {
+		workspace: {
+			getLeavesOfType: vi.fn(() => [{ view }]),
+		},
+		vault: {
+			getAbstractFileByPath,
+			createFolder,
+			create,
+		},
+	};
+	return { create, createFolder, getAbstractFileByPath, plugin, view };
+}
 
 function makeSnapshot(scanProfile: string) {
 	return createScanSnapshot(makeScanResult([]), scanProfile, "0.5.0", 100);
