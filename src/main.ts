@@ -9,6 +9,11 @@ import {
 } from "./settings/settings";
 import { InspectorSettingTab } from "./settings/settings-tab";
 import { generateMarkdownReport } from "./report/markdown-export";
+import { showLargeReportWarningModal } from "./report/export-warning-modal";
+import {
+	getReportExportPreflight,
+	MAX_SAFE_VAULT_REPORT_BYTES,
+} from "./report/report-export";
 import { executeFixAction } from "./fix/fix-executor";
 import { showConfirmModal } from "./fix/confirm-modal";
 import { runFixBatch } from "./fix/fix-runner";
@@ -404,16 +409,37 @@ export default class VaultInspectorPlugin extends Plugin {
 			return;
 		}
 
-		const result = view.getResult()!;
-		const report = generateMarkdownReport(result);
-		const folder = this.settings.reportFolderPath;
-		const now = new Date();
-		const filename = `Vault Inspector Report ${now.toISOString().replace(/[:.]/g, "-").slice(0, 19)}.md`;
-		const filepath = `${folder}/${filename}`;
+		try {
+			const result = view.getResult()!;
+			const fullReport = generateMarkdownReport(result);
+			const preflight = getReportExportPreflight(fullReport);
+			let report = fullReport;
+			let exportKind = "Report";
+			if (preflight.requiresConfirmation) {
+				const decision = await showLargeReportWarningModal(this.app, {
+					reportBytes: preflight.byteLength,
+					thresholdBytes: MAX_SAFE_VAULT_REPORT_BYTES,
+					findingCount: result.issues.length,
+				});
+				if (!decision) return;
+				if (decision === "summary") {
+					report = generateMarkdownReport(result, "summary");
+					exportKind = "Summary";
+				}
+			}
 
-		await this.app.vault.createFolder(folder).catch(() => {});
-		await this.app.vault.create(filepath, report);
-		new Notice(`Report exported to ${filepath}`);
+			const folder = this.settings.reportFolderPath;
+			const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+			const filename = `Vault Inspector ${exportKind} ${timestamp}.md`;
+			const filepath = `${folder}/${filename}`;
+			if (!this.app.vault.getAbstractFileByPath(folder)) {
+				await this.app.vault.createFolder(folder);
+			}
+			await this.app.vault.create(filepath, report);
+			new Notice(`${exportKind} exported to ${filepath}`);
+		} catch (error) {
+			new Notice(`Report export failed: ${errorMessage(error)}`);
+		}
 	}
 }
 

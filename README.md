@@ -78,11 +78,19 @@ baselines, and avoid modifying vault files.
 5. Open an active finding's **Actions** menu to ignore it, choose **Exclude parent folder**, or open its scanner settings. Parent-folder exclusions apply only to that scanner and can be removed from **Scanner-specific ignored folders** in settings.
 6. Click **Select** to enter selection mode, then batch delete or ignore issues. Fix results remain visible until dismissed and show whether each item was fixed, still present, skipped, or failed after verification.
 7. Expand **Resolved items** to review read-only rows from the previous compatible successful scan. Expand **Ignored items** to restore previously ignored issues.
-8. Run **Vault Inspector: Export report** to save results as Markdown.
+8. Run **Vault Inspector: Export report** to save results as Markdown. When a
+   complete in-vault report would exceed 1 MiB, choose a compact summary,
+   explicitly export the complete report anyway, or cancel.
 
 Scan results are selectable for copying. Duplicate file results show each file
 separately, tag results show `#tag` chips, and exported Markdown reports include
 scanner-specific detail fields.
+
+Plugin exports measure the complete Markdown output before writing into the
+vault. Reports larger than 1 MiB require an explicit choice because large
+Markdown files may make Obsidian unresponsive while indexing. Summary exports
+keep scan totals and per-scanner counts but omit per-finding details. This
+in-vault protection does not change CLI Markdown output.
 
 Each finding is classified as `confirmed`, `candidate`, or `unverified` and
 includes a plain-language explanation: why it was reported, an optional caveat,

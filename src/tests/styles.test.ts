@@ -60,4 +60,13 @@ describe("styles.css", () => {
 		expect(mobile).toMatch(/\.vi-explanation-value\s*\{[^}]*min-width:\s*0;/);
 		expect(mobile).toMatch(/\.vi-explanation-value\s*\{[^}]*white-space:\s*normal;/);
 	});
+
+	it("keeps large report export actions reachable on narrow screens", async () => {
+		const css = await readFile("styles.css", "utf8");
+
+		expect(css).toMatch(/\.vi-large-report-buttons\s*\{[^}]*flex-wrap:\s*wrap;/);
+		expect(css).toMatch(/\.vi-large-report-buttons\s*>\s*\*\s*\{[^}]*margin:\s*8px 0 0 8px;/);
+		expect(css).toMatch(/@media\s*\(max-width:\s*500px\)\s*\{[\s\S]*?\.vi-large-report-buttons\s*\{[^}]*flex-direction:\s*column;/);
+		expect(css).toMatch(/@media\s*\(max-width:\s*500px\)\s*\{[\s\S]*?\.vi-large-report-buttons\s*>\s*\*\s*\{[^}]*width:\s*100%;/);
+	});
 });

@@ -2,11 +2,16 @@ import type { ScanResult, Issue } from "../scanner/Issue";
 import { SCANNER_LABELS } from "../scanner/Issue";
 import { formatDuration, formatSize } from "../utils/format";
 
-export function generateMarkdownReport(result: ScanResult): string {
+export type MarkdownReportMode = "full" | "summary";
+
+export function generateMarkdownReport(
+	result: ScanResult,
+	mode: MarkdownReportMode = "full",
+): string {
 	const lines: string[] = [];
 	const now = new Date();
 
-	lines.push(`# Vault Inspector Report`);
+	lines.push(mode === "summary" ? "# Vault Inspector Summary" : "# Vault Inspector Report");
 	lines.push(``);
 	lines.push(`- **Date:** ${now.toLocaleString()}`);
 	lines.push(`- **Files scanned:** ${result.filesScanned}`);
@@ -29,6 +34,19 @@ export function generateMarkdownReport(result: ScanResult): string {
 	lines.push(``);
 
 	const grouped = groupByScanner(result.issues);
+	if (mode === "summary") {
+		lines.push("Finding details are omitted from this summary.");
+		lines.push(``);
+		lines.push("## Findings by scanner");
+		lines.push(``);
+		lines.push("| Scanner | Findings |");
+		lines.push("|---|---|");
+		for (const scannerId of result.scannersRun) {
+			lines.push(`| ${SCANNER_LABELS[scannerId]} | ${(grouped[scannerId] ?? []).length} |`);
+		}
+		lines.push(``);
+		return lines.join("\n");
+	}
 
 	for (const scannerId of result.scannersRun) {
 		const issues = grouped[scannerId] ?? [];
