@@ -54,4 +54,22 @@ describe("ScanRunner scanner-specific ignored folders", () => {
 		expect(seen.get("duplicate-files")).toEqual(["archive", "shared"]);
 		expect(settings.ignoredFolders).toEqual(["archive", "shared"]);
 	});
+
+	it("passes the unresolved-note policy into scanner contexts", async () => {
+		let observed: boolean | undefined;
+		const runner = new ScanRunner();
+		runner.register({
+			id: "broken-links",
+			scan: (ctx: ScanContext) => {
+				observed = ctx.ignoreUnresolvedNoteLinks;
+				return [];
+			},
+		});
+		const settings = structuredClone(DEFAULT_SETTINGS);
+		settings.ignoreUnresolvedNoteLinks = true;
+
+		await runner.run(makeApp(), settings);
+
+		expect(observed).toBe(true);
+	});
 });

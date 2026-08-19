@@ -66,6 +66,7 @@ export class ScanRunner {
 			lowUsageTagThreshold: settings.lowUsageTagThreshold,
 			watchedTags: settings.watchedTags,
 			ignoredFolders: settings.ignoredFolders,
+			ignoreUnresolvedNoteLinks: settings.ignoreUnresolvedNoteLinks,
 			ignoredProperties: settings.ignoredProperties,
 			emptyNoteWordThreshold: settings.emptyNoteWordThreshold,
 		};

@@ -21,6 +21,7 @@ export type ScanContext = {
 	lowUsageTagThreshold: number;
 	watchedTags: string[];
 	ignoredFolders: string[];
+	ignoreUnresolvedNoteLinks: boolean;
 	ignoredProperties: string[];
 	emptyNoteWordThreshold: number;
 };
