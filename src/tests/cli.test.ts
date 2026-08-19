@@ -42,6 +42,8 @@ describe("runCli", () => {
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toContain("vinspect <vault-path>");
 		expect(result.stdout).toContain("vault-inspector <vault-path>");
+		expect(result.stdout).toContain("--ignore-unresolved-note-links");
+		expect(result.stdout).toContain("Ignore missing plain note wikilinks");
 		expect(result.stderr).toBe("");
 	});
 
@@ -281,6 +283,69 @@ describe("runCli", () => {
 				]);
 			},
 		);
+	});
+
+	it("loads unresolved note filtering from config without hiding other broken links", async () => {
+		await withVault(
+			{
+				"Source.md": [
+					"[[Future Note]]",
+					"![[Missing Note]]",
+					"![[assets/missing.png]]",
+					"[Missing](missing.md)",
+					"[[Target#Missing]]",
+				].join("\n"),
+				"Target.md": "# Existing\n",
+			},
+			async (vaultPath) => {
+				const configPath = join(vaultPath, "vault-inspector.config.json");
+				await writeFile(
+					configPath,
+					JSON.stringify({
+						scanners: ["broken-links"],
+						ignoreUnresolvedNoteLinks: true,
+					}),
+					"utf8",
+				);
+
+				const result = await runCli([vaultPath, "--config", configPath]);
+
+				expect(result.exitCode).toBe(1);
+				const payload = JSON.parse(result.stdout);
+				expect(payload.summary.issues).toBe(4);
+				expect(payload.issues.map((issue: { message: string }) => issue.message))
+					.toEqual(expect.arrayContaining([
+						"Linked file not found: Missing Note",
+						"Attachment not found: assets/missing.png",
+						"Linked file not found: missing.md",
+						'Heading "#Missing" not found in Target.md',
+					]));
+				expect(payload.issues).not.toContainEqual(
+					expect.objectContaining({
+						message: "Linked file not found: Future Note",
+					}),
+				);
+			},
+		);
+	});
+
+	it("rejects a non-boolean unresolved note config value", async () => {
+		await withVault({ "Source.md": "[[Future Note]]\n" }, async (vaultPath) => {
+			const configPath = join(vaultPath, "vault-inspector.config.json");
+			await writeFile(
+				configPath,
+				JSON.stringify({ ignoreUnresolvedNoteLinks: "yes" }),
+				"utf8",
+			);
+
+			const result = await runCli([vaultPath, "--config", configPath]);
+
+			expect(result.exitCode).toBe(2);
+			expect(result.stdout).toBe("");
+			expect(result.stderr).toContain(
+				"ignoreUnresolvedNoteLinks must be a boolean",
+			);
+		});
 	});
 
 	it("uses fail-on to control exit status", async () => {
@@ -583,6 +648,27 @@ describe("runCli", () => {
 					}),
 				]);
 				expect(issues[0]).not.toHaveProperty("fixAction");
+			},
+		);
+	});
+
+	it("ignores unresolved plain note wikilinks through a CLI flag", async () => {
+		await withVault(
+			{
+				"Source.md": "[[Future Note]]\n",
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					vaultPath,
+					"--scanner",
+					"broken-links",
+					"--ignore-unresolved-note-links",
+				]);
+
+				expect(result.exitCode).toBe(0);
+				const payload = JSON.parse(result.stdout);
+				expect(payload.summary.issues).toBe(0);
+				expect(payload.issues).toEqual([]);
 			},
 		);
 	});
