@@ -150,6 +150,7 @@ vinspect . --scanner broken-links,empty-notes
 vinspect . --scanner external-links
 vinspect . --progress
 vinspect . --config vault-inspector.config.json
+vinspect . --ignore-unresolved-note-links
 ```
 
 `--progress` writes scanner progress to stderr so JSON and Markdown output on
@@ -170,12 +171,21 @@ Config files are JSON and use the same option names:
   "include": ["notes/**"],
   "exclude": ["templates/**"],
   "ignoredFolders": [".trash"],
+  "ignoreUnresolvedNoteLinks": true,
   "failOn": "warning",
   "largeMarkdownBytes": 102400
 }
 ```
 
 CLI flags override config file values.
+
+Set `ignoreUnresolvedNoteLinks` to `true`, or pass
+`--ignore-unresolved-note-links`, when unresolved plain wikilinks such as
+`[[Future Note]]` are intentional. The option does not hide embeds, missing
+attachments, Markdown links, or missing headings in notes that exist. It is a
+class-level ignore: unresolved path-like note wikilinks such as
+`[[projects/Tpyed Name]]` are also hidden, so leave it disabled when those must
+fail the scan.
 
 Settings omitted from a config file fall back to the plugin defaults — for
 example, `ignoredLargeMarkdownFrontmatterKeys` already defaults to
