@@ -256,6 +256,19 @@ export class InspectorSettingTab extends PluginSettingTab {
 						},
 					},
 					{
+						name: "Ignore unresolved note links",
+						desc: "Unresolved plain wikilinks such as [[Future Note]] are treated as intentional. Embeds, missing attachments, Markdown links, and missing headings are still reported. Path-like wikilinks are also ignored, so leave this off when typos must fail the scan.",
+						render: (setting) => {
+							setting.addToggle((toggle) =>
+								toggle.setValue(this.plugin.settings.ignoreUnresolvedNoteLinks)
+									.onChange(async (value) => {
+										this.plugin.settings.ignoreUnresolvedNoteLinks = value;
+										await this.plugin.saveSettings();
+									}),
+							);
+						},
+					},
+					{
 						name: "Ignored frontmatter properties (comma-separated)",
 						desc: "These properties are excluded from type consistency checks.",
 						render: (setting) => {

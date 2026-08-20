@@ -46,6 +46,7 @@ describe("InspectorSettingTab", () => {
 		);
 		expect(namesByHeading.get("Ignored items")).toEqual([
 			"Ignored folders (comma-separated)",
+			"Ignore unresolved note links",
 			"Ignored frontmatter properties (comma-separated)",
 		]);
 		expect(namesByHeading.get("Scanner-specific ignored folders")).toEqual(
