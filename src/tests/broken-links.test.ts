@@ -19,6 +19,7 @@ function makeCtx(overrides: Partial<ScanContext> = {}): ScanContext {
 		lowUsageTagThreshold: 2,
 		watchedTags: [],
 		ignoredFolders: [],
+		ignoreUnresolvedNoteLinks: false,
 		...overrides,
 	} as ScanContext;
 }
@@ -373,5 +374,164 @@ describe("brokenLinksScanner", () => {
 		const issues1 = await brokenLinksScanner.scan(ctx);
 		const issues2 = await brokenLinksScanner.scan(ctx);
 		expect(issues1[0].fingerprint).toBe(issues2[0].fingerprint);
+	});
+
+	it("ignores unresolved plain note wikilinks when enabled", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [{ path: "Source.md" }],
+			metadataByPath: {
+				"Source.md": {
+					links: [{
+						link: "Future Note|Someday",
+						original: "[[Future Note|Someday]]",
+						position: {} as any,
+					}],
+				},
+			},
+			unresolvedLinks: {
+				"Source.md": { "Future Note|Someday": 1 },
+			},
+			overrides: { ignoreUnresolvedNoteLinks: true },
+		});
+
+		const issues = await brokenLinksScanner.scan(ctx);
+
+		expect(issues).toEqual([]);
+	});
+
+	it("keeps non-plain-link failures when unresolved note links are ignored", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [
+				{ path: "Source.md" },
+				{ path: "Target.md" },
+			],
+			metadataByPath: {
+				"Source.md": {
+					links: [
+						{
+							link: "missing.md",
+							original: "[Missing](missing.md)",
+							position: {} as any,
+						},
+						{
+							link: "Target#Missing",
+							original: "[[Target#Missing]]",
+							position: {} as any,
+						},
+					],
+					embeds: [
+						{
+							link: "Missing Note",
+							original: "![[Missing Note]]",
+							position: {} as any,
+						},
+						{
+							link: "assets/missing.png",
+							original: "![[assets/missing.png]]",
+							position: {} as any,
+						},
+					],
+				},
+				"Target.md": {
+					headings: [{
+						heading: "Existing",
+						level: 1,
+						position: {} as any,
+					}],
+				},
+			},
+			unresolvedLinks: {
+				"Source.md": {
+					"missing.md": 1,
+					"Missing Note": 1,
+					"assets/missing.png": 1,
+				},
+			},
+			overrides: { ignoreUnresolvedNoteLinks: true },
+		});
+
+		const issues = await brokenLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(4);
+		expect(issues.map((issue) => issue.message)).toEqual(expect.arrayContaining([
+			"Linked file not found: missing.md",
+			'Heading "#Missing" not found in Target.md',
+			"Linked file not found: Missing Note",
+			"Attachment not found: assets/missing.png",
+		]));
+	});
+
+	it("keeps unresolved targets whose original reference syntax is unavailable", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [{ path: "Source.md" }],
+			unresolvedLinks: {
+				"Source.md": { Unknown: 1 },
+			},
+			overrides: { ignoreUnresolvedNoteLinks: true },
+		});
+
+		const issues = await brokenLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].message).toBe("Linked file not found: Unknown");
+	});
+
+	it("keeps a target referenced by both a plain wikilink and an embed", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [{ path: "Source.md" }],
+			metadataByPath: {
+				"Source.md": {
+					links: [{
+						link: "Missing",
+						original: "[[Missing]]",
+						position: {} as any,
+					}],
+					embeds: [{
+						link: "Missing",
+						original: "![[Missing]]",
+						position: {} as any,
+					}],
+				},
+			},
+			unresolvedLinks: {
+				"Source.md": { Missing: 2 },
+			},
+			overrides: { ignoreUnresolvedNoteLinks: true },
+		});
+
+		const issues = await brokenLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].message).toBe("Linked file not found: Missing");
+	});
+
+	it("keeps non-embed wikilinks to missing attachments when unresolved note links are ignored", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [{ path: "Source.md" }],
+			metadataByPath: {
+				"Source.md": {
+					links: [{
+						link: "missing.png",
+						original: "[[missing.png]]",
+						position: {} as any,
+					}],
+				},
+			},
+			unresolvedLinks: {
+				"Source.md": { "missing.png": 1 },
+			},
+			overrides: { ignoreUnresolvedNoteLinks: true },
+		});
+
+		const issues = await brokenLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].message).toBe("Attachment not found: missing.png");
+		expect(issues[0].severity).toBe("error");
 	});
 });

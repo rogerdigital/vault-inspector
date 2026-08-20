@@ -26,6 +26,7 @@ type CliOptions = {
 	include: string[];
 	exclude: string[];
 	ignoredFolders: string[];
+	ignoreUnresolvedNoteLinks: boolean;
 	baselinePath?: string;
 	failOn: FailOn;
 	fix: boolean;
@@ -146,6 +147,7 @@ function parseArgs(args: string[]): ParsedArgs | { error: string } {
 		include: [],
 		exclude: [],
 		ignoredFolders: [],
+		ignoreUnresolvedNoteLinks: false,
 		failOn: "any",
 		fix: false,
 		progress: false,
@@ -189,6 +191,8 @@ function parseArgs(args: string[]): ParsedArgs | { error: string } {
 			const value = args[++index];
 			if (!value) return { error: usage("Missing --ignore-folder value") };
 			options.ignoredFolders.push(value);
+		} else if (arg === "--ignore-unresolved-note-links") {
+			options.ignoreUnresolvedNoteLinks = true;
 		} else if (arg === "--config") {
 			const value = args[++index];
 			if (!value) return { error: usage("Missing --config value") };
@@ -221,6 +225,7 @@ type CliConfig = Partial<
 		| "include"
 		| "exclude"
 		| "ignoredFolders"
+		| "ignoreUnresolvedNoteLinks"
 		| "baselinePath"
 		| "failOn"
 		| "largeMarkdownBytes"
@@ -253,6 +258,9 @@ async function loadConfig(args: ParsedArgs): Promise<CliOptions | { error: strin
 				args.ignoredFolders.length > 0
 					? args.ignoredFolders
 					: config.ignoredFolders ?? [],
+			ignoreUnresolvedNoteLinks:
+				args.ignoreUnresolvedNoteLinks ||
+				(config.ignoreUnresolvedNoteLinks ?? false),
 			baselinePath: args.baselinePath ?? config.baselinePath,
 			failOn: args.failOn !== "any" ? args.failOn : config.failOn ?? args.failOn,
 			largeMarkdownBytes: args.largeMarkdownBytes ?? config.largeMarkdownBytes,
@@ -304,6 +312,7 @@ function makeSettings(options: CliOptions): InspectorSettings {
 			options.emptyNoteWordThreshold ?? DEFAULT_SETTINGS.emptyNoteWordThreshold,
 		watchedTags: options.watchedTags ?? DEFAULT_SETTINGS.watchedTags,
 		ignoredFolders: options.ignoredFolders,
+		ignoreUnresolvedNoteLinks: options.ignoreUnresolvedNoteLinks,
 		ignoredProperties: options.ignoredProperties ?? DEFAULT_SETTINGS.ignoredProperties,
 	};
 }
@@ -441,6 +450,12 @@ function validateConfig(config: CliConfig): string | null {
 	if (config.failOn && !isFailOn(config.failOn)) {
 		return `Unsupported failOn value: ${String(config.failOn)}`;
 	}
+	if (
+		config.ignoreUnresolvedNoteLinks !== undefined &&
+		typeof config.ignoreUnresolvedNoteLinks !== "boolean"
+	) {
+		return "ignoreUnresolvedNoteLinks must be a boolean";
+	}
 	return null;
 }
 
@@ -479,6 +494,8 @@ Options:
   --include <glob>          Include matching issue paths. Can be repeated.
   --exclude <glob>          Exclude matching issue paths. Can be repeated.
   --ignore-folder <path>    Ignore a vault-relative folder. Can be repeated.
+  --ignore-unresolved-note-links
+                            Ignore missing plain note wikilinks.
   --config <path>           Load CLI options from a JSON config file.
   --baseline <path>         Compare issue fingerprints against a previous JSON report.
   --fail-on <mode>          any, error, warning, new, or none.

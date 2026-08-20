@@ -9,6 +9,20 @@ import {
 	resolveVaultLinkTargets,
 } from "../../utils/vault-links";
 
+type LinkCandidate = {
+	linkText: string;
+	fixLinkText?: string;
+	ignorableUnresolvedNote: boolean;
+};
+
+type LinkReference = {
+	reference: {
+		link: string;
+		original?: string;
+	};
+	isEmbed: boolean;
+};
+
 export const brokenLinksScanner = {
 	id: "broken-links" as const,
 
@@ -26,28 +40,37 @@ export const brokenLinksScanner = {
 				unresolvedLinks?: Record<string, Record<string, number>>;
 			};
 			const linksForFile = meta.unresolvedLinks?.[file.path];
-			const references = [...cache.links ?? [], ...cache.embeds ?? []];
-			const linkCandidates = new Map<
-				string,
-				{ linkText: string; fixLinkText?: string }
-			>();
-			const addCandidate = (candidate: {
-				linkText: string;
-				fixLinkText?: string;
-			}) => {
+			const references: LinkReference[] = [
+				...(cache.links ?? []).map((reference) => ({
+					reference,
+					isEmbed: false,
+				})),
+				...(cache.embeds ?? []).map((reference) => ({
+					reference,
+					isEmbed: true,
+				})),
+			];
+			const linkCandidates = new Map<string, LinkCandidate>();
+			const addCandidate = (candidate: LinkCandidate) => {
 				const existing = linkCandidates.get(candidate.linkText);
 				linkCandidates.set(candidate.linkText, {
 					linkText: candidate.linkText,
 					fixLinkText: existing?.fixLinkText ?? candidate.fixLinkText,
+					ignorableUnresolvedNote: existing
+						? existing.ignorableUnresolvedNote && candidate.ignorableUnresolvedNote
+						: candidate.ignorableUnresolvedNote,
 				});
 			};
 
 			for (const unresolvedLink of Object.keys(linksForFile ?? {})) {
 				const matchingReferences = references.filter(
-					(reference) => reference.link === unresolvedLink,
+					({ reference }) => reference.link === unresolvedLink,
 				);
 				if (matchingReferences.length === 0) {
-					addCandidate({ linkText: unresolvedLink });
+					addCandidate({
+						linkText: unresolvedLink,
+						ignorableUnresolvedNote: false,
+					});
 					continue;
 				}
 				for (const reference of matchingReferences) {
@@ -55,7 +78,7 @@ export const brokenLinksScanner = {
 				}
 			}
 			for (const reference of references) {
-				if (reference.link.includes("#")) {
+				if (reference.reference.link.includes("#")) {
 					addCandidate(getLinkCandidate(reference));
 				}
 			}
@@ -66,6 +89,7 @@ export const brokenLinksScanner = {
 					file.path,
 					candidate.linkText,
 					candidate.fixLinkText,
+					candidate.ignorableUnresolvedNote,
 				));
 			}
 		}
@@ -78,7 +102,8 @@ function resolveLinkIssues(
 	ctx: ScanContext,
 	sourcePath: string,
 	linkText: string,
-	fixLinkText?: string,
+	fixLinkText: string | undefined,
+	ignorableUnresolvedNote: boolean,
 ): Issue[] {
 	const issues: Issue[] = [];
 
@@ -112,6 +137,9 @@ function resolveLinkIssues(
 	const resolvedPath = findMarkdownPath(ctx, rawTarget, sourcePath);
 
 	if (!resolvedPath) {
+		if (ctx.ignoreUnresolvedNoteLinks && ignorableUnresolvedNote) {
+			return issues;
+		}
 		issues.push(
 			makeIssue(
 				sourcePath,
@@ -125,15 +153,14 @@ function resolveLinkIssues(
 		return issues;
 	}
 
-	// Check heading existence
 	if (headingPart) {
 		const headingCache = ctx.metadataCache.getFileCache(
-			ctx.markdownFiles.find((f) => f.path === resolvedPath)!,
+			ctx.markdownFiles.find((file) => file.path === resolvedPath)!,
 		);
 		const headings = headingCache?.headings ?? [];
 		const headingSlug = slugifyHeading(headingPart);
 		const found = headings.some(
-			(h) => slugifyHeading(h.heading) === headingSlug,
+			(heading) => slugifyHeading(heading.heading) === headingSlug,
 		);
 		if (!found) {
 			issues.push(
@@ -152,18 +179,20 @@ function resolveLinkIssues(
 	return issues;
 }
 
-function getLinkCandidate(reference: {
-	link: string;
-	original?: string;
-}): { linkText: string; fixLinkText?: string } {
-	const originalWikiLink = reference.original?.match(/^!?\[\[([\s\S]+)\]\]$/);
+function getLinkCandidate({ reference, isEmbed }: LinkReference): LinkCandidate {
+	const original = reference.original ?? "";
+	const originalWikiLink = original.match(/^!?\[\[([\s\S]+)\]\]$/);
 	if (originalWikiLink) {
 		return {
 			linkText: originalWikiLink[1],
 			fixLinkText: originalWikiLink[1],
+			ignorableUnresolvedNote: !isEmbed && original.startsWith("[["),
 		};
 	}
-	return { linkText: reference.link };
+	return {
+		linkText: reference.link,
+		ignorableUnresolvedNote: false,
+	};
 }
 
 function isAttachmentLink(target: string): boolean {

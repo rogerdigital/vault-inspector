@@ -18,6 +18,7 @@ export type InspectorSettings = {
 	ignoredIssueFingerprints: string[];
 	ignoredFolders: string[];
 	ignoredFoldersByScanner: Record<ScannerId, string[]>;
+	ignoreUnresolvedNoteLinks: boolean;
 	ignoredProperties: string[];
 	reportFolderPath: string;
 };
@@ -47,6 +48,7 @@ export const DEFAULT_SETTINGS: InspectorSettings = {
 	ignoredIssueFingerprints: [],
 	ignoredFolders: [],
 	ignoredFoldersByScanner: createEmptyIgnoredFoldersByScanner(),
+	ignoreUnresolvedNoteLinks: false,
 	ignoredProperties: [],
 	reportFolderPath: "Vault Inspector Reports",
 };

@@ -133,6 +133,9 @@ describe("createScanProfile", () => {
 		["ignored properties", (settings: InspectorSettings) => {
 			settings.ignoredProperties = ["private"];
 		}],
+		["unresolved note link policy", (settings: InspectorSettings) => {
+			settings.ignoreUnresolvedNoteLinks = true;
+		}],
 	])("changes when %s changes", async (_name, mutate) => {
 		await expectProfileToChange(mutate);
 	});

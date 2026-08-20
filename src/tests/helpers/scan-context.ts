@@ -74,6 +74,7 @@ export function makeScanContext(options: TestContextOptions = {}): ScanContext {
 		emptyNoteWordThreshold: 5,
 		watchedTags: [],
 		ignoredFolders: [],
+		ignoreUnresolvedNoteLinks: false,
 		ignoredProperties: [],
 		requestUrl: undefined,
 		setTimeout: undefined,

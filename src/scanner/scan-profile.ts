@@ -21,6 +21,7 @@ export async function createScanProfile(settings: InspectorSettings): Promise<st
 				normalizeFolders(settings.ignoredFoldersByScanner[scannerId] ?? []),
 			]),
 		),
+		ignoreUnresolvedNoteLinks: settings.ignoreUnresolvedNoteLinks,
 		largeMarkdownBytes: settings.largeMarkdownBytes,
 		largeAttachmentBytes: settings.largeAttachmentBytes,
 		ignoredLargeMarkdownFrontmatterKeys: normalizeSet(
