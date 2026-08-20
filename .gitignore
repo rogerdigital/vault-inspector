@@ -18,5 +18,6 @@ data.json
 # Local worktrees
 .worktrees/
 
-# Claude
+# Agent tools
 .claude/
+.zcode/
