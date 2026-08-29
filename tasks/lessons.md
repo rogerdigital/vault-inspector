@@ -85,3 +85,11 @@ Obsidian review bot 有两条强制规则：
 - 方案上线后，要用真实 scorecard 结果验证效果，不要只靠本地推理
 - 接受已验证的结构性限制，不为不可达的目标投入资源
 
+
+## 提交信息只描述改动（2026-08-29）
+
+**现象**：PR #122（docs）review 时反馈：提交信息只需体现做了哪些改动。
+
+**规则**：
+- commit message 用最短的话说清改了什么，不附加背景叙述、目标铺垫或修饰
+- 示例：`docs: add scanner precision foundation design and implementation plan` 已符合；避免在此基础上再写长正文
