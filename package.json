@@ -27,6 +27,7 @@
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest run --coverage",
+		"benchmark:scan": "node scripts/benchmark-scan.mjs",
 		"version": "node version-bump.mjs && git add manifest.json versions.json cli/version.ts"
 	},
 	"keywords": [
