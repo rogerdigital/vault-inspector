@@ -1,0 +1,3 @@
+# Embed Only
+
+![[photo.jpg]]

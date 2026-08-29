@@ -1,0 +1,14 @@
+{
+	"nodes": [
+		{
+			"id": "canvas-node-1",
+			"type": "file",
+			"file": "attachments/canvas-image.png",
+			"x": 0,
+			"y": 0,
+			"width": 240,
+			"height": 180
+		}
+	],
+	"edges": []
+}
