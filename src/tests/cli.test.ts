@@ -620,7 +620,17 @@ describe("runCli", () => {
 						}),
 					}),
 				]);
-				expect(issues[0]).not.toHaveProperty("fixAction");
+				// The fix is a label-preserving literal replacement, not the
+				// wiki-only removal pattern.
+				expect(issues[0].fixAction).toEqual({
+					kind: "remove-link-text",
+					label: "Remove link",
+					description:
+						'Replace "[Target](sub/target.md#Missing)" with "Target" in "notes/source.md"',
+					targetPaths: ["notes/source.md"],
+					original: "[Target](sub/target.md#Missing)",
+					replacement: "Target",
+				});
 			},
 		);
 	});
@@ -647,7 +657,18 @@ describe("runCli", () => {
 						message: "Linked file not found: missing.md",
 					}),
 				]);
-				expect(issues[0]).not.toHaveProperty("fixAction");
+				// Safe label-preserving replacement; the unsafe wiki removal
+				// pattern (linkText) is never emitted for Markdown syntax.
+				expect(issues[0].fixAction).toEqual({
+					kind: "remove-link-text",
+					label: "Remove link",
+					description:
+						'Replace "[Missing](missing.md)" with "Missing" in "notes/source.md"',
+					targetPaths: ["notes/source.md"],
+					original: "[Missing](missing.md)",
+					replacement: "Missing",
+				});
+				expect(issues[0].fixAction).not.toHaveProperty("linkText");
 			},
 		);
 	});

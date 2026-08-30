@@ -175,7 +175,157 @@ describe("brokenLinksScanner", () => {
 		expect(issues[0].evidence.target).toBe("notes/missing");
 	});
 
-	it("does not offer a wiki removal action for Markdown links", async () => {
+	it("replaces an aliased wiki link with its alias", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [{ path: "Source.md" }],
+			metadataByPath: {
+				"Source.md": {
+					links: [{
+						link: "Missing",
+						original: "[[Missing|Readable Label]]",
+						displayText: "Readable Label",
+						position: {} as any,
+					}],
+				},
+			},
+			unresolvedLinks: {
+				"Source.md": { Missing: 1 },
+			},
+		});
+
+		const issues = await brokenLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].fixAction).toEqual(expect.objectContaining({
+			kind: "remove-link-text",
+			label: "Remove link",
+			description: 'Replace "[[Missing|Readable Label]]" with "Readable Label" in "Source.md"',
+			linkText: "Missing|Readable Label",
+			original: "[[Missing|Readable Label]]",
+			replacement: "Readable Label",
+		}));
+		expect(issues[0].evidence.linkKind).toBe("note-link");
+	});
+
+	it("replaces a plain wiki link with its target text", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [{ path: "Source.md" }],
+			metadataByPath: {
+				"Source.md": {
+					links: [{
+						link: "Missing Note",
+						original: "[[Missing Note]]",
+						position: {} as any,
+					}],
+				},
+			},
+			unresolvedLinks: {
+				"Source.md": { "Missing Note": 1 },
+			},
+		});
+
+		const issues = await brokenLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].fixAction).toEqual(expect.objectContaining({
+			original: "[[Missing Note]]",
+			replacement: "Missing Note",
+		}));
+	});
+
+	it("removes a missing embed entirely", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [{ path: "Source.md" }],
+			metadataByPath: {
+				"Source.md": {
+					embeds: [{
+						link: "missing.png",
+						original: "![[missing.png]]",
+						position: {} as any,
+					}],
+				},
+			},
+			unresolvedLinks: {
+				"Source.md": { "missing.png": 1 },
+			},
+		});
+
+		const issues = await brokenLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].evidence.linkKind).toBe("embed");
+		expect(issues[0].fixAction).toEqual(expect.objectContaining({
+			kind: "remove-link-text",
+			description: 'Remove "![[missing.png]]" from "Source.md"',
+			original: "![[missing.png]]",
+			replacement: "",
+		}));
+	});
+
+	it("replaces a markdown link with its label text", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [{ path: "Source.md" }],
+			metadataByPath: {
+				"Source.md": {
+					links: [{
+						link: "missing-target.md",
+						original: "[Readable Markdown](missing-target.md)",
+						position: {} as any,
+					}],
+				},
+			},
+			unresolvedLinks: {
+				"Source.md": { "missing-target.md": 1 },
+			},
+		});
+
+		const issues = await brokenLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].evidence.linkKind).toBe("markdown-link");
+		expect(issues[0].fixAction).toEqual(expect.objectContaining({
+			kind: "remove-link-text",
+			description: 'Replace "[Readable Markdown](missing-target.md)" with "Readable Markdown" in "Source.md"',
+			original: "[Readable Markdown](missing-target.md)",
+			replacement: "Readable Markdown",
+		}));
+		// Wiki inner text does not exist for markdown syntax — no linkText.
+		expect(issues[0].fixAction?.linkText).toBeUndefined();
+	});
+
+	it("removes a markdown embed entirely", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [{ path: "Source.md" }],
+			metadataByPath: {
+				"Source.md": {
+					embeds: [{
+						link: "missing.png",
+						original: "![alt](missing.png)",
+						position: {} as any,
+					}],
+				},
+			},
+			unresolvedLinks: {
+				"Source.md": { "missing.png": 1 },
+			},
+		});
+
+		const issues = await brokenLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].evidence.linkKind).toBe("embed");
+		expect(issues[0].fixAction).toEqual(expect.objectContaining({
+			original: "![alt](missing.png)",
+			replacement: "",
+		}));
+	});
+
+	it("offers a label-preserving replacement for broken markdown heading links", async () => {
 		const ctx = makeScanContext({
 			scanner: "broken-links",
 			files: [
@@ -204,10 +354,15 @@ describe("brokenLinksScanner", () => {
 
 		expect(issues).toHaveLength(1);
 		expect(issues[0].severity).toBe("warning");
-		expect(issues[0].fixAction).toBeUndefined();
+		expect(issues[0].evidence.linkKind).toBe("markdown-link");
+		expect(issues[0].fixAction).toEqual(expect.objectContaining({
+			kind: "remove-link-text",
+			original: "[Target](Target.md#Missing)",
+			replacement: "Target",
+		}));
 	});
 
-	it("keeps an exact removal action for aliased wiki links", async () => {
+	it("keeps an exact replacement action for aliased wiki heading links", async () => {
 		const ctx = makeScanContext({
 			scanner: "broken-links",
 			files: [{ path: "Source.md" }],
@@ -222,9 +377,7 @@ describe("brokenLinksScanner", () => {
 				},
 			},
 			unresolvedLinks: {
-				"Source.md": {
-					Missing: 1,
-				},
+				"Source.md": { Missing: 1 },
 			},
 		});
 
@@ -234,10 +387,12 @@ describe("brokenLinksScanner", () => {
 		expect(issues[0].fixAction).toEqual(expect.objectContaining({
 			kind: "remove-link-text",
 			linkText: "Missing|Alias",
+			original: "[[Missing|Alias]]",
+			replacement: "Alias",
 		}));
 	});
 
-	it("merges plain and aliased references to the same missing target into one finding", async () => {
+	it("withholds the fix action when plain and aliased references merge", async () => {
 		const ctx = makeScanContext({
 			scanner: "broken-links",
 			files: [{ path: "Source.md" }],
@@ -268,30 +423,93 @@ describe("brokenLinksScanner", () => {
 		expect(issues).toHaveLength(1);
 		expect(issues[0].evidence.link).toBe("Missing Note");
 		expect(issues[0].message).toBe("Linked file not found: Missing Note");
-		// Document order makes the first (plain) reference's fix text win.
+		// Differing originals: one action cannot cover both occurrences.
+		expect(issues[0].fixAction).toBeUndefined();
+	});
+
+	it("keeps the fix action when merged references share the same original", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [{ path: "Source.md" }],
+			metadataByPath: {
+				"Source.md": {
+					links: [
+						{
+							link: "Missing Note",
+							original: "[[Missing Note|Label]]",
+							position: {} as any,
+						},
+						{
+							link: "Missing Note",
+							original: "[[Missing Note|Label]]",
+							position: {} as any,
+						},
+					],
+				},
+			},
+			unresolvedLinks: {
+				"Source.md": { "Missing Note": 2 },
+			},
+		});
+
+		const issues = await brokenLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
 		expect(issues[0].fixAction).toEqual(expect.objectContaining({
-			kind: "remove-link-text",
-			linkText: "Missing Note",
+			original: "[[Missing Note|Label]]",
+			replacement: "Label",
 		}));
 	});
 
-	it("detects missing attachment links", async () => {
-		const file = { path: "notes/a.md" } as any;
-		const ctx = makeCtx({
-			markdownFiles: [file],
-			allFiles: [file],
-			filePathIndex: new Set(["notes/a.md"]),
-			metadataCache: {
-				getFileCache: () => ({}),
-				unresolvedLinks: {
-					"notes/a.md": { "assets/image.png": 1 },
+	it("withholds the fix action when one merged reference has no original", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [{ path: "Source.md" }],
+			metadataByPath: {
+				"Source.md": {
+					links: [
+						{
+							link: "Missing Note",
+							original: "[[Missing Note]]",
+							position: {} as any,
+						},
+						{
+							// LinkCache.original is typed as required, but runtime
+							// caches may omit it — exercise that path via a cast.
+							link: "Missing Note",
+							position: {} as any,
+						} as any,
+					],
 				},
-			} as any,
+			},
+			unresolvedLinks: {
+				"Source.md": { "Missing Note": 2 },
+			},
 		});
+
 		const issues = await brokenLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].fixAction).toBeUndefined();
+	});
+
+	it("detects missing attachment links and marks them as attachments", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [{ path: "notes/a.md" }],
+			unresolvedLinks: {
+				"notes/a.md": { "assets/image.png": 1 },
+			},
+		});
+
+		const issues = await brokenLinksScanner.scan(ctx);
+
 		expect(issues).toHaveLength(1);
 		expect(issues[0].severity).toBe("error");
 		expect(issues[0].message).toContain("Attachment");
+		expect(issues[0].evidence.linkKind).toBe("attachment");
+		// No cache reference → no original → no fix action.
+		expect(issues[0].fixAction).toBeUndefined();
 	});
 
 	it("does not report short wiki attachment links that match files in attachment folders", async () => {
@@ -414,6 +632,38 @@ describe("brokenLinksScanner", () => {
 		expect(issues1[0].fingerprint).toBe(issues2[0].fingerprint);
 	});
 
+	it("produces stable fingerprints across reference shape changes", async () => {
+		// The same missing target, first discovered only through
+		// unresolvedLinks, then with a cache reference carrying an original:
+		// evidence gains linkKind and a fixAction appears, but the
+		// fingerprint input ({ link, target }) is identical.
+		const base = {
+			scanner: "broken-links" as const,
+			files: [{ path: "Source.md" }],
+			unresolvedLinks: { "Source.md": { Missing: 1 } },
+		};
+		const withoutReference = await brokenLinksScanner.scan(
+			makeScanContext(base),
+		);
+		const withReference = await brokenLinksScanner.scan(
+			makeScanContext({
+				...base,
+				metadataByPath: {
+					"Source.md": {
+						links: [{
+							link: "Missing",
+							original: "[[Missing]]",
+							position: {} as any,
+						}],
+					},
+				},
+			}),
+		);
+		expect(withReference).toHaveLength(1);
+		expect(withoutReference).toHaveLength(1);
+		expect(withReference[0].fingerprint).toBe(withoutReference[0].fingerprint);
+	});
+
 	it("ignores unresolved plain note wikilinks when enabled", async () => {
 		const ctx = makeScanContext({
 			scanner: "broken-links",
@@ -515,9 +765,10 @@ describe("brokenLinksScanner", () => {
 
 		expect(issues).toHaveLength(1);
 		expect(issues[0].message).toBe("Linked file not found: Unknown");
+		expect(issues[0].fixAction).toBeUndefined();
 	});
 
-	it("keeps a target referenced by both a plain wikilink and an embed", async () => {
+	it("keeps a target referenced by both a plain wikilink and an embed, without a fix", async () => {
 		const ctx = makeScanContext({
 			scanner: "broken-links",
 			files: [{ path: "Source.md" }],
@@ -545,6 +796,8 @@ describe("brokenLinksScanner", () => {
 
 		expect(issues).toHaveLength(1);
 		expect(issues[0].message).toBe("Linked file not found: Missing");
+		// Embed and non-embed originals differ by the leading "!" — ambiguous.
+		expect(issues[0].fixAction).toBeUndefined();
 	});
 
 	it("keeps non-embed wikilinks to missing attachments when unresolved note links are ignored", async () => {

@@ -71,7 +71,7 @@ describe("precision fixture vault", () => {
 			expect(fromUnicode).toEqual([]);
 		});
 
-		it("reports five findings for the broken-links note with current fix availability", async () => {
+		it("reports five findings for the broken-links note with label-preserving fixes", async () => {
 			const { issues } = await scanFixtureVault();
 			const broken = issues.filter(
 				(issue) =>
@@ -84,36 +84,58 @@ describe("precision fixture vault", () => {
 			const byLink = new Map(broken.map((issue) => [issue.evidence.link, issue]));
 
 			// The plain and aliased references merge into one finding (Obsidian's
-			// cache strips aliases from LinkCache.link); document order makes the
-			// plain reference's fix text win.
+			// cache strips aliases from LinkCache.link). Their originals differ
+			// ("[[Missing Note]]" vs "[[Missing Note|Readable Label]]"), so one
+			// action cannot cover both occurrences — the fix is withheld.
 			expect(byLink.get("Missing Note")).toMatchObject({
 				message: "Linked file not found: Missing Note",
 				severity: "error",
-				evidence: { link: "Missing Note", target: "Missing Note" },
-				fixAction: { kind: "remove-link-text", linkText: "Missing Note" },
+				evidence: { link: "Missing Note", target: "Missing Note", linkKind: "note-link" },
 			});
+			expect(byLink.get("Missing Note")?.fixAction).toBeUndefined();
 			expect(byLink.has("Missing Note|Readable Label")).toBe(false);
-			// Markdown links currently get no fix action — Milestone 1.5 target.
+			// Markdown links now carry a label-preserving replacement action.
 			expect(byLink.get("missing-target.md")).toMatchObject({
 				message: "Linked file not found: missing-target.md",
 				severity: "error",
+				evidence: { linkKind: "markdown-link" },
+				fixAction: {
+					kind: "remove-link-text",
+					original: "[Readable Markdown](missing-target.md)",
+					replacement: "Readable Markdown",
+				},
 			});
-			expect(byLink.get("missing-target.md")?.fixAction).toBeUndefined();
 			expect(byLink.get("missing-photo.png")).toMatchObject({
 				message: "Attachment not found: missing-photo.png",
 				severity: "error",
-				fixAction: { kind: "remove-link-text" },
+				evidence: { linkKind: "attachment" },
+				fixAction: {
+					kind: "remove-link-text",
+					original: "[[missing-photo.png]]",
+					replacement: "missing-photo.png",
+				},
 			});
 			expect(byLink.get("missing-embed.png")).toMatchObject({
 				message: "Attachment not found: missing-embed.png",
 				severity: "error",
-				fixAction: { kind: "remove-link-text" },
+				evidence: { linkKind: "embed" },
+				fixAction: {
+					kind: "remove-link-text",
+					original: "![[missing-embed.png]]",
+					replacement: "",
+				},
 			});
 			expect(byLink.get("target#Missing Heading")).toMatchObject({
 				message: 'Heading "#Missing Heading" not found in notes/target.md',
 				severity: "warning",
 				relatedPaths: ["notes/target.md"],
-				fixAction: { kind: "remove-link-text", linkText: "target#Missing Heading" },
+				evidence: { linkKind: "heading" },
+				fixAction: {
+					kind: "remove-link-text",
+					linkText: "target#Missing Heading",
+					original: "[[target#Missing Heading]]",
+					replacement: "target#Missing Heading",
+				},
 			});
 		});
 	});

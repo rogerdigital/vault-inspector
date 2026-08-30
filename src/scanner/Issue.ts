@@ -28,6 +28,10 @@ export type FixAction = {
 	description: string;
 	targetPaths: string[];
 	linkText?: string;
+	/** Exact literal source syntax the fix locates, e.g. "[[Missing|Label]]". */
+	original?: string;
+	/** Text substituted in place of `original`; "" removes the range. */
+	replacement?: string;
 	selection?: KeepOneSelection;
 };
 

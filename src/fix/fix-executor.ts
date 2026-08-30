@@ -5,8 +5,13 @@ export async function executeFixAction(app: App, action: FixAction): Promise<num
 	switch (action.kind) {
 		case "trash-file":
 			return trashFiles(app, action.targetPaths);
-		case "remove-link-text":
-			return removeLinkText(app, action.targetPaths[0], action.linkText!);
+		case "remove-link-text": {
+			const source = action.targetPaths[0];
+			if (action.original !== undefined) {
+				return replaceLinkText(app, source, action.original, action.replacement ?? "");
+			}
+			return removeLinkText(app, source, action.linkText!);
+		}
 		default:
 			return 0;
 	}
@@ -46,6 +51,49 @@ async function removeLinkText(app: App, sourcePath: string, linkText: string): P
 		removed = true;
 	}
 	if (removed) updated += content.slice(cursor);
+	else updated = content;
+	if (updated === content) return 0;
+
+	await app.vault.modify(file, updated);
+	return 1;
+}
+
+/**
+ * Replace every unprotected occurrence of the literal `original` syntax with
+ * `replacement` ("" removes the range). Preferred over the legacy wiki
+ * pattern when the fix action carries exact source metadata.
+ */
+async function replaceLinkText(
+	app: App,
+	sourcePath: string,
+	original: string,
+	replacement: string,
+): Promise<number> {
+	const file = app.vault.getAbstractFileByPath(sourcePath);
+	if (!(file instanceof TFile)) return 0;
+
+	const content = await app.vault.read(file);
+	// Negative lookbehind: a wiki original "[[x]]" is a substring of the embed
+	// "![[x]]" (and a markdown original of its image form "![](x)"). Non-embed
+	// actions must never consume an embed occurrence; embed actions carry the
+	// "!" in their original and match exactly.
+	const pattern = new RegExp(`(?<!!)${escapeRegex(original)}`, "g");
+	const protectedRanges = findProtectedMarkdownRanges(content);
+	let cursor = 0;
+	let updated = "";
+	let replaced = false;
+
+	for (const match of content.matchAll(pattern)) {
+		const start = match.index;
+		const end = start + match[0].length;
+		if (protectedRanges.some((range) => start < range.end && end > range.start)) {
+			continue;
+		}
+		updated += content.slice(cursor, start) + replacement;
+		cursor = end;
+		replaced = true;
+	}
+	if (replaced) updated += content.slice(cursor);
 	else updated = content;
 	if (updated === content) return 0;
 
