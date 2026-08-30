@@ -21,7 +21,6 @@ function inventoryOf(issues: Issue[]): string[] {
 // comparison doubles as an ordering pin.
 const EXPECTED_INVENTORY: string[] = [
 	"broken-links | error | confirmed | Missing Note,notes/hub/broken-links.md | Linked file not found: Missing Note",
-	"broken-links | error | confirmed | Missing Note,notes/hub/broken-links.md | Linked file not found: Missing Note",
 	"broken-links | error | confirmed | missing-embed.png,notes/hub/broken-links.md | Attachment not found: missing-embed.png",
 	"broken-links | error | confirmed | missing-photo.png,notes/hub/broken-links.md | Attachment not found: missing-photo.png",
 	"broken-links | error | confirmed | missing-target.md,notes/hub/broken-links.md | Linked file not found: missing-target.md",
@@ -76,35 +75,28 @@ describe("precision fixture vault", () => {
 			expect(fromUnicode).toEqual([]);
 		});
 
-		it("reports six findings for the broken-links note with current fix availability", async () => {
+		it("reports five findings for the broken-links note with current fix availability", async () => {
 			const { issues } = await scanFixtureVault();
 			const broken = issues.filter(
 				(issue) =>
 					issue.scannerId === "broken-links" &&
 					issue.primaryPath === "notes/hub/broken-links.md",
 			);
-			expect(broken).toHaveLength(6);
+			expect(broken).toHaveLength(5);
 			expect(broken.every((issue) => issue.classification === "confirmed")).toBe(true);
 
 			const byLink = new Map(broken.map((issue) => [issue.evidence.link, issue]));
 
-			// Aliased broken link is pinned for Milestone 1 Task 1.5 (preserve display
-			// text when fixing). Its fixAction carries the full wiki inner text today.
-			// Note: Obsidian's cache strips aliases before the scanner, deduping this
-			// against the plain link; the duplicate finding is a CLI-adapter artifact
-			// (cli/local-vault.ts keeps the aliased text as the link key).
-			expect(byLink.get("Missing Note|Readable Label")).toMatchObject({
-				message: "Linked file not found: Missing Note",
-				severity: "error",
-				fixAction: { kind: "remove-link-text", linkText: "Missing Note|Readable Label" },
-			});
-
+			// The plain and aliased references merge into one finding (Obsidian's
+			// cache strips aliases from LinkCache.link); document order makes the
+			// plain reference's fix text win.
 			expect(byLink.get("Missing Note")).toMatchObject({
 				message: "Linked file not found: Missing Note",
 				severity: "error",
 				evidence: { link: "Missing Note", target: "Missing Note" },
 				fixAction: { kind: "remove-link-text", linkText: "Missing Note" },
 			});
+			expect(byLink.has("Missing Note|Readable Label")).toBe(false);
 			// Markdown links currently get no fix action — Milestone 1.5 target.
 			expect(byLink.get("missing-target.md")).toMatchObject({
 				message: "Linked file not found: missing-target.md",

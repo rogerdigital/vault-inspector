@@ -237,6 +237,44 @@ describe("brokenLinksScanner", () => {
 		}));
 	});
 
+	it("merges plain and aliased references to the same missing target into one finding", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [{ path: "Source.md" }],
+			metadataByPath: {
+				"Source.md": {
+					links: [
+						{
+							link: "Missing Note",
+							original: "[[Missing Note]]",
+							position: {} as any,
+						},
+						{
+							link: "Missing Note",
+							original: "[[Missing Note|Readable Label]]",
+							displayText: "Readable Label",
+							position: {} as any,
+						},
+					],
+				},
+			},
+			unresolvedLinks: {
+				"Source.md": { "Missing Note": 2 },
+			},
+		});
+
+		const issues = await brokenLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].evidence.link).toBe("Missing Note");
+		expect(issues[0].message).toBe("Linked file not found: Missing Note");
+		// Document order makes the first (plain) reference's fix text win.
+		expect(issues[0].fixAction).toEqual(expect.objectContaining({
+			kind: "remove-link-text",
+			linkText: "Missing Note",
+		}));
+	});
+
 	it("detects missing attachment links", async () => {
 		const file = { path: "notes/a.md" } as any;
 		const ctx = makeCtx({

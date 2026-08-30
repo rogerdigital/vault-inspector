@@ -37,7 +37,13 @@ type LocalMetadataCache = MetadataCache & {
 
 export async function createLocalApp(vaultPath: string): Promise<App> {
 	const files = await collectFiles(vaultPath);
-	const filePathIndex = new Set(files.map((file) => file.path));
+	// Lowercased path index: Obsidian resolves internal links case-insensitively.
+	// Insertion order follows the sorted file list so fallback matches are stable;
+	// if two files differ only by case, the later-sorted entry wins (degenerate
+	// case, matching the deterministic basename fallback).
+	const filePathIndex = new Map(
+		files.map((file) => [file.path.toLowerCase(), file.path]),
+	);
 	const filesByPath = new Map(files.map((file) => [file.path, file]));
 	const metadataByPath = new Map<string, LocalMetadata>();
 	const resolvedLinks: Record<string, Record<string, number>> = {};
@@ -73,7 +79,7 @@ export async function createLocalApp(vaultPath: string): Promise<App> {
 			} else {
 				unresolvedLinks[file.path] = {
 					...unresolvedLinks[file.path],
-					[link.link]: 1,
+					[link.link]: (unresolvedLinks[file.path]?.[link.link] ?? 0) + 1,
 				};
 			}
 		}
@@ -124,9 +130,9 @@ async function collectFiles(vaultPath: string): Promise<LocalFile[]> {
 	async function walk(dir: string, output: LocalFile[]): Promise<void> {
 		const entries = await readdir(dir, { withFileTypes: true });
 		for (const entry of entries) {
+			if (entry.name.startsWith(".")) continue;
 			const absolutePath = join(dir, entry.name);
 			if (entry.isDirectory()) {
-				if (entry.name.startsWith(".")) continue;
 				await walk(absolutePath, output);
 				continue;
 			}
@@ -155,7 +161,9 @@ function parseMarkdownMetadata(content: string): LocalMetadata {
 	const frontmatterLinks = extractFrontmatterWikiLinks(content);
 
 	for (const match of body.matchAll(/(!?)\[\[([^\]]+)\]\]/g)) {
-		const entry = { link: match[2], original: match[0] };
+		// Obsidian's LinkCache.link holds only the target portion (alias stripped,
+		// heading kept); the alias lives in the display text.
+		const entry = { link: match[2].split("|")[0], original: match[0] };
 		if (match[1] === "!") embeds.push(entry);
 		else links.push(entry);
 	}
@@ -199,8 +207,10 @@ function extractFrontmatterWikiLinks(content: string): LinkCacheEntry[] {
 	const section = splitFrontmatter(content);
 	if (!section.frontmatter) return [];
 
+	// Aliases are stripped here for symmetry with the body parser; frontmatterLinks
+	// are not consumed by link resolution today.
 	return [...section.frontmatter.matchAll(/\[\[([^\]]+)\]\]/g)].map((match) => ({
-		link: match[1],
+		link: match[1].split("|")[0],
 	}));
 }
 
@@ -257,12 +267,14 @@ function stripFrontmatter(content: string): string {
 }
 
 function normalizeLinkTarget(link: string): string {
+	// The alias strip is defensive for non-adapter callers; the adapter already
+	// strips aliases at parse time.
 	return link.split("|")[0].split("#")[0].trim();
 }
 
 function resolveVaultPath(
 	target: string,
-	filePathIndex: Set<string>,
+	filePathIndex: Map<string, string>,
 	sourcePath: string,
 	sourceRelative: boolean,
 ): string | null {
@@ -281,21 +293,23 @@ function resolveVaultPath(
 		`${candidate}.md`,
 	]);
 	for (const candidate of candidates) {
-		if (filePathIndex.has(candidate)) return candidate;
+		const resolved = filePathIndex.get(candidate.toLowerCase());
+		if (resolved) return resolved;
 	}
 
 	if (!normalizedTarget.includes("/")) {
 		if (extname(normalizedTarget)) {
-			const fileMatch = [...filePathIndex].find(
-				(path) => basename(path) === normalizedTarget,
+			const wanted = normalizedTarget.toLowerCase();
+			const fileMatch = [...filePathIndex.values()].find(
+				(path) => basename(path).toLowerCase() === wanted,
 			);
 			if (fileMatch) return fileMatch;
 		}
-		const targetBase = normalizedTarget.replace(/\.md$/i, "");
-		const match = [...filePathIndex]
-			.filter((path) => path.endsWith(".md"))
-			.find((path) => basename(path, ".md") === targetBase);
-		if (match) return match;
+		const targetBase = normalizedTarget.replace(/\.md$/i, "").toLowerCase();
+		const match = [...filePathIndex.entries()]
+			.filter(([lowerPath]) => lowerPath.endsWith(".md"))
+			.find(([lowerPath]) => basename(lowerPath, ".md") === targetBase);
+		if (match) return match[1];
 	}
 
 	return null;
