@@ -9,6 +9,7 @@ import type { FixAction, Issue } from "../scanner/Issue";
 function makeDuplicateIssue(
 	fingerprint = "duplicates",
 	paths = ["a.md", "b.md", "c.md"],
+	referencedPaths: string[] = [],
 ): Issue {
 	const sorted = paths.slice().sort();
 	const automaticKeepPath = sorted[0];
@@ -22,6 +23,8 @@ function makeDuplicateIssue(
 			kind: "keep-one",
 			candidatePaths: sorted,
 			automaticKeepPath,
+			referencedPaths,
+			requiresReview: referencedPaths.length >= 2,
 		},
 	};
 	return {
@@ -155,5 +158,51 @@ describe("fix decisions", () => {
 			fresh,
 			{ fingerprint: "empty" },
 		)).toBeNull();
+	});
+
+	it("requires an explicit keep path in automatic mode when the group needs review", () => {
+		const issue = makeDuplicateIssue("duplicates", ["a.md", "b.md", "c.md"], [
+			"a.md",
+			"b.md",
+		]);
+
+		const withoutChoice = buildFixDecisionState([issue], "automatic", new Map());
+		expect(withoutChoice.complete).toBe(false);
+		expect(withoutChoice.decisions).toEqual([]);
+
+		const withChoice = buildFixDecisionState(
+			[issue],
+			"automatic",
+			new Map([["duplicates", "c.md"]]),
+		);
+		expect(withChoice).toEqual({
+			complete: true,
+			decisions: [{ fingerprint: "duplicates", keepPath: "c.md" }],
+		});
+	});
+
+	it("still honors the automatic keep path when only one copy is referenced", () => {
+		const issue = makeDuplicateIssue("duplicates", ["a.md", "b.md", "c.md"], [
+			"b.md",
+		]);
+		const state = buildFixDecisionState([issue], "automatic", new Map());
+		expect(state).toEqual({
+			complete: true,
+			decisions: [{ fingerprint: "duplicates", keepPath: "a.md" }],
+		});
+	});
+
+	it("rejects a fresh action whose review requirement changed", () => {
+		const requested = makeDuplicateIssue();
+		const fresh = makeDuplicateIssue(
+			"duplicates",
+			["a.md", "b.md", "c.md"],
+			["a.md", "b.md"],
+		);
+
+		expect(getFreshFixAction(requested, fresh, {
+			fingerprint: "duplicates",
+			keepPath: "c.md",
+		})).toBeNull();
 	});
 });

@@ -1,5 +1,5 @@
 import { App, Modal } from "obsidian";
-import type { FixAction, Issue } from "../scanner/Issue";
+import type { FixAction, Issue, KeepOneSelection } from "../scanner/Issue";
 import type { DuplicateKeepMode } from "../settings/settings";
 import {
 	buildFixDecisionState,
@@ -78,6 +78,18 @@ export function showConfirmModal(
 	});
 }
 
+/**
+ * A keep-choice radio group is shown in always-ask mode, and for any group
+ * flagged requiresReview (2+ referenced paths) regardless of mode — the
+ * explicit choice is what unlocks the Confirm button.
+ */
+export function shouldAskForKeep(
+	mode: DuplicateKeepMode,
+	selection: KeepOneSelection,
+): boolean {
+	return mode === "always-ask" || selection.requiresReview === true;
+}
+
 class ConfirmFixModal extends Modal {
 	private issues: Issue[];
 	private mode: DuplicateKeepMode;
@@ -142,27 +154,32 @@ class ConfirmFixModal extends Modal {
 				: "Choose one file to keep in every duplicate group.",
 		});
 
-		if (this.mode === "always-ask") {
-			for (const issue of this.issues) {
-				const selection = issue.fixAction?.selection;
-				if (!selection) continue;
-				const group = contentEl.createDiv({ cls: "vi-keep-group" });
+		for (const issue of this.issues) {
+			const selection = issue.fixAction?.selection;
+			if (!selection || !shouldAskForKeep(this.mode, selection)) continue;
+			const group = contentEl.createDiv({ cls: "vi-keep-group" });
+			group.createDiv({
+				cls: "vi-keep-group-title",
+				text: "Choose one file to keep",
+			});
+			const referencedPaths = selection.referencedPaths ?? [];
+			if (referencedPaths.length >= 2) {
 				group.createDiv({
-					cls: "vi-keep-group-title",
-					text: "Choose one file to keep",
+					cls: "vi-keep-group-impact",
+					text: `${referencedPaths.length} of ${selection.candidatePaths.length} files are referenced by notes: ${referencedPaths.join(", ")}. Choose which location to keep — references are never rewritten.`,
 				});
-				for (const path of selection.candidatePaths) {
-					const option = group.createEl("label", { cls: "vi-keep-option" });
-					const radio = option.createEl("input", { type: "radio" });
-					radio.name = `keep-${issue.fingerprint}`;
-					radio.checked =
-						this.selectedKeeps.get(issue.fingerprint) === path;
-					radio.addEventListener("change", () => {
-						this.selectedKeeps.set(issue.fingerprint, path);
-						this.renderContent();
-					});
-					option.createSpan({ cls: "vi-keep-option-path", text: path });
-				}
+			}
+			for (const path of selection.candidatePaths) {
+				const option = group.createEl("label", { cls: "vi-keep-option" });
+				const radio = option.createEl("input", { type: "radio" });
+				radio.name = `keep-${issue.fingerprint}`;
+				radio.checked =
+					this.selectedKeeps.get(issue.fingerprint) === path;
+				radio.addEventListener("change", () => {
+					this.selectedKeeps.set(issue.fingerprint, path);
+					this.renderContent();
+				});
+				option.createSpan({ cls: "vi-keep-option-path", text: path });
 			}
 		}
 

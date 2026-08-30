@@ -16,6 +16,10 @@ export type KeepOneSelection = {
 	kind: "keep-one";
 	candidatePaths: string[];
 	automaticKeepPath: string;
+	/** Paths in the group with inbound references (sorted). */
+	referencedPaths?: string[];
+	/** True when 2+ paths have inbound references: an explicit keep choice is required even in automatic mode. */
+	requiresReview?: boolean;
 };
 
 export type FixAction = {
