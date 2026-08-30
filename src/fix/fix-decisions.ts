@@ -27,7 +27,10 @@ export function buildFixDecisionState(
 			decisions.push({ fingerprint: issue.fingerprint });
 			continue;
 		}
-		const keepPath = mode === "automatic"
+		// Review-required groups (2+ referenced paths) demand an explicit
+		// keep choice even in automatic mode: trashing a referenced copy
+		// breaks live links, and references are never rewritten.
+		const keepPath = mode === "automatic" && !selection.requiresReview
 			? selection.automaticKeepPath
 			: selectedKeeps.get(issue.fingerprint);
 		if (!keepPath || !selection.candidatePaths.includes(keepPath)) {
@@ -87,6 +90,7 @@ export function getFreshFixAction(
 			|| !fresh.selection
 			|| requested.kind !== fresh.kind
 			|| requested.label !== fresh.label
+			|| requested.selection.requiresReview !== fresh.selection.requiresReview
 			|| !samePaths(
 				requested.selection.candidatePaths,
 				fresh.selection.candidatePaths,
