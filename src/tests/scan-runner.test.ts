@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ScanRunner } from "../scanner/ScanRunner";
 import { DEFAULT_SETTINGS } from "../settings/settings";
 import type { ScanContext } from "../scanner/ScanContext";
+import { makeEmptyReferenceIndex } from "../scanner/reference-index";
 
 function makeApp() {
 	return {
@@ -71,5 +72,38 @@ describe("ScanRunner scanner-specific ignored folders", () => {
 		await runner.run(makeApp(), settings);
 
 		expect(observed).toBe(true);
+	});
+});
+
+describe("ScanRunner shared reference index", () => {
+	it("builds the index once and passes it to scanner contexts", async () => {
+		const observed: unknown[] = [];
+		const runner = new ScanRunner();
+		runner.register({
+			id: "broken-links",
+			scan: (ctx: ScanContext) => {
+				observed.push(ctx.referenceIndex);
+				return [];
+			},
+		});
+		runner.register({
+			id: "orphan-attachments",
+			scan: (ctx: ScanContext) => {
+				observed.push(ctx.referenceIndex);
+				return [];
+			},
+		});
+		const settings = structuredClone(DEFAULT_SETTINGS);
+		settings.enabledScanners = {
+			...settings.enabledScanners,
+			"broken-links": true,
+			"orphan-attachments": true,
+		};
+
+		await runner.run(makeApp(), settings);
+
+		expect(observed).toHaveLength(2);
+		expect(observed[0]).toBe(observed[1]); // same instance, built once
+		expect((observed[0] as ReturnType<typeof makeEmptyReferenceIndex>).inboundByPath).toBeInstanceOf(Map);
 	});
 });

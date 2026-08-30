@@ -1,5 +1,6 @@
 import type { App, TFile, MetadataCache, Vault } from "obsidian";
 import type { ScannerId } from "./Issue";
+import type { ReferenceIndex } from "./reference-index";
 
 export type ScanContext = {
 	app: App;
@@ -24,4 +25,5 @@ export type ScanContext = {
 	ignoreUnresolvedNoteLinks: boolean;
 	ignoredProperties: string[];
 	emptyNoteWordThreshold: number;
+	referenceIndex: ReferenceIndex;
 };
