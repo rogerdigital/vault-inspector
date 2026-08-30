@@ -9,9 +9,19 @@ import {
 	resolveVaultLinkTargets,
 } from "../../utils/vault-links";
 
+type LinkFix = {
+	/** Verbatim source syntax (from LinkCache.original / EmbedCache.original). */
+	original: string;
+	/** Text left in place of `original`; "" removes the range (embeds). */
+	replacement: string;
+};
+
 type LinkCandidate = {
 	linkText: string;
 	fixLinkText?: string;
+	fix?: LinkFix;
+	isEmbed: boolean;
+	isMarkdown: boolean;
 	ignorableUnresolvedNote: boolean;
 };
 
@@ -53,12 +63,26 @@ export const brokenLinksScanner = {
 			const linkCandidates = new Map<string, LinkCandidate>();
 			const addCandidate = (candidate: LinkCandidate) => {
 				const existing = linkCandidates.get(candidate.linkText);
+				if (!existing) {
+					linkCandidates.set(candidate.linkText, candidate);
+					return;
+				}
 				linkCandidates.set(candidate.linkText, {
 					linkText: candidate.linkText,
-					fixLinkText: existing?.fixLinkText ?? candidate.fixLinkText,
-					ignorableUnresolvedNote: existing
-						? existing.ignorableUnresolvedNote && candidate.ignorableUnresolvedNote
-						: candidate.ignorableUnresolvedNote,
+					fixLinkText: existing.fixLinkText ?? candidate.fixLinkText,
+					// A fix targets one exact source range. When merged references
+					// disagree on the original syntax (plain vs aliased, wiki vs
+					// markdown, embed vs non-embed) or one of them has no original,
+					// a single action cannot cover every occurrence — withhold it
+					// and keep the finding reviewable.
+					fix: existing.fix && candidate.fix
+						&& existing.fix.original === candidate.fix.original
+						? existing.fix
+						: undefined,
+					isEmbed: existing.isEmbed || candidate.isEmbed,
+					isMarkdown: existing.isMarkdown || candidate.isMarkdown,
+					ignorableUnresolvedNote:
+						existing.ignorableUnresolvedNote && candidate.ignorableUnresolvedNote,
 				});
 			};
 
@@ -69,6 +93,8 @@ export const brokenLinksScanner = {
 				if (matchingReferences.length === 0) {
 					addCandidate({
 						linkText: unresolvedLink,
+						isEmbed: false,
+						isMarkdown: false,
 						ignorableUnresolvedNote: false,
 					});
 					continue;
@@ -84,13 +110,7 @@ export const brokenLinksScanner = {
 			}
 
 			for (const candidate of linkCandidates.values()) {
-				issues.push(...resolveLinkIssues(
-					ctx,
-					file.path,
-					candidate.linkText,
-					candidate.fixLinkText,
-					candidate.ignorableUnresolvedNote,
-				));
+				issues.push(...resolveLinkIssues(ctx, file.path, candidate));
 			}
 		}
 
@@ -101,11 +121,10 @@ export const brokenLinksScanner = {
 function resolveLinkIssues(
 	ctx: ScanContext,
 	sourcePath: string,
-	linkText: string,
-	fixLinkText: string | undefined,
-	ignorableUnresolvedNote: boolean,
+	candidate: LinkCandidate,
 ): Issue[] {
 	const issues: Issue[] = [];
+	const linkText = candidate.linkText;
 
 	const rawTarget = getLinkTarget(linkText);
 
@@ -117,11 +136,11 @@ function resolveLinkIssues(
 			issues.push(
 				makeIssue(
 					sourcePath,
-					linkText,
-					fixLinkText,
+					candidate,
 					rawTarget,
 					"error",
 					`Attachment not found: ${rawTarget}`,
+					candidate.isEmbed ? "embed" : "attachment",
 				),
 			);
 		}
@@ -137,17 +156,21 @@ function resolveLinkIssues(
 	const resolvedPath = findMarkdownPath(ctx, rawTarget, sourcePath);
 
 	if (!resolvedPath) {
-		if (ctx.ignoreUnresolvedNoteLinks && ignorableUnresolvedNote) {
+		if (ctx.ignoreUnresolvedNoteLinks && candidate.ignorableUnresolvedNote) {
 			return issues;
 		}
 		issues.push(
 			makeIssue(
 				sourcePath,
-				linkText,
-				fixLinkText,
+				candidate,
 				rawTarget,
 				"error",
 				`Linked file not found: ${rawTarget}`,
+				candidate.isEmbed
+					? "embed"
+					: candidate.isMarkdown
+						? "markdown-link"
+						: "note-link",
 			),
 		);
 		return issues;
@@ -166,11 +189,15 @@ function resolveLinkIssues(
 			issues.push(
 				makeIssue(
 					sourcePath,
-					linkText,
-					fixLinkText,
+					candidate,
 					resolvedPath,
 					"warning",
 					`Heading "#${headingPart}" not found in ${resolvedPath}`,
+					candidate.isEmbed
+						? "embed"
+						: candidate.isMarkdown
+							? "markdown-link"
+							: "heading",
 				),
 			);
 		}
@@ -181,20 +208,50 @@ function resolveLinkIssues(
 
 function getLinkCandidate({ reference, isEmbed }: LinkReference): LinkCandidate {
 	const original = reference.original ?? "";
-	const originalWikiLink = original.match(/^!?\[\[([\s\S]+)\]\]$/);
-	if (originalWikiLink) {
+	const wikiMatch = original.match(/^(!?)\[\[([\s\S]+)\]\]$/);
+	if (wikiMatch) {
+		const inner = wikiMatch[2];
 		return {
 			// Obsidian's LinkCache.link already strips the alias, so the candidate
 			// key must use it — the full inner text survives only as fix text.
 			linkText: reference.link,
-			fixLinkText: originalWikiLink[1],
-			ignorableUnresolvedNote: !isEmbed && original.startsWith("[["),
+			fixLinkText: inner,
+			fix: {
+				original,
+				// Embeds render their target, not their text: removal is the
+				// only faithful transform.
+				replacement: wikiMatch[1] ? "" : deriveWikiReplacement(inner),
+			},
+			isEmbed,
+			isMarkdown: false,
+			ignorableUnresolvedNote: !isEmbed && !wikiMatch[1],
+		};
+	}
+	const markdownMatch = original.match(/^(!?)\[([^\]]*)\]\(\s*(?:<[^>]+>|[^)\s]*)\s*\)$/);
+	if (markdownMatch) {
+		return {
+			linkText: reference.link,
+			fix: {
+				original,
+				replacement: markdownMatch[1] ? "" : markdownMatch[2],
+			},
+			isEmbed: Boolean(markdownMatch[1]),
+			isMarkdown: true,
+			ignorableUnresolvedNote: false,
 		};
 	}
 	return {
 		linkText: reference.link,
+		isEmbed,
+		isMarkdown: !isEmbed && original.startsWith("["),
 		ignorableUnresolvedNote: false,
 	};
+}
+
+/** Wiki replacement text: the alias when present, otherwise the inner text. */
+function deriveWikiReplacement(inner: string): string {
+	const pipeIndex = inner.indexOf("|");
+	return pipeIndex === -1 ? inner : inner.slice(pipeIndex + 1);
 }
 
 function isAttachmentLink(target: string): boolean {
@@ -242,11 +299,11 @@ function slugifyHeading(heading: string): string {
 
 function makeIssue(
 	sourcePath: string,
-	linkText: string,
-	fixLinkText: string | undefined,
+	candidate: LinkCandidate,
 	targetPath: string,
 	severity: "error" | "warning" | "info",
 	message: string,
+	linkKind: "note-link" | "markdown-link" | "attachment" | "heading" | "embed",
 ): Issue {
 	const issue: Issue = {
 		scannerId: "broken-links",
@@ -255,7 +312,7 @@ function makeIssue(
 		message,
 		primaryPath: sourcePath,
 		relatedPaths: [targetPath],
-		evidence: { link: linkText, target: targetPath },
+		evidence: { link: candidate.linkText, target: targetPath, linkKind },
 		...describeFinding(
 			"confirmed",
 			severity === "error"
@@ -266,17 +323,22 @@ function makeIssue(
 				: "Correct the heading reference or remove it from the source note.",
 		),
 		fingerprint: generateFingerprint("broken-links", sourcePath, {
-			link: linkText,
+			link: candidate.linkText,
 			target: targetPath,
 		}),
 	};
-	if (fixLinkText) {
+	if (candidate.fix) {
+		const fix = candidate.fix;
 		issue.fixAction = {
 			kind: "remove-link-text",
 			label: "Remove link",
-			description: `Remove "[[${fixLinkText}]]" from "${sourcePath}"`,
+			description: fix.replacement === ""
+				? `Remove "${fix.original}" from "${sourcePath}"`
+				: `Replace "${fix.original}" with "${fix.replacement}" in "${sourcePath}"`,
 			targetPaths: [sourcePath],
-			linkText: fixLinkText,
+			...(candidate.fixLinkText ? { linkText: candidate.fixLinkText } : {}),
+			original: fix.original,
+			replacement: fix.replacement,
 		};
 	}
 	return issue;
