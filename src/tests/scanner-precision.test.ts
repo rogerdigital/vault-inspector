@@ -29,12 +29,9 @@ const EXPECTED_INVENTORY: string[] = [
 	"duplicate-files | info | candidate | ,duplicates/size-twin-one.bin,duplicates/size-twin-two.bin | 2 files share size 48 B",
 	"duplicate-files | warning | confirmed | ,duplicates/backup/fixture-data.bin,duplicates/original/fixture-data.bin | 2 files have identical content",
 	"empty-notes | warning | candidate | notes/empty/cjk-stub.md | This note only has 2 words (likely a stub)",
-	"empty-notes | warning | candidate | notes/empty/embed-only.md | This note only has 1 word (likely a stub)",
 	"empty-notes | warning | candidate | notes/empty/frontmatter-only.md | This note has no content besides a title",
 	"empty-notes | warning | candidate | notes/empty/genuine-empty.md | This note has no content besides a title",
-	"empty-notes | warning | candidate | notes/empty/short-link-moc.md | This note only has 2 words (likely a stub)",
 	"empty-notes | warning | candidate | notes/empty/stub.md | This note only has 3 words (likely a stub)",
-	"empty-notes | warning | candidate | notes/empty/task-note.md | This note only has 5 words (likely a stub)",
 	"empty-notes | warning | candidate | notes/empty/title-only.md | This note has no content besides a title",
 	"orphan-attachments | info | candidate | attachments/recent-orphan.png | This attachment is not referenced by any note",
 	"orphan-attachments | warning | candidate | attachments/orphan.png | This attachment is not referenced by any note",
@@ -168,45 +165,67 @@ describe("precision fixture vault", () => {
 	});
 
 	describe("empty notes", () => {
-		it("reports the eight stub notes as warning candidates with trash actions", async () => {
+		it("reports the five stub notes as warning candidates with zero structures", async () => {
 			const { issues } = await scanFixtureVault();
 			const empty = issues.filter((issue) => issue.scannerId === "empty-notes");
 			expect(empty.map((issue) => issue.primaryPath).sort()).toEqual([
 				"notes/empty/cjk-stub.md",
-				"notes/empty/embed-only.md",
 				"notes/empty/frontmatter-only.md",
 				"notes/empty/genuine-empty.md",
-				"notes/empty/short-link-moc.md",
 				"notes/empty/stub.md",
-				"notes/empty/task-note.md",
 				"notes/empty/title-only.md",
 			]);
 			expect(empty.every((issue) => issue.severity === "warning")).toBe(true);
 			expect(empty.every((issue) => issue.classification === "candidate")).toBe(true);
-			expect(empty.every((issue) => issue.fixAction?.kind === "trash-file")).toBe(true);
+			expect(empty.every((issue) => issue.evidence.structureCount === 0)).toBe(true);
 		});
 
-		it("keeps structural notes out of the findings — MOC, code note pass today", async () => {
+		it("offers trash only for the unreferenced stub — referenced stubs stay reviewable", async () => {
+			const { issues } = await scanFixtureVault();
+			const empty = issues.filter((issue) => issue.scannerId === "empty-notes");
+			const byPath = new Map(empty.map((issue) => [issue.primaryPath, issue]));
+			// link-only-moc.md links to these four stubs: their findings stay,
+			// but the trash action is suppressed (inbound reference count > 0).
+			for (const path of [
+				"notes/empty/frontmatter-only.md",
+				"notes/empty/genuine-empty.md",
+				"notes/empty/stub.md",
+				"notes/empty/title-only.md",
+			]) {
+				expect(byPath.get(path)?.fixAction).toBeUndefined();
+				expect(byPath.get(path)?.evidence.inboundReferenceCount).toBe(1);
+			}
+			expect(byPath.get("notes/empty/cjk-stub.md")?.fixAction).toMatchObject({
+				kind: "trash-file",
+				targetPaths: ["notes/empty/cjk-stub.md"],
+			});
+			expect(byPath.get("notes/empty/cjk-stub.md")?.evidence.inboundReferenceCount).toBe(0);
+		});
+
+		it("keeps structural notes out of the findings — MOCs, embeds, tasks, code", async () => {
 			const { issues } = await scanFixtureVault();
 			const emptyPaths = issues
 				.filter((issue) => issue.scannerId === "empty-notes")
 				.map((issue) => issue.primaryPath);
 			expect(emptyPaths).not.toContain("notes/empty/link-only-moc.md");
 			expect(emptyPaths).not.toContain("notes/empty/code-note.md");
+			// Former false positives, now excluded by the structure gate.
+			expect(emptyPaths).not.toContain("notes/empty/short-link-moc.md");
+			expect(emptyPaths).not.toContain("notes/empty/embed-only.md");
+			expect(emptyPaths).not.toContain("notes/empty/task-note.md");
 		});
 
-		it("pins the known false positives with their word counts", async () => {
+		it("pins the remaining stub word counts", async () => {
 			const { issues } = await scanFixtureVault();
+			const empty = issues.filter((issue) => issue.scannerId === "empty-notes");
 			const wordCountByPath = new Map(
-				issues
-					.filter((issue) => issue.scannerId === "empty-notes")
-					.map((issue) => [issue.primaryPath, issue.evidence.wordCount]),
+				empty.map((issue) => [issue.primaryPath, issue.evidence.wordCount]),
 			);
-			// Link-only, embed-only, and task-only notes are reported today
-			// purely by prose word count (Milestone 1.4 target).
-			expect(wordCountByPath.get("notes/empty/short-link-moc.md")).toBe(2);
-			expect(wordCountByPath.get("notes/empty/embed-only.md")).toBe(1);
-			expect(wordCountByPath.get("notes/empty/task-note.md")).toBe(5);
+			// Rationale for removing the former pins: short-link-moc (2),
+			// embed-only (1), and task-note (5) now produce NO empty-notes
+			// finding, so their word counts are no longer observable through
+			// this scanner. The structural-exclusion test above carries the
+			// assertion that they are not reported.
 			expect(wordCountByPath.get("notes/empty/cjk-stub.md")).toBe(2);
 			expect(wordCountByPath.get("notes/empty/stub.md")).toBe(3);
 		});

@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { emptyNotesScanner, countWords } from "../scanner/scanners/empty-notes";
+import {
+	emptyNotesScanner,
+	countWords,
+	countMeaningfulStructures,
+} from "../scanner/scanners/empty-notes";
 import type { ScanContext } from "../scanner/ScanContext";
+import type { ReferenceIndex } from "../scanner/reference-index";
+import { makeEmptyReferenceIndex } from "../scanner/reference-index";
 
 function makeCtx(overrides: Partial<ScanContext> = {}): ScanContext {
 	return {
@@ -20,8 +26,23 @@ function makeCtx(overrides: Partial<ScanContext> = {}): ScanContext {
 		watchedTags: [],
 		ignoredFolders: [],
 		ignoredProperties: [],
+		referenceIndex: makeEmptyReferenceIndex(),
 		...overrides,
 	} as ScanContext;
+}
+
+function makeIndex(referenceCounts: Record<string, number>): ReferenceIndex {
+	return {
+		inboundByPath: new Map(
+			Object.entries(referenceCounts).map(([path, count]) => [
+				path,
+				{ count, kinds: ["note-link"], sources: ["notes/hub.md"] },
+			]),
+		),
+		canvasFiles: [],
+		coverageFailures: [],
+		coverageComplete: true,
+	};
 }
 
 describe("emptyNotesScanner", () => {
@@ -37,8 +58,13 @@ describe("emptyNotesScanner", () => {
 		expect(issues[0].severity).toBe("warning");
 		expect(issues[0]).toMatchObject({
 			classification: "candidate",
+			evidence: {
+				wordCount: 0,
+				structureCount: 0,
+				inboundReferenceCount: 0,
+			},
 			explanation: {
-				why: "The note contains 0 meaningful words, at or below the configured threshold of 5.",
+				why: "The note contains 0 meaningful words and no meaningful structures (links, embeds, tasks, list items, or code blocks), at or below the configured threshold of 5.",
 				caveat: "Intentional placeholders, index notes, and generated stubs can be valid.",
 				nextStep: "Add meaningful content, ignore the finding, or move the note to trash after review.",
 			},
@@ -81,6 +107,83 @@ describe("emptyNotesScanner", () => {
 		expect(issues).toHaveLength(0);
 	});
 
+	it("does not flag link-only MOCs", async () => {
+		const file = { path: "short-moc.md", stat: { size: 40, mtime: 1000 } } as any;
+		const content = "# Short MOC\n\n[[target]] [[sibling-note]]";
+		const ctx = makeCtx({
+			markdownFiles: [file],
+			vault: { cachedRead: async () => content } as any,
+		});
+		const issues = await emptyNotesScanner.scan(ctx);
+		expect(issues).toHaveLength(0);
+	});
+
+	it("does not flag embed-only notes", async () => {
+		const file = { path: "embed.md", stat: { size: 30, mtime: 1000 } } as any;
+		const content = "# Embed\n\n![[photo.jpg]]";
+		const ctx = makeCtx({
+			markdownFiles: [file],
+			vault: { cachedRead: async () => content } as any,
+		});
+		const issues = await emptyNotesScanner.scan(ctx);
+		expect(issues).toHaveLength(0);
+	});
+
+	it("does not flag task-only notes", async () => {
+		const file = { path: "tasks.md", stat: { size: 30, mtime: 1000 } } as any;
+		const content = "# Tasks\n\n- [ ] Fix docs";
+		const ctx = makeCtx({
+			markdownFiles: [file],
+			vault: { cachedRead: async () => content } as any,
+		});
+		const issues = await emptyNotesScanner.scan(ctx);
+		expect(issues).toHaveLength(0);
+	});
+
+	it("does not flag list-only notes", async () => {
+		const file = { path: "list.md", stat: { size: 30, mtime: 1000 } } as any;
+		const content = "# List\n\n- one\n- two";
+		const ctx = makeCtx({
+			markdownFiles: [file],
+			vault: { cachedRead: async () => content } as any,
+		});
+		const issues = await emptyNotesScanner.scan(ctx);
+		expect(issues).toHaveLength(0);
+	});
+
+	it("does not flag notes whose only content is a non-empty code block", async () => {
+		const file = { path: "code.md", stat: { size: 60, mtime: 1000 } } as any;
+		const content = "# Code\n\n```js\nconst answer = 42;\n```";
+		const ctx = makeCtx({
+			markdownFiles: [file],
+			vault: { cachedRead: async () => content } as any,
+		});
+		const issues = await emptyNotesScanner.scan(ctx);
+		expect(issues).toHaveLength(0);
+	});
+
+	it("does not flag prose stubs that contain a link or task — structures rescue the note", async () => {
+		const file = { path: "mixed.md", stat: { size: 40, mtime: 1000 } } as any;
+		const linked = "# Stub\n\nsee [[target]]";
+		const ctx = makeCtx({
+			markdownFiles: [file],
+			vault: { cachedRead: async () => linked } as any,
+		});
+		expect(await emptyNotesScanner.scan(ctx)).toHaveLength(0);
+	});
+
+	it("still flags prose stubs with zero structures", async () => {
+		const file = { path: "stub-msg.md", stat: { size: 30, mtime: 1000 } } as any;
+		const ctx = makeCtx({
+			markdownFiles: [file],
+			vault: { cachedRead: async () => "stub" } as any, // 1 word, 0 structures
+		});
+		const issues = await emptyNotesScanner.scan(ctx);
+		expect(issues).toHaveLength(1);
+		expect(issues[0].message).toContain("1 word");
+		expect(issues[0].evidence.structureCount).toBe(0);
+	});
+
 	it("skips files in ignored folders", async () => {
 		const file = { path: "templates/empty.md", stat: { size: 0, mtime: 1000 } } as any;
 		const ctx = makeCtx({
@@ -92,7 +195,7 @@ describe("emptyNotesScanner", () => {
 		expect(issues).toHaveLength(0);
 	});
 
-	it("includes fix action", async () => {
+	it("includes a fix action only for unreferenced stubs", async () => {
 		const file = { path: "empty.md", stat: { size: 0, mtime: 1000 } } as any;
 		const ctx = makeCtx({
 			markdownFiles: [file],
@@ -104,8 +207,37 @@ describe("emptyNotesScanner", () => {
 		expect(issues[0].fixAction!.targetPaths).toEqual(["empty.md"]);
 	});
 
+	it("keeps the finding but suppresses the fix action for referenced stubs", async () => {
+		const file = { path: "linked-stub.md", stat: { size: 30, mtime: 1000 } } as any;
+		const ctx = makeCtx({
+			markdownFiles: [file],
+			referenceIndex: makeIndex({ "linked-stub.md": 3 }),
+			vault: { cachedRead: async () => "stub" } as any,
+		});
+		const issues = await emptyNotesScanner.scan(ctx);
+		expect(issues).toHaveLength(1);
+		expect(issues[0].evidence.inboundReferenceCount).toBe(3);
+		expect(issues[0].fixAction).toBeUndefined();
+		expect(issues[0].explanation.nextStep).toBe(
+			"This stub is referenced by 3 inbound links. Review why it is referenced before adding content or deleting it.",
+		);
+	});
+
+	it("uses singular wording for a single inbound reference", async () => {
+		const file = { path: "linked-stub.md", stat: { size: 30, mtime: 1000 } } as any;
+		const ctx = makeCtx({
+			markdownFiles: [file],
+			referenceIndex: makeIndex({ "linked-stub.md": 1 }),
+			vault: { cachedRead: async () => "stub" } as any,
+		});
+		const [issue] = await emptyNotesScanner.scan(ctx);
+		expect(issue.explanation.nextStep).toBe(
+			"This stub is referenced by 1 inbound link. Review why it is referenced before adding content or deleting it.",
+		);
+	});
+
 	it("flags short Chinese content at or below threshold", async () => {
-		// "今天天气好" = 5 CJK chars = 5 words at default threshold 5 → flagged.
+		// "今天天气好" = 5 CJK chars = 5 words, 0 structures at default threshold 5 → flagged.
 		const file = { path: "short-cjk.md", stat: { size: 30, mtime: 1000 } } as any;
 		const ctx = makeCtx({
 			markdownFiles: [file],
@@ -114,6 +246,7 @@ describe("emptyNotesScanner", () => {
 		const issues = await emptyNotesScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].evidence.wordCount).toBe(5);
+		expect(issues[0].evidence.structureCount).toBe(0);
 	});
 
 	it("does not flag Chinese content above threshold", async () => {
@@ -122,6 +255,16 @@ describe("emptyNotesScanner", () => {
 		const ctx = makeCtx({
 			markdownFiles: [file],
 			vault: { cachedRead: async () => "今天天气真好" } as any,
+		});
+		const issues = await emptyNotesScanner.scan(ctx);
+		expect(issues).toHaveLength(0);
+	});
+
+	it("does not flag a CJK note whose only content is a CJK link", async () => {
+		const file = { path: "cjk-moc.md", stat: { size: 30, mtime: 1000 } } as any;
+		const ctx = makeCtx({
+			markdownFiles: [file],
+			vault: { cachedRead: async () => "[[目标笔记]]" } as any,
 		});
 		const issues = await emptyNotesScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
@@ -141,7 +284,7 @@ describe("emptyNotesScanner", () => {
 
 	it("respects emptyNoteWordThreshold setting (regression for threshold never taking effect)", async () => {
 		const file = { path: "stub.md", stat: { size: 30, mtime: 1000 } } as any;
-		const content = "# Note\nthree word stub"; // 3 words
+		const content = "# Note\nthree word stub"; // 3 words, 0 structures
 		const read = async () => content;
 
 		// Threshold 2: 3 words > 2 → not flagged.
@@ -161,15 +304,17 @@ describe("emptyNotesScanner", () => {
 		expect(await emptyNotesScanner.scan(highCtx)).toHaveLength(1);
 	});
 
-	it("renders a stub-specific message for non-empty short content", async () => {
-		const file = { path: "stub-msg.md", stat: { size: 30, mtime: 1000 } } as any;
-		const ctx = makeCtx({
+	it("produces stable fingerprints when reference counts change", async () => {
+		const file = { path: "stub.md", stat: { size: 30, mtime: 1000 } } as any;
+		const base = {
 			markdownFiles: [file],
-			vault: { cachedRead: async () => "stub" } as any, // 1 word
-		});
-		const issues = await emptyNotesScanner.scan(ctx);
-		expect(issues).toHaveLength(1);
-		expect(issues[0].message).toContain("1 word");
+			vault: { cachedRead: async () => "stub" } as any,
+		};
+		const unreferenced = await emptyNotesScanner.scan(makeCtx(base));
+		const referenced = await emptyNotesScanner.scan(
+			makeCtx({ ...base, referenceIndex: makeIndex({ "stub.md": 2 }) }),
+		);
+		expect(referenced[0].fingerprint).toBe(unreferenced[0].fingerprint);
 	});
 });
 
@@ -202,5 +347,57 @@ describe("countWords", () => {
 	it("counts Japanese kana and Hangul as per-character", () => {
 		expect(countWords("こんにちは")).toBe(5); // Hiragana
 		expect(countWords("안녕하세요")).toBe(5); // Hangul
+	});
+});
+
+describe("countMeaningfulStructures", () => {
+	it("counts zero for empty and plain prose bodies", () => {
+		expect(countMeaningfulStructures("")).toBe(0);
+		expect(countMeaningfulStructures("   \n\t  ")).toBe(0);
+		// Prose is measured by countWords; it is deliberately not a structure.
+		expect(countMeaningfulStructures("Real stub note.")).toBe(0);
+		expect(countMeaningfulStructures("你好")).toBe(0);
+	});
+
+	it("counts every internal link and embed occurrence", () => {
+		expect(countMeaningfulStructures("[[target]] [[sibling-note]]")).toBe(2);
+		expect(countMeaningfulStructures("![[photo.jpg]]")).toBe(1);
+		expect(countMeaningfulStructures("[[target#Section One]]")).toBe(1);
+		expect(countMeaningfulStructures("[[目标笔记]]")).toBe(1);
+	});
+
+	it("counts task items once each, checked or unchecked", () => {
+		expect(countMeaningfulStructures("- [ ] Fix docs")).toBe(1);
+		expect(countMeaningfulStructures("- [x] Done\n* [X] Also done\n1. [ ] ordered")).toBe(3);
+	});
+
+	it("counts non-empty list items but not bare markers", () => {
+		expect(countMeaningfulStructures("- one\n- two\n+ three")).toBe(3);
+		expect(countMeaningfulStructures("1. first\n2) second")).toBe(2);
+		expect(countMeaningfulStructures("-\n- \n")).toBe(0);
+	});
+
+	it("counts a non-empty fenced code block once, not per line", () => {
+		const body = "```js\nconst a = 1;\nconst b = 2;\n```";
+		expect(countMeaningfulStructures(body)).toBe(1);
+		expect(countMeaningfulStructures("```\n\n```")).toBe(0); // empty block
+		expect(countMeaningfulStructures("~~~\ncode\n~~~")).toBe(1); // tilde fences
+	});
+
+	it("counts unterminated fence content as zero structures", () => {
+		// No closing fence → no block structure; countWords still measures the text.
+		expect(countMeaningfulStructures("```\nconst a = 1;")).toBe(0);
+	});
+
+	it("counts a table block once and Markdown/HTML images individually", () => {
+		expect(countMeaningfulStructures("| a | b |\n|---|---|\n| 1 | 2 |")).toBe(1);
+		expect(countMeaningfulStructures("![alt](photo.jpg)")).toBe(1);
+		expect(countMeaningfulStructures('<img src="photo.jpg">')).toBe(1);
+	});
+
+	it("sums mixed content across categories", () => {
+		const body = "- [[target]]\n- [ ] task\nprose line\n\n| a |\n|---|";
+		// 1 link + 2 list items (the link item and the task) + 1 table = 4.
+		expect(countMeaningfulStructures(body)).toBe(4);
 	});
 });
