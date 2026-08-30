@@ -34,9 +34,13 @@ export default class VaultInspectorPlugin extends Plugin {
 	lastSuccessfulSnapshot: ScanSnapshot | null = null;
 	private saveQueue: Promise<void> = Promise.resolve();
 	private operationQueue: Promise<void> = Promise.resolve();
-	scanRunner = new ScanRunner(async (url) => {
-		const response = await requestUrl({ url, method: "HEAD" });
-		return response.status;
+	scanRunner = new ScanRunner(async (url, method) => {
+		const response = await requestUrl({
+			url,
+			method,
+			headers: method === "GET" ? { Range: "bytes=0-0" } : undefined,
+		});
+		return { status: response.status, method };
 	}, {
 		setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),
 		clearTimeout: (timeoutId) => window.clearTimeout(timeoutId as number),

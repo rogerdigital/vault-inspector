@@ -6,13 +6,17 @@ import {
 	assessExternalHttpUrl,
 	isPublicIpAddress,
 } from "../src/utils/network-destination";
+import type {
+	ExternalHttpMethod,
+	ExternalRequestResult,
+} from "../src/scanner/ScanContext";
 
 export type ResolvedAddress = {
 	address: string;
 	family: 4 | 6;
 };
 
-type HeadResponse = {
+type AdapterResponse = {
 	status: number;
 	location?: string;
 };
@@ -22,35 +26,45 @@ export type PublicHttpDependencies = {
 	request: (
 		url: URL,
 		address: ResolvedAddress,
+		method: ExternalHttpMethod,
 		signal?: AbortSignal,
-	) => Promise<HeadResponse>;
+	) => Promise<AdapterResponse>;
 };
 
 const MAX_REDIRECTS = 5;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const HEAD_REJECTED_STATUSES = new Set([405, 501]);
+/** One-byte Range request: the fallback proves reachability only. */
+const RANGE_GET_BYTES = "bytes=0-0";
 
 const defaultDependencies: PublicHttpDependencies = {
 	resolve: resolveHostname,
-	request: requestHeadAtAddress,
+	request: requestAtAddress,
 };
 
 export async function requestPublicHttpStatus(
 	value: string,
 	signal?: AbortSignal,
 	dependencies: PublicHttpDependencies = defaultDependencies,
-): Promise<number> {
+): Promise<ExternalRequestResult> {
 	let current = value;
 
 	for (let redirects = 0; ; redirects++) {
+		// Every destination — the initial URL and every redirect target —
+		// re-runs the URL policy and DNS/public-IP validation before a
+		// connection is opened.
 		const assessment = assessExternalHttpUrl(current);
 		if (!assessment.allowed) {
 			throw new Error(`Blocked URL: ${assessment.reason}`);
 		}
 
 		const address = await getValidatedAddress(assessment.url, dependencies);
-		const response = await dependencies.request(assessment.url, address, signal);
+		const response = await dependencies.request(assessment.url, address, "HEAD", signal);
+		if (HEAD_REJECTED_STATUSES.has(response.status)) {
+			return requestWithRangeGetFallback(current, dependencies, signal);
+		}
 		if (!REDIRECT_STATUSES.has(response.status) || !response.location) {
-			return response.status;
+			return { status: response.status, method: "HEAD" };
 		}
 		if (redirects >= MAX_REDIRECTS) {
 			throw new Error(`Too many redirects (maximum ${MAX_REDIRECTS})`);
@@ -62,6 +76,28 @@ export async function requestPublicHttpStatus(
 			throw new Error("Invalid redirect URL");
 		}
 	}
+}
+
+/**
+ * Some origins reject HEAD with 405/501. Retry once with a one-byte Range
+ * GET. The fallback re-runs the full URL and DNS/public-IP policy for the
+ * destination before connecting; the response body is discarded. A redirect
+ * status from the GET is returned as-is (a redirecting GET answer still
+ * proves the origin serves the resource).
+ */
+async function requestWithRangeGetFallback(
+	url: string,
+	dependencies: PublicHttpDependencies,
+	signal?: AbortSignal,
+): Promise<ExternalRequestResult> {
+	const assessment = assessExternalHttpUrl(url);
+	if (!assessment.allowed) {
+		throw new Error(`Blocked URL: ${assessment.reason}`);
+	}
+
+	const address = await getValidatedAddress(assessment.url, dependencies);
+	const response = await dependencies.request(assessment.url, address, "GET", signal);
+	return { status: response.status, method: "GET" };
 }
 
 async function getValidatedAddress(
@@ -95,11 +131,12 @@ async function resolveHostname(hostname: string): Promise<ResolvedAddress[]> {
 	});
 }
 
-function requestHeadAtAddress(
+function requestAtAddress(
 	url: URL,
 	address: ResolvedAddress,
+	method: ExternalHttpMethod,
 	signal?: AbortSignal,
-): Promise<HeadResponse> {
+): Promise<AdapterResponse> {
 	return new Promise((resolve, reject) => {
 		const transport = url.protocol === "https:" ? httpsRequest : httpRequest;
 		const pinnedLookup: LookupFunction = (_hostname, options, callback) => {
@@ -110,14 +147,16 @@ function requestHeadAtAddress(
 			callback(null, address.address, address.family);
 		};
 		const request = transport(url, {
-			method: "HEAD",
+			method,
 			signal,
 			lookup: pinnedLookup,
+			headers: method === "GET" ? { Range: RANGE_GET_BYTES } : undefined,
 		}, (response: IncomingMessage) => {
-			const result: HeadResponse = {
+			const result: AdapterResponse = {
 				status: response.statusCode ?? 0,
 			};
 			if (response.headers.location) result.location = response.headers.location;
+			// The body is consumed and discarded — never materialized.
 			response.resume();
 			resolve(result);
 		});

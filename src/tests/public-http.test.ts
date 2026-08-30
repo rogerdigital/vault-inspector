@@ -44,9 +44,8 @@ describe("requestPublicHttpStatus", () => {
 		expect(dependencies.request).not.toHaveBeenCalled();
 	});
 
-	it("pins the request to the validated public address", async () => {
+	it("pins the HEAD request to the validated public address", async () => {
 		const dependencies = makeDependencies({
-			resolve: vi.fn(async () => [{ address: "93.184.216.34", family: 4 as const }]),
 			request: vi.fn(async () => ({ status: 204 })),
 		});
 
@@ -54,15 +53,16 @@ describe("requestPublicHttpStatus", () => {
 			"https://example.com/health",
 			undefined,
 			dependencies,
-		)).resolves.toBe(204);
+		)).resolves.toEqual({ status: 204, method: "HEAD" });
 		expect(dependencies.request).toHaveBeenCalledWith(
 			expect.objectContaining({ hostname: "example.com", pathname: "/health" }),
 			{ address: "93.184.216.34", family: 4 },
+			"HEAD",
 			undefined,
 		);
 	});
 
-	it("revalidates a relative redirect before the next request", async () => {
+	it("revalidates a relative redirect before the next HEAD request", async () => {
 		const request = vi.fn()
 			.mockResolvedValueOnce({ status: 302, location: "/moved" })
 			.mockResolvedValueOnce({ status: 200 });
@@ -72,11 +72,12 @@ describe("requestPublicHttpStatus", () => {
 			"https://example.com/start",
 			undefined,
 			dependencies,
-		)).resolves.toBe(200);
+		)).resolves.toEqual({ status: 200, method: "HEAD" });
 		expect(request).toHaveBeenNthCalledWith(
 			2,
 			expect.objectContaining({ href: "https://example.com/moved" }),
 			{ address: "93.184.216.34", family: 4 },
+			"HEAD",
 			undefined,
 		);
 	});
@@ -123,7 +124,86 @@ describe("requestPublicHttpStatus", () => {
 		expect(request).toHaveBeenCalledWith(
 			expect.any(URL),
 			{ address: "93.184.216.34", family: 4 },
+			"HEAD",
 			controller.signal,
+		);
+	});
+
+	it("falls back to a Range GET when HEAD is rejected with 405, revalidating the destination", async () => {
+		const request = vi.fn()
+			.mockResolvedValueOnce({ status: 405 })
+			.mockResolvedValueOnce({ status: 200 });
+		const dependencies = makeDependencies({ request });
+
+		await expect(requestPublicHttpStatus(
+			"https://example.com/headless",
+			undefined,
+			dependencies,
+		)).resolves.toEqual({ status: 200, method: "GET" });
+
+		expect(request).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({ pathname: "/headless" }),
+			{ address: "93.184.216.34", family: 4 },
+			"HEAD",
+			undefined,
+		);
+		expect(request).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ pathname: "/headless" }),
+			{ address: "93.184.216.34", family: 4 },
+			"GET",
+			undefined,
+		);
+		// The fallback re-runs the DNS/public-IP checks before connecting.
+		expect(dependencies.resolve).toHaveBeenCalledTimes(2);
+	});
+
+	it("falls back to a Range GET when HEAD is rejected with 501", async () => {
+		const request = vi.fn()
+			.mockResolvedValueOnce({ status: 501 })
+			.mockResolvedValueOnce({ status: 404 });
+		const dependencies = makeDependencies({ request });
+
+		await expect(requestPublicHttpStatus(
+			"https://example.com/headless",
+			undefined,
+			dependencies,
+		)).resolves.toEqual({ status: 404, method: "GET" });
+		expect(request).toHaveBeenCalledTimes(2);
+	});
+
+	it("does not fall back for statuses other than 405 or 501", async () => {
+		const request = vi.fn(async () => ({ status: 404 }));
+		const dependencies = makeDependencies({ request });
+
+		await expect(requestPublicHttpStatus(
+			"https://example.com/gone",
+			undefined,
+			dependencies,
+		)).resolves.toEqual({ status: 404, method: "HEAD" });
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(dependencies.resolve).toHaveBeenCalledTimes(1);
+	});
+
+	it("applies the fallback to the final redirect destination", async () => {
+		const request = vi.fn()
+			.mockResolvedValueOnce({ status: 302, location: "/final" })
+			.mockResolvedValueOnce({ status: 405 })
+			.mockResolvedValueOnce({ status: 200 });
+		const dependencies = makeDependencies({ request });
+
+		await expect(requestPublicHttpStatus(
+			"https://example.com/start",
+			undefined,
+			dependencies,
+		)).resolves.toEqual({ status: 200, method: "GET" });
+		expect(request).toHaveBeenNthCalledWith(
+			3,
+			expect.objectContaining({ href: "https://example.com/final" }),
+			{ address: "93.184.216.34", family: 4 },
+			"GET",
+			undefined,
 		);
 	});
 });

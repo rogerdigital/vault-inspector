@@ -303,7 +303,10 @@ describe("precision fixture vault", () => {
 			"https://status-500.example.com/server-error": 500,
 		};
 
-		const stubRequestUrl = async (url: string): Promise<number> => {
+		const stubRequestUrl = async (
+			url: string,
+			method: "HEAD" | "GET",
+		): Promise<{ status: number; method: "HEAD" | "GET" }> => {
 			if (url === "https://request-error.example.com/network-failure") {
 				throw new Error("simulated network failure");
 			}
@@ -313,7 +316,7 @@ describe("precision fixture vault", () => {
 					`unexpected URL in external fixture: ${url} (expected one of: ${Object.keys(EXTERNAL_STATUS_BY_URL).join(", ")})`,
 				);
 			}
-			return status;
+			return { status, method };
 		};
 
 		const externalScan = () =>
@@ -329,39 +332,45 @@ describe("precision fixture vault", () => {
 				issues.filter((issue) => issue.scannerId === "external-links"),
 			);
 
-		it("presents every >= 400 status as the same dead-link candidate — Milestone 1.6 target", async () => {
+		it("classifies external-link failures per the status policy — Milestone 1.6", async () => {
 			const external = await externalScan();
-			const dead = external.filter((issue) => issue.title === "Dead external link");
-			expect(dead).toHaveLength(4);
-			const byUrl = new Map(dead.map((issue) => [issue.evidence.url as string, issue]));
-			expect(byUrl.size).toBe(4);
-			expect(
-				byUrl.get("https://status-403.example.com/private"),
-			).toMatchObject({
-				severity: "warning",
-				classification: "candidate",
-				evidence: { status: 403 },
-			});
+			const byUrl = new Map(external.map((issue) => [issue.evidence.url as string, issue]));
+			// 6 URL-keyed issues: 404, 403, 429, 500, request-failure, blocked.
+			expect(byUrl.size).toBe(6);
+
+			// 404 stays a dead-link candidate.
 			expect(byUrl.get("https://status-404.example.com/gone")).toMatchObject({
 				severity: "warning",
 				classification: "candidate",
-				evidence: { status: 404 },
+				title: "Dead external link",
+				evidence: { status: 404, method: "HEAD" },
 			});
-			expect(
-				byUrl.get("https://status-429.example.com/slow-down"),
-			).toMatchObject({
-				severity: "warning",
-				classification: "candidate",
-				evidence: { status: 429 },
+			// 403 is access-restricted, not dead.
+			expect(byUrl.get("https://status-403.example.com/private")).toMatchObject({
+				severity: "info",
+				classification: "unverified",
+				title: "External link access restricted",
+				evidence: { status: 403, restricted: true },
 			});
+			// 429 is rate-limited, not dead.
+			expect(byUrl.get("https://status-429.example.com/slow-down")).toMatchObject({
+				severity: "info",
+				classification: "unverified",
+				title: "External link rate limited",
+				evidence: { status: 429, rateLimited: true },
+			});
+			// 5xx is a candidate temporary server failure.
 			expect(
 				byUrl.get("https://status-500.example.com/server-error"),
 			).toMatchObject({
-				severity: "warning",
+				severity: "info",
 				classification: "candidate",
-				evidence: { status: 500 },
+				title: "External link server error",
+				evidence: { status: 500, serverError: true },
 			});
-			expect(dead.every((issue) => issue.primaryPath === "notes/external-links.md")).toBe(true);
+			expect(
+				external.every((issue) => issue.primaryPath === "notes/external-links.md"),
+			).toBe(true);
 		});
 
 		it("stays silent for the healthy URL", async () => {
@@ -373,12 +382,13 @@ describe("precision fixture vault", () => {
 			).toBe(false);
 		});
 
-		it("marks request failures and blocked destinations as unverified", async () => {
+		it("marks request failures, blocks, restrictions, and rate limits as unverified", async () => {
 			const external = await externalScan();
 			const unverified = external.filter(
 				(issue) => issue.classification === "unverified",
 			);
-			expect(unverified).toHaveLength(2);
+			// failed + blocked (previously) and the newly reclassified 403/429.
+			expect(unverified).toHaveLength(4);
 			expect(unverified.every((issue) => issue.severity === "info")).toBe(true);
 			const failed = unverified.find(
 				(issue) => issue.evidence.url === "https://request-error.example.com/network-failure",

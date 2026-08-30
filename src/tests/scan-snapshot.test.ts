@@ -63,10 +63,10 @@ describe("scan snapshots", () => {
 		);
 
 		expect(SNAPSHOT_SCHEMA_VERSION).toBe(1);
-		expect(COMPARISON_VERSION).toBe(1);
+		expect(COMPARISON_VERSION).toBe(2);
 		expect(snapshot).toEqual({
 			schemaVersion: 1,
-			comparisonVersion: 1,
+			comparisonVersion: 2,
 			toolVersion: "0.5.0",
 			createdAt: 1_725_000_000_000,
 			scanProfile: "profile-abc",

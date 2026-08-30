@@ -775,7 +775,7 @@ describe("runCli", () => {
 	});
 
 	it("checks external links in CLI scans with the secured request adapter", async () => {
-		const requestUrl = vi.fn(async () => 404);
+		const requestUrl = vi.fn(async () => ({ status: 404, method: "HEAD" as const }));
 		const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(
 			new Error("global fetch must not be used"),
 		);
@@ -794,6 +794,7 @@ describe("runCli", () => {
 
 				expect(requestUrl).toHaveBeenCalledWith(
 					"https://example.com/dead",
+					"HEAD",
 					expect.any(AbortSignal),
 				);
 				expect(fetchMock).not.toHaveBeenCalled();
@@ -815,7 +816,7 @@ describe("runCli", () => {
 	});
 
 	it("checks bare external URLs in CLI scans", async () => {
-		const requestUrl = vi.fn(async () => 404);
+		const requestUrl = vi.fn(async () => ({ status: 404, method: "HEAD" as const }));
 
 		await withVault(
 			{
@@ -831,6 +832,7 @@ describe("runCli", () => {
 
 				expect(requestUrl).toHaveBeenCalledWith(
 					"https://example.com/bare",
+					"HEAD",
 					expect.any(AbortSignal),
 				);
 				expect(result.exitCode).toBe(1);
@@ -899,12 +901,13 @@ describe("runCli", () => {
 	it("aborts timed out CLI external-link requests", async () => {
 		let aborted = false;
 		const requestUrl = vi.fn(
-			(_url: string, signal?: AbortSignal) => new Promise<number>((_resolve, reject) => {
-				signal?.addEventListener("abort", () => {
-					aborted = true;
-					reject(new DOMException("The operation was aborted", "AbortError"));
-				});
-			}),
+			(_url: string, _method: "HEAD" | "GET", signal?: AbortSignal) =>
+				new Promise<{ status: number; method: "HEAD" | "GET" }>((_resolve, reject) => {
+					signal?.addEventListener("abort", () => {
+						aborted = true;
+						reject(new DOMException("The operation was aborted", "AbortError"));
+					});
+				}),
 		);
 
 		await withVault(
@@ -922,6 +925,7 @@ describe("runCli", () => {
 				expect(aborted).toBe(true);
 				expect(requestUrl).toHaveBeenCalledWith(
 					"https://example.com/slow",
+					"HEAD",
 					expect.any(AbortSignal),
 				);
 				expect(JSON.parse(result.stdout).issues).toEqual([

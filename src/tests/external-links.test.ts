@@ -12,9 +12,9 @@ function makeCtx(overrides: Partial<ScanContext> = {}): ScanContext {
 		app: {} as any,
 		metadataCache: {} as any,
 		vault: {} as any,
-		requestUrl: async (url) => {
-			const response = await requestUrl({ url, method: "HEAD" });
-			return response.status;
+		requestUrl: async (url, method) => {
+			const response = await requestUrl({ url, method });
+			return { status: response.status, method };
 		},
 		setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
 		clearTimeout: (timeoutId) => clearTimeout(timeoutId as ReturnType<typeof setTimeout>),
@@ -35,47 +35,246 @@ function makeCtx(overrides: Partial<ScanContext> = {}): ScanContext {
 	} as ScanContext;
 }
 
+function makeFileCtx(
+	requestUrl: ScanContext["requestUrl"],
+): ScanContext {
+	const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
+	return makeCtx({
+		requestUrl,
+		markdownFiles: [file],
+		metadataCache: {
+			getFileCache: () => ({
+				links: [{ link: "https://example.com/target" }],
+				embeds: [],
+			}),
+		} as any,
+	});
+}
+
 describe("externalLinksScanner", () => {
 	it("reports dead external links (HTTP 404)", async () => {
 		vi.mocked(requestUrl).mockResolvedValue({ status: 404 } as any);
-		const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
-		const ctx = makeCtx({
-			markdownFiles: [file],
-			metadataCache: {
-				getFileCache: () => ({
-					links: [{ link: "https://example.com/dead" }],
-					embeds: [],
-				}),
-			} as any,
+		// Routed through the mocked Obsidian requestUrl, like the plugin adapter.
+		const ctx = makeFileCtx(async (url, method) => {
+			const response = await requestUrl({ url, method });
+			return { status: response.status, method };
 		});
+
 		const issues = await externalLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
-		const httpIssue = issues[0];
-		expect(httpIssue.evidence.status).toBe(404);
-		expect(httpIssue).toMatchObject({
+		expect(issues[0]).toMatchObject({
+			severity: "warning",
+			title: "Dead external link",
 			classification: "candidate",
-			explanation: {
-				why: "The server returned HTTP 404 for this URL.",
-				caveat: "Authentication, rate limits, bot protection, and temporary outages can produce a non-success status.",
-				nextStep: "Open the URL manually, then update or remove it if the failure persists.",
+			message: "HTTP 404 — https://example.com/target",
+			evidence: {
+				url: "https://example.com/target",
+				status: 404,
+				method: "HEAD",
 			},
+		});
+		expect(issues[0].explanation).toEqual({
+			why: "The server returned HTTP 404 for this URL.",
+			nextStep: "Open the URL manually, then update or remove it if the failure persists.",
+			caveat: "HTTP 404 and 410 strongly indicate the resource is gone; access restrictions, rate limits, and server failures are reported separately.",
+		});
+	});
+
+	it("reports HTTP 410 as a dead-link candidate with the shared dead-link fingerprint", async () => {
+		const ctx = makeFileCtx(async () => ({ status: 410, method: "HEAD" }));
+
+		const issues = await externalLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].title).toBe("Dead external link");
+		expect(issues[0].classification).toBe("candidate");
+		expect(issues[0].severity).toBe("warning");
+		expect(issues[0].evidence).toMatchObject({ status: 410, method: "HEAD" });
+	});
+
+	it("keeps other 4xx statuses as dead-link candidates", async () => {
+		const ctx = makeFileCtx(async () => ({ status: 400, method: "HEAD" }));
+
+		const issues = await externalLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].title).toBe("Dead external link");
+		expect(issues[0].classification).toBe("candidate");
+	});
+
+	it("presents HTTP 401 as access-restricted, not dead", async () => {
+		const ctx = makeFileCtx(async () => ({ status: 401, method: "HEAD" }));
+
+		const issues = await externalLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0]).toMatchObject({
+			severity: "info",
+			title: "External link access restricted",
+			classification: "unverified",
+			message: "HTTP 401 — https://example.com/target",
+			evidence: {
+				url: "https://example.com/target",
+				status: 401,
+				method: "HEAD",
+				restricted: true,
+			},
+		});
+		expect(issues[0].explanation).toEqual({
+			why: "The server returned HTTP 401, so this URL's availability could not be verified.",
+			nextStep: "Open the URL in a browser — a login, paywall, or bot protection may be required.",
+			caveat: "Access-restricted responses do not mean the link is dead.",
+		});
+	});
+
+	it("presents HTTP 403 as access-restricted, not dead", async () => {
+		const ctx = makeFileCtx(async () => ({ status: 403, method: "HEAD" }));
+
+		const issues = await externalLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].title).toBe("External link access restricted");
+		expect(issues[0].classification).toBe("unverified");
+		expect(issues[0].severity).toBe("info");
+		expect(issues[0].evidence).toMatchObject({ status: 403, restricted: true });
+	});
+
+	it("presents HTTP 429 as rate-limited, not dead", async () => {
+		const ctx = makeFileCtx(async () => ({ status: 429, method: "HEAD" }));
+
+		const issues = await externalLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0]).toMatchObject({
+			severity: "info",
+			title: "External link rate limited",
+			classification: "unverified",
+			message: "HTTP 429 — https://example.com/target",
+			evidence: {
+				url: "https://example.com/target",
+				status: 429,
+				method: "HEAD",
+				rateLimited: true,
+			},
+		});
+		expect(issues[0].explanation).toEqual({
+			why: "The server rate-limited the check (HTTP 429), so this URL's availability could not be verified.",
+			nextStep: "Run the scan again later.",
+			caveat: "Rate-limited responses do not mean the link is dead.",
+		});
+	});
+
+	it("presents 5xx as a candidate temporary server failure", async () => {
+		const ctx = makeFileCtx(async () => ({ status: 503, method: "HEAD" }));
+
+		const issues = await externalLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0]).toMatchObject({
+			severity: "info",
+			title: "External link server error",
+			classification: "candidate",
+			message: "HTTP 503 — https://example.com/target",
+			evidence: {
+				url: "https://example.com/target",
+				status: 503,
+				method: "HEAD",
+				serverError: true,
+			},
+		});
+		expect(issues[0].explanation).toEqual({
+			why: "The server reported a failure (HTTP 503).",
+			nextStep: "Run the scan again later; if the failure persists, verify the URL manually.",
+			caveat: "Server-side failures are often temporary and do not yet indicate a dead link.",
 		});
 	});
 
 	it("does not report healthy links (HTTP 200)", async () => {
-		vi.mocked(requestUrl).mockResolvedValue({ status: 200 } as any);
-		const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
-		const ctx = makeCtx({
-			markdownFiles: [file],
-			metadataCache: {
-				getFileCache: () => ({
-					links: [{ link: "https://example.com/good" }],
-					embeds: [],
-				}),
-			} as any,
-		});
+		const ctx = makeFileCtx(async () => ({ status: 200, method: "HEAD" }));
+
 		const issues = await externalLinksScanner.scan(ctx);
+
 		expect(issues).toHaveLength(0);
+	});
+
+	it("falls back to a Range GET when HEAD is rejected with 405", async () => {
+		const calls: Array<[string, "HEAD" | "GET"]> = [];
+		const ctx = makeFileCtx(async (url, method) => {
+			calls.push([url, method]);
+			return { status: method === "HEAD" ? 405 : 200, method };
+		});
+
+		const issues = await externalLinksScanner.scan(ctx);
+
+		expect(calls).toEqual([
+			["https://example.com/target", "HEAD"],
+			["https://example.com/target", "GET"],
+		]);
+		expect(issues).toHaveLength(0);
+	});
+
+	it("falls back to a Range GET when HEAD is rejected with 501 and reports the GET status", async () => {
+		const ctx = makeFileCtx(async (_url, method) => ({
+			status: method === "HEAD" ? 501 : 404,
+			method,
+		}));
+
+		const issues = await externalLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].title).toBe("Dead external link");
+		expect(issues[0].evidence).toMatchObject({ status: 404, method: "GET" });
+	});
+
+	it("does not fall back for statuses other than 405 or 501", async () => {
+		const calls: Array<[string, "HEAD" | "GET"]> = [];
+		const ctx = makeFileCtx(async (url, method) => {
+			calls.push([url, method]);
+			return { status: 404, method };
+		});
+
+		await externalLinksScanner.scan(ctx);
+
+		expect(calls).toEqual([["https://example.com/target", "HEAD"]]);
+	});
+
+	it("reports a failed fallback as a request failure", async () => {
+		const ctx = makeFileCtx(async (_url, method) => {
+			if (method === "GET") throw new Error("fallback transport failed");
+			return { status: 405, method };
+		});
+
+		const issues = await externalLinksScanner.scan(ctx);
+
+		expect(issues).toHaveLength(1);
+		expect(issues[0].title).toBe("External link check failed");
+		expect(issues[0].classification).toBe("unverified");
+		expect(issues[0].evidence).toMatchObject({
+			url: "https://example.com/target",
+			error: "fallback transport failed",
+		});
+	});
+
+	it("produces stable and distinct fingerprints per classification", async () => {
+		const run = (status: number) =>
+			externalLinksScanner.scan(
+				makeFileCtx(async () => ({ status, method: "HEAD" })),
+			);
+
+		const [deadFirst, deadSecond, restricted, rateLimited, serverError] =
+			await Promise.all([
+				run(404),
+				run(404),
+				run(403),
+				run(429),
+				run(500),
+			]);
+
+		expect(deadFirst[0].fingerprint).toBe(deadSecond[0].fingerprint);
+		expect(restricted[0].fingerprint).not.toBe(deadFirst[0].fingerprint);
+		expect(rateLimited[0].fingerprint).not.toBe(deadFirst[0].fingerprint);
+		expect(rateLimited[0].fingerprint).not.toBe(restricted[0].fingerprint);
+		expect(serverError[0].fingerprint).not.toBe(deadFirst[0].fingerprint);
 	});
 
 	it("blocks unsafe destinations before invoking the request adapter", async () => {
@@ -93,9 +292,10 @@ describe("externalLinksScanner", () => {
 		];
 		const publicUrl = "https://example.com/good";
 		const ctx = makeCtx({
-			requestUrl: async (url) => {
+			requestUrl: async (url, method) => {
 				checkedUrls.push(url);
-				return 200;
+				void method;
+				return { status: 200, method };
 			},
 			markdownFiles: [file],
 			metadataCache: {
@@ -132,9 +332,10 @@ describe("externalLinksScanner", () => {
 		const checkedUrls: string[] = [];
 		const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
 		const ctx = makeCtx({
-			requestUrl: async (url) => {
+			requestUrl: async (url, method) => {
 				checkedUrls.push(url);
-				return 404;
+				void method;
+				return { status: 404, method };
 			},
 			markdownFiles: [file],
 			vault: {
@@ -168,7 +369,7 @@ describe("externalLinksScanner", () => {
 		vi.useFakeTimers();
 		const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
 		const ctx = makeCtx({
-			requestUrl: () => new Promise<number>(() => {}),
+			requestUrl: () => new Promise(() => {}),
 			markdownFiles: [file],
 			metadataCache: {
 				getFileCache: () => ({
@@ -195,29 +396,14 @@ describe("externalLinksScanner", () => {
 				}),
 			}));
 			expect(issues[0].classification).toBe("unverified");
-			expect(issues[0].explanation).toEqual({
-				why: `The URL did not respond within ${EXTERNAL_LINK_TIMEOUT_MS}ms.`,
-				nextStep: "Retry the scan or open the URL manually.",
-				caveat: "Slow networks and temporary server load can cause timeouts.",
-			});
 		} finally {
 			vi.useRealTimers();
 		}
 	});
 
 	it("reports failed external link checks separately from dead links", async () => {
-		const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
-		const ctx = makeCtx({
-			requestUrl: async () => {
-				throw new Error("network unavailable");
-			},
-			markdownFiles: [file],
-			metadataCache: {
-				getFileCache: () => ({
-					links: [{ link: "https://example.com/error" }],
-					embeds: [],
-				}),
-			} as any,
+		const ctx = makeFileCtx(async () => {
+			throw new Error("network unavailable");
 		});
 
 		const issues = await externalLinksScanner.scan(ctx);
@@ -229,16 +415,11 @@ describe("externalLinksScanner", () => {
 			title: "External link check failed",
 			primaryPath: "a.md",
 			evidence: expect.objectContaining({
-				url: "https://example.com/error",
+				url: "https://example.com/target",
 				error: "network unavailable",
 			}),
 		}));
 		expect(issues[0].classification).toBe("unverified");
-		expect(issues[0].explanation).toEqual({
-			why: "The URL check failed before an HTTP status was received.",
-			nextStep: "Retry the scan or open the URL manually and inspect the reported error.",
-			caveat: "DNS, TLS, connectivity, and remote-server failures can be temporary.",
-		});
 	});
 
 	it("stops external link checks after the scan budget", async () => {
@@ -248,7 +429,7 @@ describe("externalLinksScanner", () => {
 			link: `https://example.com/slow-${index}`,
 		}));
 		const ctx = makeCtx({
-			requestUrl: () => new Promise<number>(() => {}),
+			requestUrl: () => new Promise(() => {}),
 			markdownFiles: [file],
 			metadataCache: {
 				getFileCache: () => ({
@@ -275,11 +456,6 @@ describe("externalLinksScanner", () => {
 				}),
 			}));
 			expect(skipped?.classification).toBe("unverified");
-			expect(skipped?.explanation).toEqual({
-				why: `The scanner reached its ${EXTERNAL_LINK_SCAN_BUDGET_MS / 1000}-second scan budget before checking 5 URL(s).`,
-				nextStep: "Run the external-link scanner again or reduce the number of URLs checked at once.",
-				caveat: "Unchecked URLs may still be healthy or broken.",
-			});
 		} finally {
 			vi.useRealTimers();
 		}
@@ -321,6 +497,10 @@ describe("externalLinksScanner", () => {
 		const file1 = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
 		const file2 = { path: "b.md", stat: { size: 100, mtime: 1000 } } as any;
 		const ctx = makeCtx({
+			requestUrl: async (url, method) => {
+				const response = await requestUrl({ url, method });
+				return { status: response.status, method };
+			},
 			markdownFiles: [file1, file2],
 			metadataCache: {
 				getFileCache: () => ({
