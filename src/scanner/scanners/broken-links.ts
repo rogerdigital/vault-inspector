@@ -184,7 +184,9 @@ function getLinkCandidate({ reference, isEmbed }: LinkReference): LinkCandidate 
 	const originalWikiLink = original.match(/^!?\[\[([\s\S]+)\]\]$/);
 	if (originalWikiLink) {
 		return {
-			linkText: originalWikiLink[1],
+			// Obsidian's LinkCache.link already strips the alias, so the candidate
+			// key must use it — the full inner text survives only as fix text.
+			linkText: reference.link,
 			fixLinkText: originalWikiLink[1],
 			ignorableUnresolvedNote: !isEmbed && original.startsWith("[["),
 		};
