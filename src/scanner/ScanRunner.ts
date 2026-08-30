@@ -2,6 +2,7 @@ import type { App } from "obsidian";
 import type { Issue, ScanProgressCallback, ScanResult, ScannerId } from "./Issue";
 import type { ScanContext } from "./ScanContext";
 import type { InspectorSettings } from "../settings/settings";
+import { buildReferenceIndex } from "./reference-index";
 
 export type Scanner = {
 	id: ScannerId;
@@ -40,6 +41,14 @@ export class ScanRunner {
 		const allFiles = app.vault.getFiles();
 		const filePathIndex = new Set(allFiles.map((f) => f.path));
 
+		const referenceIndex = await buildReferenceIndex({
+			metadataCache: app.metadataCache,
+			vault: app.vault,
+			markdownFiles,
+			allFiles,
+			filePathIndex,
+		});
+
 		const ctx: ScanContext = {
 			app,
 			metadataCache: app.metadataCache,
@@ -69,6 +78,7 @@ export class ScanRunner {
 			ignoreUnresolvedNoteLinks: settings.ignoreUnresolvedNoteLinks,
 			ignoredProperties: settings.ignoredProperties,
 			emptyNoteWordThreshold: settings.emptyNoteWordThreshold,
+			referenceIndex,
 		};
 
 		const scannersRun: ScannerId[] = [];

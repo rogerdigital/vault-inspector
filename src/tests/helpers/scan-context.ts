@@ -1,6 +1,7 @@
 import type { CachedMetadata, TFile } from "obsidian";
 import type { ScanContext } from "../../scanner/ScanContext";
 import type { ScannerId } from "../../scanner/Issue";
+import { makeEmptyReferenceIndex } from "../../scanner/reference-index";
 
 type TestFileInput = {
 	path: string;
@@ -72,6 +73,7 @@ export function makeScanContext(options: TestContextOptions = {}): ScanContext {
 		duplicateHashMaxBytes: 1024 * 1024,
 		lowUsageTagThreshold: 2,
 		emptyNoteWordThreshold: 5,
+		referenceIndex: makeEmptyReferenceIndex(),
 		watchedTags: [],
 		ignoredFolders: [],
 		ignoreUnresolvedNoteLinks: false,
