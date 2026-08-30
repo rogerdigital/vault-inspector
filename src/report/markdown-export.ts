@@ -171,6 +171,8 @@ function getMarkdownDetails(issue: Issue): MarkdownDetail[] {
 		if (lastModified !== null) {
 			details.push({ label: "Modified", value: new Date(lastModified).toLocaleString() });
 		}
+		const size = getNumber(issue.evidence.size);
+		if (size !== null) details.push({ label: "Size", value: formatSize(size) });
 	}
 
 	if (issue.scannerId === "empty-notes") {
