@@ -9,7 +9,13 @@ import {
 } from "../scanner/Issue";
 
 export const SNAPSHOT_SCHEMA_VERSION = 1;
-export const COMPARISON_VERSION = 1;
+/**
+ * 2 — external-link outcomes are classified per status (404/410 dead-link
+ * candidates, 401/403 access-restricted, 429 rate-limited, 5xx server
+ * error). Fingerprints for the reclassified findings changed identity, so
+ * pre-2 snapshots cannot be compared without false resolved/new claims.
+ */
+export const COMPARISON_VERSION = 2;
 
 export type SnapshotIssue = {
 	fingerprint: string;

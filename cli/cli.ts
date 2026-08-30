@@ -11,6 +11,7 @@ import { TOOL_VERSION } from "./version";
 import { formatDuration } from "../src/utils/format";
 import { matchesGlob } from "../src/utils/paths";
 import { requestPublicHttpStatus } from "./public-http";
+import type { ExternalRequestAdapter } from "../src/scanner/ScanContext";
 
 type OutputFormat = "json" | "markdown";
 type FailOn = "any" | "error" | "warning" | "new" | "none";
@@ -46,7 +47,7 @@ type ParsedArgs = CliOptions & { configPath?: string };
 
 type CliRuntime = {
 	writeStderr?: (text: string) => void;
-	requestUrl?: (url: string, signal?: AbortSignal) => Promise<number>;
+	requestUrl?: ExternalRequestAdapter;
 };
 
 export type CliResult = {
@@ -90,10 +91,14 @@ export async function runCli(args: string[], runtime: CliRuntime = {}): Promise<
 
 	try {
 		const vaultPath = resolve(parsed.vaultPath);
-		const scanRunner = new ScanRunner(runtime.requestUrl ?? requestPublicHttpStatus, {
-			setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
-			clearTimeout: (timeoutId) => clearTimeout(timeoutId as ReturnType<typeof setTimeout>),
-		});
+		const scanRunner = new ScanRunner(
+			runtime.requestUrl
+				?? ((url, method, signal) => requestPublicHttpStatus(url, signal)),
+			{
+				setTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
+				clearTimeout: (timeoutId) => clearTimeout(timeoutId as ReturnType<typeof setTimeout>),
+			},
+		);
 		registerDefaultScanners(scanRunner);
 		const app = await createLocalApp(vaultPath);
 		if (parsed.progress) writeStderr("Scanning vault...\n");

@@ -1,6 +1,6 @@
 import type { App } from "obsidian";
 import type { Issue, ScanProgressCallback, ScanResult, ScannerId } from "./Issue";
-import type { ScanContext } from "./ScanContext";
+import type { ExternalRequestAdapter, ScanContext } from "./ScanContext";
 import type { InspectorSettings } from "../settings/settings";
 import { buildReferenceIndex } from "./reference-index";
 
@@ -24,7 +24,7 @@ export class ScanRunner {
 	private scanners: Scanner[] = [];
 
 	constructor(
-		private requestUrl?: (url: string) => Promise<number>,
+		private requestUrl?: ExternalRequestAdapter,
 		private timers?: {
 			setTimeout: (callback: () => void, delayMs: number) => unknown;
 			clearTimeout: (timeoutId: unknown) => void;

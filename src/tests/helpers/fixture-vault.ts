@@ -6,7 +6,7 @@ import { registerDefaultScanners } from "../../scanner/register-scanners";
 import { makeEmptyReferenceIndex } from "../../scanner/reference-index";
 import { DEFAULT_SETTINGS, type InspectorSettings } from "../../settings/settings";
 import type { Issue, ScanResult } from "../../scanner/Issue";
-import type { ScanContext } from "../../scanner/ScanContext";
+import type { ExternalRequestAdapter, ScanContext } from "../../scanner/ScanContext";
 
 /**
  * All fixture mtimes are pinned so time-dependent scanner behavior (the
@@ -20,7 +20,7 @@ export const FIXTURE_PAST_MTIME = Date.UTC(2020, 0, 1);
 export type FixtureVaultOptions = {
 	settings?: Partial<InspectorSettings>;
 	mtimeOverrides?: Record<string, number>;
-	requestUrl?: (url: string, signal?: AbortSignal) => Promise<number>;
+	requestUrl?: ExternalRequestAdapter;
 };
 
 export type FixtureVaultScan = {

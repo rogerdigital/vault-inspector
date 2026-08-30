@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Issue, ScanResult } from "../scanner/Issue";
 import { compareScanResult } from "../scanner/result-diff";
 import {
+	COMPARISON_VERSION,
 	createScanSnapshot,
 	isScanSnapshot,
 	type ScanSnapshot,
@@ -56,7 +57,7 @@ describe("compareScanResult", () => {
 	it("rejects changed comparison semantics before checking settings", () => {
 		const snapshot = {
 			...makeSnapshot([makeIssue("previous")], [], "old-profile"),
-			comparisonVersion: 2,
+			comparisonVersion: 3,
 		} as unknown as ScanSnapshot;
 
 		expect(isScanSnapshot(snapshot)).toBe(true);
@@ -143,7 +144,7 @@ describe("compareScanResult", () => {
 		}));
 		const snapshot: ScanSnapshot = {
 			schemaVersion: 1,
-			comparisonVersion: 1,
+			comparisonVersion: COMPARISON_VERSION,
 			toolVersion: "0.5.0",
 			createdAt: 1,
 			scanProfile: "profile",

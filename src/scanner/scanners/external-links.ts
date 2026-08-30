@@ -1,6 +1,6 @@
 import type { Issue } from "../Issue";
 import type { ScanProgressCallback } from "../Issue";
-import type { ScanContext } from "../ScanContext";
+import type { ExternalHttpMethod, ScanContext } from "../ScanContext";
 import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
 import { isIgnoredPath } from "../../utils/paths";
@@ -50,10 +50,11 @@ export const externalLinksScanner = {
 export const EXTERNAL_LINK_TIMEOUT_MS = 5000;
 export const EXTERNAL_LINK_SCAN_BUDGET_MS = 60000;
 const EXTERNAL_LINK_BATCH_SIZE = 5;
+const HEAD_REJECTED_STATUSES = new Set([405, 501]);
 
 type UrlEntry = { url: string; sourcePath: string };
 type CheckResult =
-	| (UrlEntry & { kind: "http"; status: number })
+	| (UrlEntry & { kind: "http"; status: number; method: ExternalHttpMethod })
 	| (UrlEntry & { kind: "blocked"; reason: string })
 	| (UrlEntry & { kind: "timeout"; timeoutMs: number })
 	| (UrlEntry & { kind: "failed"; error: string });
@@ -234,25 +235,50 @@ async function checkUrl(
 		};
 	}
 
-	try {
-		if (ctx?.requestUrl) {
-			const status = await ctx.requestUrl(url, signal);
-			return { url, sourcePath: "", kind: "http", status };
-		}
+	if (!ctx?.requestUrl) {
 		return {
 			url,
 			sourcePath: "",
 			kind: "failed",
 			error: "No request adapter configured",
 		};
+	}
+
+	let head;
+	try {
+		head = await ctx.requestUrl(url, "HEAD", signal);
 	} catch (error) {
+		return { url, sourcePath: "", kind: "failed", error: errorMessage(error) };
+	}
+
+	// Bounded Range GET fallback: only when the origin rejected HEAD itself
+	// (405/501). The fallback re-runs the URL safety policy here, and the
+	// adapter contract additionally re-runs DNS, public-IP, and
+	// redirect-target checks for every connection it opens.
+	if (!HEAD_REJECTED_STATUSES.has(head.status)) {
+		return { url, sourcePath: "", kind: "http", status: head.status, method: "HEAD" };
+	}
+
+	const fallbackAssessment = assessExternalHttpUrl(url);
+	if (!fallbackAssessment.allowed) {
 		return {
 			url,
 			sourcePath: "",
-			kind: "failed",
-			error: error instanceof Error ? error.message : String(error),
+			kind: "blocked",
+			reason: fallbackAssessment.reason,
 		};
 	}
+
+	try {
+		const rangeGet = await ctx.requestUrl(url, "GET", signal);
+		return { url, sourcePath: "", kind: "http", status: rangeGet.status, method: "GET" };
+	} catch (error) {
+		return { url, sourcePath: "", kind: "failed", error: errorMessage(error) };
+	}
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
 
 async function withTimeout<T>(
@@ -292,12 +318,94 @@ function getTimer(ctx?: ScanContext): {
 function makeIssue(result: CheckResult): Issue | null {
 	if (result.kind === "http") {
 		if (result.status < 400) return null;
+
+		if (result.status === 401 || result.status === 403) {
+			return {
+				...describeFinding(
+					"unverified",
+					`The server returned HTTP ${result.status}, so this URL's availability could not be verified.`,
+					"Open the URL in a browser — a login, paywall, or bot protection may be required.",
+					"Access-restricted responses do not mean the link is dead.",
+				),
+				scannerId: "external-links",
+				severity: "info",
+				title: "External link access restricted",
+				message: `HTTP ${result.status} — ${result.url}`,
+				primaryPath: result.sourcePath,
+				relatedPaths: [],
+				evidence: {
+					url: result.url,
+					status: result.status,
+					method: result.method,
+					restricted: true,
+				},
+				fingerprint: generateFingerprint("external-links", result.sourcePath, {
+					url: result.url,
+					restricted: true,
+				}),
+			};
+		}
+
+		if (result.status === 429) {
+			return {
+				...describeFinding(
+					"unverified",
+					"The server rate-limited the check (HTTP 429), so this URL's availability could not be verified.",
+					"Run the scan again later.",
+					"Rate-limited responses do not mean the link is dead.",
+				),
+				scannerId: "external-links",
+				severity: "info",
+				title: "External link rate limited",
+				message: `HTTP ${result.status} — ${result.url}`,
+				primaryPath: result.sourcePath,
+				relatedPaths: [],
+				evidence: {
+					url: result.url,
+					status: result.status,
+					method: result.method,
+					rateLimited: true,
+				},
+				fingerprint: generateFingerprint("external-links", result.sourcePath, {
+					url: result.url,
+					rateLimited: true,
+				}),
+			};
+		}
+
+		if (result.status >= 500) {
+			return {
+				...describeFinding(
+					"candidate",
+					`The server reported a failure (HTTP ${result.status}).`,
+					"Run the scan again later; if the failure persists, verify the URL manually.",
+					"Server-side failures are often temporary and do not yet indicate a dead link.",
+				),
+				scannerId: "external-links",
+				severity: "info",
+				title: "External link server error",
+				message: `HTTP ${result.status} — ${result.url}`,
+				primaryPath: result.sourcePath,
+				relatedPaths: [],
+				evidence: {
+					url: result.url,
+					status: result.status,
+					method: result.method,
+					serverError: true,
+				},
+				fingerprint: generateFingerprint("external-links", result.sourcePath, {
+					url: result.url,
+					serverError: true,
+				}),
+			};
+		}
+
 		return {
 			...describeFinding(
 				"candidate",
 				`The server returned HTTP ${result.status} for this URL.`,
 				"Open the URL manually, then update or remove it if the failure persists.",
-				"Authentication, rate limits, bot protection, and temporary outages can produce a non-success status.",
+				"HTTP 404 and 410 strongly indicate the resource is gone; access restrictions, rate limits, and server failures are reported separately.",
 			),
 			scannerId: "external-links",
 			severity: "warning",
@@ -308,6 +416,7 @@ function makeIssue(result: CheckResult): Issue | null {
 			evidence: {
 				url: result.url,
 				status: result.status,
+				method: result.method,
 			},
 			fingerprint: generateFingerprint("external-links", result.sourcePath, {
 				url: result.url,
@@ -391,11 +500,5 @@ function makeIssue(result: CheckResult): Issue | null {
 }
 
 function withSourcePath(result: CheckResult, sourcePath: string): CheckResult {
-	if (result.kind === "http") {
-		return { ...result, sourcePath };
-	}
-	if (result.kind === "timeout") {
-		return { ...result, sourcePath };
-	}
 	return { ...result, sourcePath };
 }
