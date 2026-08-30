@@ -37,7 +37,6 @@ const EXPECTED_INVENTORY: string[] = [
 	"empty-notes | warning | candidate | notes/empty/task-note.md | This note only has 5 words (likely a stub)",
 	"empty-notes | warning | candidate | notes/empty/title-only.md | This note has no content besides a title",
 	"orphan-attachments | info | candidate | attachments/recent-orphan.png | This attachment is not referenced by any note",
-	"orphan-attachments | warning | candidate | attachments/canvas-image.png | This attachment is not referenced by any note",
 	"orphan-attachments | warning | candidate | attachments/orphan.png | This attachment is not referenced by any note",
 ];
 
@@ -128,26 +127,23 @@ describe("precision fixture vault", () => {
 				issues.filter((issue) => issue.scannerId === "orphan-attachments"),
 			);
 
-		it("reports exactly the three unreferenced attachments as candidates", async () => {
+		it("reports exactly the two unreferenced attachments as candidates", async () => {
 			const orphans = await scanOrphans();
-			expect(orphans).toHaveLength(3);
+			expect(orphans).toHaveLength(2);
 			expect(orphans.every((issue) => issue.classification === "candidate")).toBe(true);
 			expect(orphans.every((issue) => issue.fixAction?.kind === "trash-file")).toBe(true);
+			expect(orphans.every((issue) => issue.evidence.coverageComplete === true)).toBe(true);
 			expect(orphans.map((issue) => issue.primaryPath).sort()).toEqual([
-				"attachments/canvas-image.png",
 				"attachments/orphan.png",
 				"attachments/recent-orphan.png",
 			]);
 		});
 
-		it("keeps the Canvas-only reference as an orphan — known false positive boundary", async () => {
+		it("treats the Canvas-referenced attachment as referenced — former false positive boundary", async () => {
 			const orphans = await scanOrphans();
-			const canvasOrphan = orphans.find(
-				(issue) => issue.primaryPath === "attachments/canvas-image.png",
-			);
-			// Canvas references are outside the current scan boundary (Milestone 1 target).
-			expect(canvasOrphan?.severity).toBe("warning");
-			expect(canvasOrphan?.explanation.caveat).toContain("Canvas");
+			expect(
+				orphans.some((issue) => issue.primaryPath === "attachments/canvas-image.png"),
+			).toBe(false);
 		});
 
 		it("downgrades the recently modified orphan to info severity", async () => {

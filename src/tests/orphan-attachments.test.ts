@@ -1,10 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { performance } from "node:perf_hooks";
 import { orphanAttachmentsScanner } from "../scanner/scanners/orphan-attachments";
 import type { ScanContext } from "../scanner/ScanContext";
+import type {
+	ReferenceCoverageFailure,
+	ReferenceIndex,
+	ReferenceSourceKind,
+} from "../scanner/reference-index";
+import { makeEmptyReferenceIndex } from "../scanner/reference-index";
 
-function makeFile(path: string, mtime: number) {
-	return { path, stat: { size: 1024, mtime } } as any;
+function makeFile(path: string, mtime = 1000, size = 1024) {
+	return { path, stat: { size, mtime } } as any;
 }
 
 function makeCtx(overrides: Partial<ScanContext> = {}): ScanContext {
@@ -23,309 +28,195 @@ function makeCtx(overrides: Partial<ScanContext> = {}): ScanContext {
 		lowUsageTagThreshold: 2,
 		watchedTags: [],
 		ignoredFolders: [],
+		referenceIndex: makeEmptyReferenceIndex(),
 		...overrides,
 	} as ScanContext;
 }
 
+function makeIndex(
+	referenced: Record<string, { count?: number; kinds?: ReferenceSourceKind[]; sources?: string[] }>,
+	coverageFailures: ReferenceCoverageFailure[] = [],
+): ReferenceIndex {
+	const inboundByPath = new Map(
+		Object.entries(referenced).map(([path, entry]) => [
+			path,
+			{
+				count: entry.count ?? 1,
+				kinds: entry.kinds ?? ["note-link"],
+				sources: entry.sources ?? ["notes/a.md"],
+			},
+		]),
+	);
+	return {
+		inboundByPath,
+		canvasFiles: [],
+		coverageFailures,
+		coverageComplete: coverageFailures.length === 0,
+	};
+}
+
+const OLD_MTIME = Date.now() - 30 * 24 * 60 * 60 * 1000;
+
 describe("orphanAttachmentsScanner", () => {
-	it("detects attachments not referenced by any note", async () => {
-		const md = { path: "notes/a.md" } as any;
-		const img = makeFile("assets/orphan.png", 1000);
+	it("detects attachments with no inbound references as candidates with rich evidence", async () => {
+		const img = makeFile("assets/orphan.png", OLD_MTIME, 4096);
 		const ctx = makeCtx({
-			markdownFiles: [md],
-			allFiles: [md, img],
-			filePathIndex: new Set(["notes/a.md", "assets/orphan.png"]),
-			metadataCache: {
-				getFileCache: () => ({ links: [], embeds: [] }),
-			} as any,
+			allFiles: [img],
+			filePathIndex: new Set(["assets/orphan.png"]),
+			referenceIndex: makeIndex({}),
 		});
 		const issues = await orphanAttachmentsScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
-		expect(issues[0].primaryPath).toBe("assets/orphan.png");
 		expect(issues[0]).toMatchObject({
+			primaryPath: "assets/orphan.png",
+			severity: "warning",
 			classification: "candidate",
+			evidence: {
+				size: 4096,
+				lastModified: OLD_MTIME,
+				referenceCount: 0,
+				coverageComplete: true,
+			},
 			explanation: {
-				why: "No Markdown note references this attachment within the scanned vault metadata.",
-				caveat: "CSS, Canvas, Dataview, publishing pipelines, and external tools can reference files outside this scan boundary.",
+				why: "No note, embed, frontmatter link, or Canvas file node in the vault references this attachment.",
+				caveat: "CSS, Dataview, publishing pipelines, and external tools can reference files outside this scan boundary.",
 				nextStep: "Review external and generated references before moving the file to trash.",
+			},
+			fixAction: {
+				kind: "trash-file",
+				targetPaths: ["assets/orphan.png"],
 			},
 		});
 	});
 
-	it("does not report attachments referenced by notes", async () => {
-		const md = { path: "notes/a.md" } as any;
-		const img = makeFile("assets/used.png", 1000);
+	it.each([
+		["note-link", ["notes/a.md"]],
+		["embed", ["notes/a.md"]],
+		["frontmatter", ["notes/a.md"]],
+		["canvas", ["canvas/board.canvas"]],
+	] as const)("does not report attachments referenced via %s through the index", async (kind, sources) => {
+		const img = makeFile("assets/used.png", OLD_MTIME);
 		const ctx = makeCtx({
-			markdownFiles: [md],
-			allFiles: [md, img],
-			filePathIndex: new Set(["notes/a.md", "assets/used.png"]),
-			metadataCache: {
-				getFileCache: () => ({
-					links: [{ link: "assets/used.png" }],
-					embeds: [],
-				}),
-				resolvedLinks: {
-					"notes/a.md": { "assets/used.png": "assets/used.png" },
-				},
-			} as any,
+			allFiles: [img],
+			filePathIndex: new Set(["assets/used.png"]),
+			referenceIndex: makeIndex({
+				"assets/used.png": { count: 1, kinds: [kind as ReferenceSourceKind], sources: [...sources] },
+			}),
 		});
 		const issues = await orphanAttachmentsScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
-	});
-
-	it("does not report attachments referenced by a frontmatter property", async () => {
-		const md = { path: "notes/a.md" } as any;
-		const attachment = makeFile("attachments/backup.pdf", 1000);
-		const ctx = makeCtx({
-			markdownFiles: [md],
-			allFiles: [md, attachment],
-			filePathIndex: new Set(["notes/a.md", "attachments/backup.pdf"]),
-			metadataCache: {
-				getFileCache: () => ({
-					links: [],
-					embeds: [],
-					frontmatterLinks: [
-						{
-							key: "sourceBackup",
-							link: "backup.pdf",
-							original: "[[backup.pdf]]",
-						},
-					],
-				}),
-			} as any,
-		});
-
-		const issues = await orphanAttachmentsScanner.scan(ctx);
-
-		expect(issues).toHaveLength(0);
-	});
-
-	it("does not report attachments referenced by a frontmatter array", async () => {
-		const md = { path: "notes/a.md" } as any;
-		const first = makeFile("attachments/first.pdf", 1000);
-		const second = makeFile("attachments/second.pdf", 1000);
-		const ctx = makeCtx({
-			markdownFiles: [md],
-			allFiles: [md, first, second],
-			filePathIndex: new Set([
-				"notes/a.md",
-				"attachments/first.pdf",
-				"attachments/second.pdf",
-			]),
-			metadataCache: {
-				getFileCache: () => ({
-					links: [],
-					embeds: [],
-					frontmatterLinks: [
-						{
-							key: "references",
-							link: "first.pdf",
-							original: "[[first.pdf]]",
-						},
-						{
-							key: "references",
-							link: "second.pdf",
-							original: "[[second.pdf]]",
-						},
-					],
-				}),
-			} as any,
-		});
-
-		const issues = await orphanAttachmentsScanner.scan(ctx);
-
-		expect(issues).toHaveLength(0);
-	});
-
-	it("does not report attachments referenced by short wiki embed names", async () => {
-		const md = { path: "notes/a.md" } as any;
-		const img = makeFile("attachments/image.png", 1000);
-		const ctx = makeCtx({
-			markdownFiles: [md],
-			allFiles: [md, img],
-			filePathIndex: new Set(["notes/a.md", "attachments/image.png"]),
-			metadataCache: {
-				getFileCache: () => ({
-					links: [],
-					embeds: [{ link: "image.png" }],
-				}),
-			} as any,
-		});
-		const issues = await orphanAttachmentsScanner.scan(ctx);
-		expect(issues).toHaveLength(0);
-	});
-
-	it("only marks the Obsidian-resolved same-name attachment as referenced", async () => {
-		const md = { path: "notes/a.md" } as any;
-		const first = makeFile("attachments/image.png", 1000);
-		const second = makeFile("archive/image.png", 1000);
-		const ctx = makeCtx({
-			markdownFiles: [md],
-			allFiles: [md, first, second],
-			filePathIndex: new Set([
-				"notes/a.md",
-				"attachments/image.png",
-				"archive/image.png",
-			]),
-			metadataCache: {
-				getFileCache: () => ({
-					links: [],
-					embeds: [{ link: "image.png" }],
-				}),
-				getFirstLinkpathDest: (linkPath: string, sourcePath: string) => {
-					expect(linkPath).toBe("image.png");
-					expect(sourcePath).toBe("notes/a.md");
-					return first;
-				},
-				resolvedLinks: {
-					"notes/a.md": {
-						"attachments/image.png": 1,
-					},
-				},
-			} as any,
-		});
-		const issues = await orphanAttachmentsScanner.scan(ctx);
-		expect(issues).toHaveLength(1);
-		expect(issues[0].primaryPath).toBe("archive/image.png");
-	});
-
-	it("does not treat a resolvedLinks occurrence count as a destination path", async () => {
-		const md = { path: "notes/a.md" } as any;
-		const attachment = makeFile("assets/used.png", 1000);
-		const ctx = makeCtx({
-			markdownFiles: [md],
-			allFiles: [md, attachment],
-			filePathIndex: new Set(["notes/a.md", "assets/used.png"]),
-			metadataCache: {
-				getFileCache: () => ({
-					links: [{ link: "assets/used.png" }],
-					embeds: [],
-				}),
-				resolvedLinks: {
-					"notes/a.md": {
-						"assets/used.png": 1,
-					},
-				},
-			} as any,
-		});
-
-		const issues = await orphanAttachmentsScanner.scan(ctx);
-
-		expect(issues).toHaveLength(0);
-	});
-
-	it("prefers the source folder for same-name attachments without resolved metadata", async () => {
-		const md = { path: "zeta/note.md" } as any;
-		const local = makeFile("zeta/image.png", 1000);
-		const other = makeFile("alpha/image.png", 1000);
-		const ctx = makeCtx({
-			markdownFiles: [md],
-			allFiles: [md, local, other],
-			filePathIndex: new Set([
-				"zeta/note.md",
-				"zeta/image.png",
-				"alpha/image.png",
-			]),
-			metadataCache: {
-				getFileCache: () => ({
-					links: [],
-					embeds: [{ link: "image.png" }],
-				}),
-			} as any,
-		});
-
-		const issues = await orphanAttachmentsScanner.scan(ctx);
-
-		expect(issues).toHaveLength(1);
-		expect(issues[0].primaryPath).toBe("alpha/image.png");
 	});
 
 	it("downgrades recently modified orphans to info", async () => {
 		const img = makeFile("assets/recent.png", Date.now() - 1000);
-		const ctx = makeCtx({
-			markdownFiles: [],
-			allFiles: [img],
-			filePathIndex: new Set(["assets/recent.png"]),
-			metadataCache: {
-				getFileCache: () => null,
-			} as any,
-		});
+		const ctx = makeCtx({ allFiles: [img], filePathIndex: new Set(["assets/recent.png"]) });
 		const issues = await orphanAttachmentsScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].severity).toBe("info");
 	});
 
 	it("uses warning severity for old orphans", async () => {
-		const oldTime = Date.now() - 30 * 24 * 60 * 60 * 1000;
-		const img = makeFile("assets/old.png", oldTime);
-		const ctx = makeCtx({
-			markdownFiles: [],
-			allFiles: [img],
-			filePathIndex: new Set(["assets/old.png"]),
-			metadataCache: {
-				getFileCache: () => null,
-			} as any,
-		});
+		const img = makeFile("assets/old.png", OLD_MTIME);
+		const ctx = makeCtx({ allFiles: [img], filePathIndex: new Set(["assets/old.png"]) });
 		const issues = await orphanAttachmentsScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0].severity).toBe("warning");
 	});
 
 	it("skips non-attachment files", async () => {
-		const md = { path: "notes/a.md", stat: { size: 100, mtime: 1000 } } as any;
-		const ctx = makeCtx({
-			markdownFiles: [],
-			allFiles: [md],
-			filePathIndex: new Set(["notes/a.md"]),
-			metadataCache: {
-				getFileCache: () => null,
-			} as any,
-		});
+		const md = makeFile("notes/a.md", OLD_MTIME, 100);
+		const ctx = makeCtx({ allFiles: [md], filePathIndex: new Set(["notes/a.md"]) });
 		const issues = await orphanAttachmentsScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
 	});
 
 	it("skips files in ignored folders", async () => {
-		const img = makeFile("templates/bg.png", 1000);
+		const img = makeFile("templates/bg.png", OLD_MTIME);
 		const ctx = makeCtx({
-			markdownFiles: [],
 			allFiles: [img],
 			filePathIndex: new Set(["templates/bg.png"]),
 			ignoredFolders: ["templates"],
-			metadataCache: {
-				getFileCache: () => null,
-			} as any,
 		});
 		const issues = await orphanAttachmentsScanner.scan(ctx);
 		expect(issues).toHaveLength(0);
 	});
 
-	it("resolves many short attachment embeds without scanning all files per link", async () => {
-		const md = { path: "notes/a.md" } as any;
-		const attachments = Array.from({ length: 2000 }, (_, index) =>
-			makeFile(`attachments/image-${index}.png`, 1000),
-		);
-		const embeds = attachments.map((file) => ({
-			link: file.path.split("/").pop()!,
-		}));
-		const allFiles = [md, ...attachments];
+	it("omits the delete fix action while reference coverage is incomplete", async () => {
+		const img = makeFile("assets/orphan.png", OLD_MTIME);
 		const ctx = makeCtx({
-			markdownFiles: [md],
-			allFiles,
-			filePathIndex: new Set(allFiles.map((file) => file.path)),
-			metadataCache: {
-				getFileCache: () => ({
-					links: [],
-					embeds,
-				}),
-			} as any,
+			allFiles: [img],
+			filePathIndex: new Set(["assets/orphan.png"]),
+			referenceIndex: makeIndex({}, [{ path: "canvas/bad.canvas", reason: "malformed-json" }]),
 		});
-
-		const startedAt = performance.now();
 		const issues = await orphanAttachmentsScanner.scan(ctx);
-		const durationMs = performance.now() - startedAt;
+		const orphan = issues.find((issue) => issue.title === "Orphan attachment");
+		expect(orphan).toBeDefined();
+		expect(orphan?.fixAction).toBeUndefined();
+		expect(orphan?.evidence.coverageComplete).toBe(false);
+		expect(orphan?.classification).toBe("candidate");
+		expect(orphan?.explanation.nextStep).toBe(
+			"Resolve the incomplete reference coverage below before moving the file to trash.",
+		);
+	});
 
-		expect(issues).toHaveLength(0);
-		expect(durationMs).toBeLessThan(500);
+	it("emits exactly one unverified coverage finding summarizing all failures", async () => {
+		const img = makeFile("assets/orphan.png", OLD_MTIME);
+		const failures: ReferenceCoverageFailure[] = [
+			{ path: "canvas/z-bad.canvas", reason: "unexpected-shape" },
+			{ path: "canvas/a-bad.canvas", reason: "malformed-json", detail: "boom" },
+		];
+		const ctx = makeCtx({
+			allFiles: [img],
+			filePathIndex: new Set(["assets/orphan.png"]),
+			referenceIndex: makeIndex({}, failures),
+		});
+		const issues = await orphanAttachmentsScanner.scan(ctx);
+		const coverage = issues.filter((issue) => issue.title === "Reference coverage incomplete");
+		expect(coverage).toHaveLength(1);
+		expect(coverage[0]).toMatchObject({
+			scannerId: "orphan-attachments",
+			severity: "info",
+			classification: "unverified",
+			primaryPath: "canvas/a-bad.canvas",
+			relatedPaths: ["canvas/a-bad.canvas", "canvas/z-bad.canvas"],
+			evidence: {
+				failedCount: 2,
+				failedPaths: "canvas/a-bad.canvas,canvas/z-bad.canvas",
+				reasons: "malformed-json,unexpected-shape",
+			},
+		});
+		expect(coverage[0].fixAction).toBeUndefined();
+		expect(coverage[0].explanation.why).toContain("Canvas reference sources");
+	});
+
+	it("fingerprints the coverage finding deterministically per failure set", async () => {
+		const img = makeFile("assets/orphan.png", OLD_MTIME);
+		const run = (failures: ReferenceCoverageFailure[]) =>
+			makeCtx({
+				allFiles: [img],
+				filePathIndex: new Set(["assets/orphan.png"]),
+				referenceIndex: makeIndex({}, failures),
+			});
+		const first = await orphanAttachmentsScanner.scan(
+			run([{ path: "canvas/bad.canvas", reason: "malformed-json" }]),
+		);
+		const second = await orphanAttachmentsScanner.scan(
+			run([{ path: "canvas/bad.canvas", reason: "malformed-json" }]),
+		);
+		const other = await orphanAttachmentsScanner.scan(
+			run([{ path: "canvas/other.canvas", reason: "read-failed" }]),
+		);
+		const fingerprintOf = (ctxIssues: Awaited<ReturnType<typeof orphanAttachmentsScanner.scan>>) =>
+			ctxIssues.find((issue) => issue.title === "Reference coverage incomplete")?.fingerprint;
+		expect(fingerprintOf(second)).toBe(fingerprintOf(first));
+		expect(fingerprintOf(other)).not.toBe(fingerprintOf(first));
+	});
+
+	it("emits no coverage finding when coverage is complete", async () => {
+		const img = makeFile("assets/orphan.png", OLD_MTIME);
+		const ctx = makeCtx({ allFiles: [img], filePathIndex: new Set(["assets/orphan.png"]) });
+		const issues = await orphanAttachmentsScanner.scan(ctx);
+		expect(issues).toHaveLength(1);
+		expect(issues.some((issue) => issue.title === "Reference coverage incomplete")).toBe(false);
 	});
 });
