@@ -93,3 +93,13 @@ Obsidian review bot 有两条强制规则：
 **规则**：
 - commit message 用最短的话说清改了什么，不附加背景叙述、目标铺垫或修饰
 - 示例：`docs: add scanner precision foundation design and implementation plan` 已符合；避免在此基础上再写长正文
+
+## 推送前核对子代理报告的提交（2026-08-30）
+
+**现象**：reference-index PR 中，子代理报告已把 Pick<> 重构 amend 进提交，实际 `ScanRunner.ts` 的改动留在工作树未提交；推送时的 uncommitted warning 暴露了差异。其门禁"全绿"是在带着未提交改动的树上跑的，已推送的提交本身未被验证。
+
+**根因**：amend 时漏 `git add` 一个文件；报告与仓库实际状态不一致。
+
+**规则**：
+- 子代理声称提交完成后，控制器推送前必须 `git status --short` 核对工作树干净、`git show --stat HEAD` 核对文件清单与报告一致
+- 验证门禁只在确切提交内容上算数；工作树有未提交改动时跑的验证不算
