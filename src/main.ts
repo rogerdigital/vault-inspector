@@ -23,6 +23,12 @@ import {
 	createScanSnapshot,
 	type ScanSnapshot,
 } from "./snapshot/scan-snapshot";
+import {
+	appendScanHistoryEntry,
+	createScanHistoryEntry,
+	type ScanHistoryEntry,
+	type ScanTrigger,
+} from "./snapshot/scan-history";
 import { createScanProfile } from "./scanner/scan-profile";
 import { compareScanResult } from "./scanner/result-diff";
 import type { ScanResult } from "./scanner/Issue";
@@ -32,6 +38,7 @@ import { openPluginSettings } from "./utils/open-plugin-settings";
 export default class VaultInspectorPlugin extends Plugin {
 	settings: InspectorSettings = DEFAULT_SETTINGS;
 	lastSuccessfulSnapshot: ScanSnapshot | null = null;
+	scanHistory: ScanHistoryEntry[] = [];
 	private saveQueue: Promise<void> = Promise.resolve();
 	private operationQueue: Promise<void> = Promise.resolve();
 	scanRunner = new ScanRunner(async (url, method) => {
@@ -87,6 +94,7 @@ export default class VaultInspectorPlugin extends Plugin {
 			},
 		};
 		this.lastSuccessfulSnapshot = parsed.lastSuccessfulSnapshot;
+		this.scanHistory = parsed.scanHistory;
 
 		if (migrateExcalidrawFrontmatterKey(this.settings, loaded)) {
 			await this.saveSettings();
@@ -99,19 +107,27 @@ export default class VaultInspectorPlugin extends Plugin {
 
 	private persistPluginData(options?: {
 		acceptedSnapshot?: ScanSnapshot;
+		acceptedHistory?: ScanHistoryEntry[];
 		settings?: InspectorSettings;
 	}): Promise<void> {
 		const write = this.saveQueue.catch(() => undefined).then(async () => {
 			const snapshot = options?.acceptedSnapshot ?? this.lastSuccessfulSnapshot;
+			const history = options?.acceptedHistory ?? this.scanHistory;
 			const data: PersistedPluginData = {
 				settings: structuredClone(options?.settings ?? this.settings),
 				...(snapshot
 					? { lastSuccessfulSnapshot: structuredClone(snapshot) }
 					: {}),
+				...(history.length > 0
+					? { scanHistory: structuredClone(history) }
+					: {}),
 			};
 			await this.saveData(data);
 			if (options?.acceptedSnapshot) {
 				this.lastSuccessfulSnapshot = options.acceptedSnapshot;
+			}
+			if (options?.acceptedHistory) {
+				this.scanHistory = options.acceptedHistory;
 			}
 		});
 		this.saveQueue = write;
@@ -361,6 +377,7 @@ export default class VaultInspectorPlugin extends Plugin {
 		view: InspectorView,
 		result: ScanResult,
 		scanProfile: string,
+		trigger: ScanTrigger = "manual",
 	) {
 		const comparison = compareScanResult(
 			result,
@@ -374,8 +391,21 @@ export default class VaultInspectorPlugin extends Plugin {
 			scanProfile,
 			this.manifest.version,
 		);
+		const nextHistory = appendScanHistoryEntry(
+			this.scanHistory,
+			createScanHistoryEntry({
+				result,
+				comparison,
+				scanProfile,
+				toolVersion: this.manifest.version,
+				trigger,
+			}),
+		);
 		try {
-			await this.persistPluginData({ acceptedSnapshot: nextSnapshot });
+			await this.persistPluginData({
+				acceptedSnapshot: nextSnapshot,
+				acceptedHistory: nextHistory,
+			});
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			new Notice(
