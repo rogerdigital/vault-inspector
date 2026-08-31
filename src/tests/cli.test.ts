@@ -84,7 +84,16 @@ describe("runCli", () => {
 					}),
 				}),
 			]);
-			expect(payload).not.toHaveProperty("comparison");
+			expect(payload.comparison).toEqual({
+				available: false,
+				mode: "none",
+				reason: "missing-baseline",
+				newIssues: 0,
+				persistingIssues: 0,
+				resolvedIssues: 0,
+				scanProfile: expect.any(String),
+				comparisonVersion: 2,
+			});
 			expect(payload).not.toHaveProperty("resolvedIssues");
 		});
 	});
@@ -1047,6 +1056,66 @@ describe("runCli", () => {
 			expect(payload.summary.issues).toBe(1);
 			expect(payload.summary.newIssues).toBe(0);
 			expect(payload.issues[0].isNew).toBe(false);
+			expect(second.stderr).toBe("");
+			expect(payload.comparison).toEqual({
+				available: true,
+				mode: "legacy",
+				newIssues: 0,
+				persistingIssues: 1,
+				resolvedIssues: 0,
+				scanProfile: expect.any(String),
+				comparisonVersion: 2,
+			});
+		});
+	});
+
+	it("reports legacy comparison counts including resolved issues", async () => {
+		await withVault({ "keep.md": "", "drop.md": "" }, async (vaultPath) => {
+			const first = await runCli([
+				"scan",
+				vaultPath,
+				"--scanner",
+				"empty-notes",
+				"--fail-on",
+				"none",
+			]);
+			const baselinePath = join(vaultPath, "baseline.json");
+			await writeFile(baselinePath, first.stdout, "utf8");
+
+			await rm(join(vaultPath, "drop.md"), { force: true });
+			await writeFile(join(vaultPath, "added.md"), "");
+
+			const second = await runCli([
+				"scan",
+				vaultPath,
+				"--scanner",
+				"empty-notes",
+				"--baseline",
+				baselinePath,
+				"--fail-on",
+				"new",
+			]);
+
+			const payload = JSON.parse(second.stdout);
+			expect(second.exitCode).toBe(1);
+			expect(second.stderr).toBe("");
+			expect(payload.comparison).toEqual({
+				available: true,
+				mode: "legacy",
+				newIssues: 1,
+				persistingIssues: 1,
+				resolvedIssues: 1,
+				scanProfile: expect.any(String),
+				comparisonVersion: 2,
+			});
+			// The same fingerprint set drives isNew and the counts.
+			expect(payload.issues.find(
+				(issue: { isNew?: boolean }) => issue.isNew === true,
+			).primaryPath).toBe("added.md");
+			expect(payload.issues.find(
+				(issue: { isNew?: boolean }) => issue.isNew === false,
+			).primaryPath).toBe("keep.md");
 		});
 	});
 });
+
