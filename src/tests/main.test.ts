@@ -219,6 +219,7 @@ describe("VaultInspectorPlugin", () => {
 
 		expect(view.setResult).toHaveBeenCalledWith(result, {
 			available: true,
+			previousScanAt: 100,
 			statuses: new Map([
 				["persisting", "persisting"],
 				["new", "new"],
@@ -245,6 +246,7 @@ describe("VaultInspectorPlugin", () => {
 		expect(view.setResult).toHaveBeenCalledWith(result, {
 			available: false,
 			reason: "settings-changed",
+			previousScanAt: 100,
 			statuses: new Map(),
 			resolvedIssues: [],
 		});
@@ -263,6 +265,7 @@ describe("VaultInspectorPlugin", () => {
 		expect(view.setResult).toHaveBeenCalledWith(result, {
 			available: false,
 			reason: "semantics-changed",
+			previousScanAt: 100,
 			statuses: new Map(),
 			resolvedIssues: [],
 		});
@@ -322,6 +325,7 @@ describe("VaultInspectorPlugin", () => {
 
 		expect(view.setResult).toHaveBeenCalledWith(result, {
 			available: true,
+			previousScanAt: 100,
 			statuses: new Map([["current", "new"]]),
 			resolvedIssues: [expect.objectContaining({ fingerprint: "previous" })],
 		});

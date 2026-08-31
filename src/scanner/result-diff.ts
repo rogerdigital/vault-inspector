@@ -15,6 +15,8 @@ export type ComparisonUnavailableReason =
 export type LifecycleComparison = {
 	available: boolean;
 	reason?: ComparisonUnavailableReason;
+	/** When the baseline snapshot was captured; absent when there is no snapshot. */
+	previousScanAt?: number;
 	statuses: Map<string, CurrentFindingStatus>;
 	resolvedIssues: SnapshotIssue[];
 };
@@ -26,9 +28,11 @@ export function compareScanResult(
 ): LifecycleComparison {
 	if (snapshot === null) return unavailable("first-scan");
 	if (snapshot.comparisonVersion !== COMPARISON_VERSION) {
-		return unavailable("semantics-changed");
+		return { ...unavailable("semantics-changed"), previousScanAt: snapshot.createdAt };
 	}
-	if (snapshot.scanProfile !== currentProfile) return unavailable("settings-changed");
+	if (snapshot.scanProfile !== currentProfile) {
+		return { ...unavailable("settings-changed"), previousScanAt: snapshot.createdAt };
+	}
 
 	const previousByFingerprint = new Map(
 		snapshot.issues.map((issue) => [issue.fingerprint, issue] as const),
@@ -55,7 +59,12 @@ export function compareScanResult(
 		(issue) => !currentFingerprints.has(issue.fingerprint),
 	);
 
-	return { available: true, statuses, resolvedIssues };
+	return {
+		available: true,
+		previousScanAt: snapshot.createdAt,
+		statuses,
+		resolvedIssues,
+	};
 }
 
 function unavailable(reason: ComparisonUnavailableReason): LifecycleComparison {

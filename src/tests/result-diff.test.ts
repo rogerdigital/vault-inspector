@@ -54,6 +54,22 @@ describe("compareScanResult", () => {
 		});
 	});
 
+	it("carries the baseline scan time whenever a snapshot exists", () => {
+		const snapshot = makeSnapshot([makeIssue("previous")], [], "old-profile");
+
+		const settingsChanged = compareScanResult(makeResult([]), snapshot, "new-profile");
+		expect(settingsChanged.available).toBe(false);
+		expect(settingsChanged.previousScanAt).toBe(1);
+
+		const semanticsSnapshot = {
+			...snapshot,
+			comparisonVersion: COMPARISON_VERSION + 1,
+		} as ScanSnapshot;
+		const semanticsChanged = compareScanResult(makeResult([]), semanticsSnapshot, "old-profile");
+		expect(semanticsChanged.available).toBe(false);
+		expect(semanticsChanged.previousScanAt).toBe(1);
+	});
+
 	it("rejects changed comparison semantics before checking settings", () => {
 		const snapshot = {
 			...makeSnapshot([makeIssue("previous")], [], "old-profile"),
@@ -64,6 +80,7 @@ describe("compareScanResult", () => {
 		expect(compareScanResult(makeResult([]), snapshot, "new-profile")).toEqual({
 			available: false,
 			reason: "semantics-changed",
+			previousScanAt: 1,
 			statuses: new Map(),
 			resolvedIssues: [],
 		});
@@ -75,6 +92,7 @@ describe("compareScanResult", () => {
 		expect(compareScanResult(makeResult([]), snapshot, "new-profile")).toEqual({
 			available: false,
 			reason: "settings-changed",
+			previousScanAt: 1,
 			statuses: new Map(),
 			resolvedIssues: [],
 		});
@@ -94,6 +112,7 @@ describe("compareScanResult", () => {
 
 		expect(result.available).toBe(true);
 		expect(result.reason).toBeUndefined();
+		expect(result.previousScanAt).toBe(1);
 		expect(Array.from(result.statuses)).toEqual([
 			["active-persisting", "persisting"],
 			["active-new", "new"],

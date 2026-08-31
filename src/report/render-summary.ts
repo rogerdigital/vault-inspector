@@ -4,11 +4,13 @@ import type {
 	CurrentFindingStatus,
 	LifecycleComparison,
 } from "../scanner/result-diff";
+import { countNewConfirmedFindings } from "./report-model";
 import { formatDuration } from "../utils/format";
 
 export type SummaryOptions = {
 	comparison: LifecycleComparison;
 	onFilterStatus?: (status: CurrentFindingStatus | null) => void;
+	onReviewNewFindings?: () => void;
 };
 
 export function renderSummary(container: HTMLElement, result: ScanResult, options: SummaryOptions) {
@@ -17,40 +19,69 @@ export function renderSummary(container: HTMLElement, result: ScanResult, option
 	const summary = container.createDiv({ cls: "vi-summary" });
 	summary.createEl("h2", { text: "Scan results" });
 
+	renderChanges(summary, result, options);
+
 	const stats = summary.createDiv({ cls: "vi-stats" });
+	const active = stats.createDiv({ cls: "vi-stat vi-stat-active" });
+	active.createSpan({ cls: "vi-stat-label", text: "Active" });
+	active.createSpan({ cls: "vi-stat-value", text: String(result.issues.length) });
+
+	const meta = summary.createDiv({ cls: "vi-meta" });
+	meta.createSpan({ text: `${result.filesScanned} files scanned` });
+	meta.createSpan({ text: duration });
+	meta.createSpan({ text: `${result.scannersRun.length} scanners` });
+	meta.createSpan({ text: `Ignored ${result.ignoredIssues.length}` });
+}
+
+function renderChanges(
+	summary: HTMLElement,
+	result: ScanResult,
+	options: SummaryOptions,
+): void {
+	const comparison = options.comparison;
+	const changes = summary.createDiv({ cls: "vi-changes" });
+	changes.createDiv({ cls: "vi-changes-title", text: "What changed" });
+
+	if (!comparison.available) {
+		changes.createDiv({
+			cls: "vi-comparison-note",
+			text: unavailableMessage(
+				comparison.reason ?? "first-scan",
+				comparison.previousScanAt,
+			),
+		});
+		return;
+	}
+
+	changes.createDiv({
+		cls: "vi-changes-meta",
+		text: comparison.previousScanAt === undefined
+			? "Compared with the previous successful scan"
+			: `Compared with the scan from ${formatScanTime(comparison.previousScanAt)}`,
+	});
+
+	const newConfirmed = countNewConfirmedFindings(result.issues, comparison.statuses);
+	const stats = changes.createDiv({ cls: "vi-changes-stats" });
 	const items: Array<{
 		label: string;
 		value: number;
 		cls: string;
 		status?: CurrentFindingStatus;
-	}> = [{
-		label: "Active",
-		value: result.issues.length,
-		cls: "vi-stat-active",
-	}];
-
-	if (options.comparison.available) {
-		items.push(
-			{
-				label: "New",
-				value: countStatus(result, options.comparison, "new"),
-				cls: "vi-stat-new",
-				status: "new",
-			},
-			{
-				label: "Persisting",
-				value: countStatus(result, options.comparison, "persisting"),
-				cls: "vi-stat-persisting",
-				status: "persisting",
-			},
-			{
-				label: "Resolved",
-				value: options.comparison.resolvedIssues.filter((issue) => !issue.ignored).length,
-				cls: "vi-stat-resolved",
-			},
-		);
-	}
-
+	}> = [
+		{ label: "New errors", value: newConfirmed.errors, cls: "vi-stat-new vi-stat-error" },
+		{ label: "New warnings", value: newConfirmed.warnings, cls: "vi-stat-new vi-stat-warning" },
+		{
+			label: "Persisting",
+			value: countStatus(result, comparison, "persisting"),
+			cls: "vi-stat-persisting",
+			status: "persisting",
+		},
+		{
+			label: "Resolved",
+			value: comparison.resolvedIssues.filter((issue) => !issue.ignored).length,
+			cls: "vi-stat-resolved",
+		},
+	];
 	for (const item of items) {
 		const status = item.status;
 		const onFilterStatus = options.onFilterStatus;
@@ -66,18 +97,16 @@ export function renderSummary(container: HTMLElement, result: ScanResult, option
 		}
 	}
 
-	if (!options.comparison.available) {
-		summary.createDiv({
-			cls: "vi-comparison-note",
-			text: unavailableMessage(options.comparison.reason ?? "first-scan"),
+	const reviewable = newConfirmed.errors + newConfirmed.warnings;
+	const onReviewNewFindings = options.onReviewNewFindings;
+	if (reviewable > 0 && onReviewNewFindings) {
+		const button = changes.createEl("button", {
+			cls: "vi-review-new-btn",
+			text: `Review new findings (${reviewable})`,
+			attr: { type: "button" },
 		});
+		button.addEventListener("click", () => onReviewNewFindings());
 	}
-
-	const meta = summary.createDiv({ cls: "vi-meta" });
-	meta.createSpan({ text: `${result.filesScanned} files scanned` });
-	meta.createSpan({ text: duration });
-	meta.createSpan({ text: `${result.scannersRun.length} scanners` });
-	meta.createSpan({ text: `Ignored ${result.ignoredIssues.length}` });
 }
 
 function countStatus(
@@ -90,7 +119,16 @@ function countStatus(
 	).length;
 }
 
-function unavailableMessage(reason: ComparisonUnavailableReason): string {
+function unavailableMessage(
+	reason: ComparisonUnavailableReason,
+	previousScanAt?: number,
+): string {
+	const base = baseUnavailableMessage(reason);
+	if (previousScanAt === undefined) return base;
+	return `${base} (previous successful scan: ${formatScanTime(previousScanAt)})`;
+}
+
+function baseUnavailableMessage(reason: ComparisonUnavailableReason): string {
 	if (reason === "settings-changed") {
 		return "Scan settings changed; this scan starts a new comparison baseline";
 	}
@@ -98,4 +136,8 @@ function unavailableMessage(reason: ComparisonUnavailableReason): string {
 		return "Scanner behavior changed; this scan starts a new comparison baseline";
 	}
 	return "No previous successful scan for these settings";
+}
+
+function formatScanTime(ms: number): string {
+	return new Date(ms).toLocaleString();
 }
