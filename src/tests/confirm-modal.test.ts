@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { FixAction, Issue } from "../scanner/Issue";
 import {
+	buildConfirmationPlan,
+	buildImpactRows,
 	createSingleUseResolver,
+	describeEligibility,
+	groupByEligibility,
+	resolveEligibility,
 	shouldAskForKeep,
 	summarizeFixActions,
 } from "../fix/confirm-modal";
@@ -148,5 +153,298 @@ describe("confirm modal action summary", () => {
 			.map((decision) => resolveDecisionAction(issue, decision))
 			.find((action): action is FixAction => action !== null);
 		expect(action?.targetPaths).toEqual(["a.md", "b.md"]);
+	});
+});
+
+function makeFixIssue(overrides: Partial<Issue> = {}): Issue {
+	return {
+		scannerId: "orphan-attachments",
+		severity: "warning",
+		classification: "candidate",
+		explanation: { why: "why", nextStep: "next step" },
+		title: "Orphan attachment",
+		message: "This attachment is not referenced by any note",
+		primaryPath: "attachments/orphan.png",
+		relatedPaths: [],
+		evidence: {},
+		fingerprint: "orphan",
+		fixAction: {
+			kind: "trash-file",
+			label: "Delete",
+			description: 'Move "attachments/orphan.png" to trash',
+			targetPaths: ["attachments/orphan.png"],
+		},
+		...overrides,
+	};
+}
+
+describe("fix impact preview policy", () => {
+	it("treats a missing eligibility field as review-required", () => {
+		expect(resolveEligibility(makeFixIssue())).toBe("review-required");
+	});
+
+	it("explains each eligibility tier with a sentence-case reason", () => {
+		const unverified = makeFixIssue({
+			classification: "unverified",
+			eligibility: "blocked",
+		});
+		const incompleteCoverage = makeFixIssue({
+			classification: "confirmed",
+			eligibility: "blocked",
+			impact: {
+				filesChanged: 0,
+				filesTrashed: 1,
+				inboundReferences: 0,
+				coverageComplete: false,
+			},
+		});
+		const reviewGroup = makeFixIssue({
+			scannerId: "duplicate-files",
+			classification: "confirmed",
+			eligibility: "review-required",
+			primaryPath: undefined,
+			relatedPaths: ["a.png", "b.png"],
+			fixAction: {
+				kind: "trash-file",
+				label: "Delete duplicates",
+				description: "Keep a path and move duplicates to trash",
+				targetPaths: ["b.png"],
+				selection: {
+					kind: "keep-one",
+					candidatePaths: ["a.png", "b.png"],
+					automaticKeepPath: "a.png",
+					referencedPaths: ["a.png", "b.png"],
+					requiresReview: true,
+				},
+			},
+		});
+		const candidate = makeFixIssue({ eligibility: "review-required" });
+		const missingReplacement = makeFixIssue({
+			scannerId: "broken-links",
+			classification: "confirmed",
+			eligibility: "review-required",
+			primaryPath: "notes/source.md",
+			fixAction: {
+				kind: "remove-link-text",
+				label: "Remove link",
+				description: "Remove the link",
+				targetPaths: ["notes/source.md"],
+				original: "[[Missing]]",
+			},
+		});
+		const eligible = makeFixIssue({
+			scannerId: "broken-links",
+			classification: "confirmed",
+			eligibility: "eligible",
+			primaryPath: "notes/source.md",
+			fixAction: {
+				kind: "remove-link-text",
+				label: "Remove link",
+				description: "Replace the link",
+				targetPaths: ["notes/source.md"],
+				original: "[[Missing]]",
+				replacement: "Missing",
+			},
+		});
+
+		expect(describeEligibility(unverified)).toEqual({
+			status: "Blocked",
+			reason: "The finding is unverified, so its fix cannot run.",
+		});
+		expect(describeEligibility(incompleteCoverage)).toEqual({
+			status: "Blocked",
+			reason:
+				"Reference coverage is incomplete, so files cannot be moved to trash safely.",
+		});
+		expect(describeEligibility(reviewGroup)).toEqual({
+			status: "Review required",
+			reason:
+				"Several copies are referenced, so an explicit keep choice is required.",
+		});
+		expect(describeEligibility(candidate)).toEqual({
+			status: "Review required",
+			reason: "The finding needs review before its fix can run.",
+		});
+		expect(describeEligibility(missingReplacement)).toEqual({
+			status: "Review required",
+			reason: "The replacement text is not fully specified.",
+		});
+		expect(describeEligibility(eligible)).toEqual({
+			status: "Eligible",
+			reason: "The fix is confirmed and its evidence is complete.",
+		});
+	});
+
+	it("groups fix-bearing issues by tier and ignores fix-less issues", () => {
+		const eligible = makeFixIssue({
+			classification: "confirmed",
+			eligibility: "eligible",
+		});
+		const review = makeFixIssue({ eligibility: "review-required" });
+		const blocked = makeFixIssue({
+			classification: "unverified",
+			eligibility: "blocked",
+		});
+		const missingField = makeFixIssue();
+
+		const groups = groupByEligibility([
+			eligible,
+			review,
+			blocked,
+			missingField,
+			{ ...makeFixIssue(), fixAction: undefined },
+		]);
+
+		expect(groups.eligible).toEqual([eligible]);
+		expect(groups.reviewRequired).toEqual([review, missingField]);
+		expect(groups.blocked).toEqual([blocked]);
+	});
+
+	it("never makes blocked actions actionable", () => {
+		const plan = buildConfirmationPlan(
+			[makeFixIssue({ classification: "unverified", eligibility: "blocked" })],
+			"automatic",
+			new Map(),
+			new Set(["orphan"]),
+		);
+		expect(plan.actionable).toEqual([]);
+		expect(plan.complete).toBe(false);
+	});
+
+	it("excludes unapproved review-required items but keeps the rest of the batch complete", () => {
+		const eligible = makeFixIssue({
+			scannerId: "broken-links",
+			classification: "confirmed",
+			eligibility: "eligible",
+			primaryPath: "notes/source.md",
+			fingerprint: "link",
+			fixAction: {
+				kind: "remove-link-text",
+				label: "Remove link",
+				description: "Replace the link",
+				targetPaths: ["notes/source.md"],
+				original: "[[Missing]]",
+				replacement: "Missing",
+			},
+		});
+		const plan = buildConfirmationPlan(
+			[eligible, makeFixIssue({ eligibility: "review-required" })],
+			"automatic",
+			new Map(),
+			new Set(),
+		);
+		expect(plan.groups.reviewRequired).toHaveLength(1);
+		expect(plan.actionable).toEqual([eligible]);
+		expect(plan.complete).toBe(true);
+	});
+
+	it("approves a review-required duplicate group through an explicit keep choice", () => {
+		const group = makeFixIssue({
+			scannerId: "duplicate-files",
+			classification: "confirmed",
+			eligibility: "review-required",
+			primaryPath: undefined,
+			relatedPaths: ["a.png", "b.png"],
+			fingerprint: "dupes",
+			fixAction: {
+				kind: "trash-file",
+				label: "Delete duplicates",
+				description: "Keep a path and move duplicates to trash",
+				targetPaths: ["b.png"],
+				selection: {
+					kind: "keep-one",
+					candidatePaths: ["a.png", "b.png"],
+					automaticKeepPath: "a.png",
+					referencedPaths: ["a.png", "b.png"],
+					requiresReview: true,
+				},
+			},
+		});
+
+		const undecided = buildConfirmationPlan(
+			[group],
+			"automatic",
+			new Map(),
+			new Set(),
+		);
+		expect(undecided.actionable).toEqual([]);
+		expect(undecided.complete).toBe(false);
+
+		const decided = buildConfirmationPlan(
+			[group],
+			"automatic",
+			new Map([["dupes", "a.png"]]),
+			new Set(),
+		);
+		expect(decided.actionable).toEqual([group]);
+		expect(decided.complete).toBe(true);
+	});
+
+	it("approves a non-duplicate review-required item only through its fingerprint", () => {
+		const issue = makeFixIssue({ eligibility: "review-required" });
+		expect(
+			buildConfirmationPlan([issue], "automatic", new Map(), new Set())
+				.complete,
+		).toBe(false);
+		expect(
+			buildConfirmationPlan([issue], "automatic", new Map(), new Set(["orphan"]))
+				.complete,
+		).toBe(true);
+	});
+
+	it("requires a keep choice for eligible duplicate groups in always-ask mode", () => {
+		const group = makeFixIssue({
+			scannerId: "duplicate-files",
+			classification: "confirmed",
+			eligibility: "eligible",
+			primaryPath: undefined,
+			relatedPaths: ["a.png", "b.png"],
+			fingerprint: "dupes",
+			fixAction: {
+				kind: "trash-file",
+				label: "Delete duplicates",
+				description: "Keep a path and move duplicates to trash",
+				targetPaths: ["b.png"],
+				selection: {
+					kind: "keep-one",
+					candidatePaths: ["a.png", "b.png"],
+					automaticKeepPath: "a.png",
+					referencedPaths: [],
+					requiresReview: false,
+				},
+			},
+		});
+		expect(
+			buildConfirmationPlan([group], "always-ask", new Map(), new Set())
+				.complete,
+		).toBe(false);
+		expect(
+			buildConfirmationPlan(
+				[group],
+				"always-ask",
+				new Map([["dupes", "b.png"]]),
+				new Set(),
+			).complete,
+		).toBe(true);
+	});
+
+	it("builds impact rows with size and modified date, degrading to explicit unknowns", () => {
+		const mtime = Date.UTC(2026, 7, 29);
+		const rows = buildImpactRows(
+			["a.png", "gone.png"],
+			new Map([["a.png", { size: 2048, mtime }]]),
+		);
+		expect(rows).toEqual([
+			{
+				path: "a.png",
+				size: "2.0 KB",
+				mtime: new Date(mtime).toLocaleDateString(),
+			},
+			{
+				path: "gone.png",
+				size: "Size unknown",
+				mtime: "Modified date unknown",
+			},
+		]);
 	});
 });

@@ -33,9 +33,10 @@ vi.mock("obsidian", async (importOriginal) => {
 	};
 });
 
-vi.mock("../report/render-issues", () => ({
-	renderIssueList: renderIssueListMock,
-}));
+vi.mock("../report/render-issues", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../report/render-issues")>();
+	return { ...actual, renderIssueList: renderIssueListMock };
+});
 
 vi.mock("../report/render-summary", () => ({
 	renderSummary: renderSummaryMock,
@@ -764,6 +765,7 @@ describe("InspectorView report filter wiring", () => {
 	it("reports an unexpected batch-fix callback rejection", async () => {
 		const fixableIssue: Issue = {
 			...makeIssue("broken-links", "warning", "fixable"),
+			eligibility: "eligible",
 			fixAction: {
 				kind: "remove-link-text",
 				label: "Remove link",
@@ -800,6 +802,7 @@ describe("InspectorView report filter wiring", () => {
 	it("describes mixed fix actions without claiming every action trashes a file", () => {
 		const modifyIssue: Issue = {
 			...makeIssue("broken-links", "warning", "modify-link"),
+			eligibility: "eligible",
 			fixAction: {
 				kind: "remove-link-text",
 				label: "Remove link",
@@ -810,6 +813,7 @@ describe("InspectorView report filter wiring", () => {
 		};
 		const trashIssue: Issue = {
 			...makeIssue("empty-notes", "warning", "trash-note"),
+			eligibility: "eligible",
 			fixAction: {
 				kind: "trash-file",
 				label: "Delete",

@@ -5,6 +5,7 @@ import { formatSize } from "../utils/format";
 import { renderFindingEvidence } from "./render-evidence";
 import { setTooltip } from "obsidian";
 import { getParentFolder } from "../utils/paths";
+import { describeEligibility, resolveEligibility } from "../fix/confirm-modal";
 
 export type IssueListConfig = {
 	issues: Issue[];
@@ -18,6 +19,27 @@ export type IssueListConfig = {
 	onExcludeFolder?: (issue: Issue) => void;
 	onOpenScannerSettings?: (scannerId: ScannerId) => void;
 };
+
+export type BulkFixSelection = {
+	/** Only eligibility === "eligible" issues may enter a one-click batch. */
+	bulk: Issue[];
+	reviewRequired: number;
+	blocked: number;
+};
+
+export function selectBulkFixable(selected: Issue[]): BulkFixSelection {
+	const bulk: Issue[] = [];
+	let reviewRequired = 0;
+	let blocked = 0;
+	for (const issue of selected) {
+		if (!issue.fixAction) continue;
+		const eligibility = resolveEligibility(issue);
+		if (eligibility === "eligible") bulk.push(issue);
+		else if (eligibility === "blocked") blocked += 1;
+		else reviewRequired += 1;
+	}
+	return { bulk, reviewRequired, blocked };
+}
 
 export function renderIssueList(container: HTMLElement, config: IssueListConfig) {
 	const grouped = groupByScanner(config.issues);
@@ -114,6 +136,13 @@ function renderIssueDetails(container: HTMLElement, issue: Issue, config: IssueL
 				});
 			}
 		}
+	}
+
+	if (issue.fixAction) {
+		details.createDiv({
+			cls: "vi-issue-fix-reason",
+			text: describeEligibility(issue).reason,
+		});
 	}
 
 	renderFindingEvidence(details, issue);
@@ -300,6 +329,17 @@ function getIssueDetailRows(issue: Issue): IssueDetailRow[] {
 	if (issue.scannerId === "large-files") {
 		const type = issue.evidence.type;
 		if (typeof type === "string") rows.push({ label: "Type", value: type });
+	}
+
+	if (issue.fixAction) {
+		const eligibility = resolveEligibility(issue);
+		rows.push({
+			label: "Fix",
+			items: [{
+				text: describeEligibility(issue).status,
+				className: `vi-eligibility-badge vi-eligibility-${eligibility}`,
+			}],
+		});
 	}
 
 	return rows;

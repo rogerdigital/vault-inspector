@@ -187,6 +187,10 @@ button.vi-resolved-header:focus-visible { outline: 2px solid var(--interactive-a
 	.vi-explanation-row { grid-template-columns: minmax(0, 1fr); }
 	.vi-explanation-row > * + * { margin: 2px 0 0; }
 	.vi-explanation-value { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+	.vi-impact-row { flex-direction: column; }
+	.vi-impact-row > * { margin: 0 0 2px; }
+	.vi-impact-card-title-row { flex-direction: column; }
+	.vi-bulk-excluded-note { overflow-wrap: anywhere; }
 }
 
 /* Back to top */
@@ -197,8 +201,6 @@ button.vi-resolved-header:focus-visible { outline: 2px solid var(--interactive-a
 /* Confirm modal */
 .vi-confirm-modal h3 { margin: 0 0 12px; }
 .vi-confirm-modal p { margin: 0 0 12px; color: var(--text-muted); }
-.vi-file-list { max-height: 300px; overflow-y: auto; margin-bottom: 16px; border: 1px solid var(--background-modifier-border); border-radius: 4px; padding: 8px; }
-.vi-file-list-item { font-size: 12px; font-family: var(--font-monospace); padding: 2px 0; color: var(--text-muted); }
 .vi-confirm-buttons { display: flex; justify-content: flex-end; }
 .vi-confirm-buttons > * { margin-left: 8px; }
 .vi-large-report-buttons { flex-wrap: wrap; margin: -8px 0 0 -8px; }
@@ -217,3 +219,26 @@ button.vi-resolved-header:focus-visible { outline: 2px solid var(--interactive-a
 	.vi-large-report-buttons > * { width: 100%; margin: 0; }
 	.vi-large-report-buttons > * + * { margin-top: 8px; }
 }
+
+/* Fix impact preview */
+.vi-eligibility-badge { display: inline-flex; align-items: center; flex: 0 0 auto; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; line-height: 1.5; text-transform: uppercase; }
+.vi-eligibility-eligible { background: var(--background-modifier-success); color: var(--text-success); }
+.vi-eligibility-review-required { background: var(--background-modifier-hover); color: var(--text-warning); }
+.vi-eligibility-blocked { background: var(--background-secondary); color: var(--text-error); }
+.vi-impact-card { min-width: 0; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--background-modifier-border); border-radius: 4px; }
+.vi-impact-card-muted { opacity: 0.7; }
+.vi-impact-card-title-row { display: flex; flex-wrap: wrap; align-items: baseline; }
+.vi-impact-card-title-row > * { min-width: 0; margin: 0 8px 4px 0; }
+.vi-impact-card-title { font-weight: 600; overflow-wrap: anywhere; }
+.vi-impact-reason { margin-top: 4px; color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.vi-impact-rows { margin-top: 8px; }
+.vi-impact-row { display: flex; flex-wrap: wrap; align-items: baseline; min-width: 0; }
+.vi-impact-row > * { min-width: 0; margin: 0 8px 4px 0; }
+.vi-impact-row-path { font-family: var(--font-monospace); font-size: 12px; overflow-wrap: anywhere; }
+.vi-impact-row-meta { color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.vi-impact-coverage { margin-top: 4px; color: var(--text-muted); font-size: 12px; }
+.vi-impact-keep { margin-top: 4px; color: var(--text-normal); font-size: 12px; overflow-wrap: anywhere; }
+.vi-review-checkbox { display: flex; align-items: flex-start; margin-top: 6px; }
+.vi-review-checkbox input { margin: 2px 8px 0 0; }
+.vi-issue-fix-reason { color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.vi-bulk-excluded-note { color: var(--text-faint); font-size: 12px; }
