@@ -117,6 +117,21 @@ export function buildIssueFilterView(
 	};
 }
 
+export function countNewConfirmedFindings(
+	issues: Issue[],
+	statuses: ReadonlyMap<string, CurrentFindingStatus>,
+): { errors: number; warnings: number } {
+	let errors = 0;
+	let warnings = 0;
+	for (const issue of issues) {
+		if (statuses.get(issue.fingerprint) !== "new") continue;
+		if (issue.classification !== "confirmed") continue;
+		if (issue.severity === "error") errors += 1;
+		else if (issue.severity === "warning") warnings += 1;
+	}
+	return { errors, warnings };
+}
+
 function compareIssues(
 	left: Issue,
 	right: Issue,

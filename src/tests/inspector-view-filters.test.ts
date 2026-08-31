@@ -227,6 +227,7 @@ describe("InspectorView report filter wiring", () => {
 		expect.soft(summaryOptions).toEqual({
 			comparison: (view as any).model.comparison,
 			onFilterStatus: expect.any(Function),
+			onReviewNewFindings: expect.any(Function),
 		});
 		expect.soft(summaryOptions).not.toHaveProperty("issues");
 		expect.soft(renderIssueListMock).toHaveBeenLastCalledWith(
@@ -563,6 +564,45 @@ describe("InspectorView report filter wiring", () => {
 			duplicateInfo,
 			duplicateWarning,
 		]);
+	});
+
+	it("applies and releases the review-new preset without hiding other results", () => {
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		const newError = makeIssue("broken-links", "error", "new-confirmed");
+		const newCandidate = makeIssue("broken-links", "error", "new-candidate", "candidate");
+		const persisting = makeIssue("duplicate-files", "warning", "persisting-confirmed");
+		(view as any).model.result = {
+			...result,
+			issues: [newError, newCandidate, persisting],
+		};
+		(view as any).model.comparison = comparable([
+			["new-confirmed", "new"],
+			["new-candidate", "new"],
+			["persisting-confirmed", "persisting"],
+		]);
+		(view as any).model.filterSeverity = "warning";
+
+		(view as any).render();
+		renderSummaryMock.mock.lastCall?.[2].onReviewNewFindings();
+
+		expect((view as any).model.filterStatus).toBe("new");
+		expect((view as any).model.filterClassification).toBe("confirmed");
+		expect((view as any).model.filterSeverity).toBeNull();
+		expect(renderIssueListMock).toHaveBeenLastCalledWith(
+			expect.any(FakeElement),
+			expect.objectContaining({ issues: [newError] }),
+		);
+
+		renderSummaryMock.mock.lastCall?.[2].onReviewNewFindings();
+
+		expect((view as any).model.filterStatus).toBeNull();
+		expect((view as any).model.filterClassification).toBeNull();
+		expect(renderIssueListMock).toHaveBeenLastCalledWith(
+			expect.any(FakeElement),
+			expect.objectContaining({ issues: [newError, persisting, newCandidate] }),
+		);
 	});
 
 	it("retains globally available facets across scans and resets vanished facets", () => {

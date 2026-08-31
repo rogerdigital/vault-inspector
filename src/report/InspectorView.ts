@@ -252,6 +252,20 @@ export class InspectorView extends ItemView {
 				this.model.filterStatus = this.model.filterStatus === status ? null : status;
 				this.render();
 			},
+			onReviewNewFindings: () => {
+				if (
+					this.model.filterStatus === "new"
+					&& this.model.filterClassification === "confirmed"
+				) {
+					this.model.filterStatus = null;
+					this.model.filterClassification = null;
+				} else {
+					this.model.filterStatus = "new";
+					this.model.filterClassification = "confirmed";
+					this.model.filterSeverity = null;
+				}
+				this.render();
+			},
 		});
 		renderOperationOutcomes(
 			container,

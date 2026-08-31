@@ -242,3 +242,19 @@ button.vi-resolved-header:focus-visible { outline: 2px solid var(--interactive-a
 .vi-review-checkbox input { margin: 2px 8px 0 0; }
 .vi-issue-fix-reason { color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
 .vi-bulk-excluded-note { color: var(--text-faint); font-size: 12px; }
+
+/* Changes-first summary */
+.vi-changes { margin-bottom: 14px; padding: 10px 12px; border: 1px solid var(--background-modifier-border); border-radius: 6px; background: var(--background-secondary); }
+.vi-changes-title { margin: 0 0 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+.vi-changes-meta { margin: 0 0 8px; color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.vi-changes-stats { display: flex; flex-wrap: wrap; margin-bottom: 8px; }
+.vi-changes-stats > * { margin: 0 12px 8px 0; }
+.vi-changes-stats > *:last-child { margin-right: 0; }
+.vi-changes .vi-comparison-note { margin-bottom: 0; }
+button.vi-review-new-btn { appearance: none; height: auto; min-height: 0; padding: 6px 12px; border: 1px solid var(--interactive-accent); border-radius: 4px; box-shadow: none; background: var(--interactive-accent); color: var(--text-on-accent); cursor: pointer; font: inherit; font-size: 12px; line-height: normal; }
+button.vi-review-new-btn:hover, button.vi-review-new-btn:active { opacity: 0.85; }
+button.vi-review-new-btn:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+
+@media (max-width: 500px) {
+	.vi-changes-stats > * { margin: 0 8px 8px 0; }
+}
