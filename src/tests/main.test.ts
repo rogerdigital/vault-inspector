@@ -590,6 +590,7 @@ describe("VaultInspectorPlugin", () => {
 			workspace: {
 				getLeavesOfType: vi.fn(() => [leaf]),
 				revealLeaf: vi.fn(async () => {}),
+				onLayoutReady: vi.fn(),
 			},
 			vault: {
 				getAbstractFileByPath: vi.fn(),

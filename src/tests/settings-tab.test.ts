@@ -27,6 +27,7 @@ describe("InspectorSettingTab", () => {
 
 		expect(groups.map((group) => group.heading)).toEqual([
 			"Enabled scanners",
+			"Automatic scanning",
 			"Fix actions",
 			"Thresholds",
 			"Tags",
@@ -52,6 +53,10 @@ describe("InspectorSettingTab", () => {
 		expect(namesByHeading.get("Scanner-specific ignored folders")).toEqual(
 			SCANNER_IDS.map((id) => SCANNER_LABELS[id]),
 		);
+		expect(namesByHeading.get("Automatic scanning")).toEqual([
+			"Automatic scan interval (hours)",
+			"Automatic scan network checks",
+		]);
 		expect(names).toEqual(expect.arrayContaining([
 			"Enable fix actions",
 			"Duplicate file keep mode",

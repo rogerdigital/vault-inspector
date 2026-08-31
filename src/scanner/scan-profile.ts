@@ -8,7 +8,9 @@ type PresentationOnlySettingKey =
 	| "enableFixActions"
 	| "duplicateKeepMode"
 	| "ignoredIssueFingerprints"
-	| "reportFolderPath";
+	| "reportFolderPath"
+	| "automaticScanIntervalHours"
+	| "automaticScanNetworkChecks";
 type DetectionSettingKey = Exclude<keyof InspectorSettings, PresentationOnlySettingKey>;
 
 export async function createScanProfile(settings: InspectorSettings): Promise<string> {
