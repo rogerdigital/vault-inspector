@@ -12,6 +12,24 @@ export type ComparisonUnavailableReason =
 	| "settings-changed"
 	| "semantics-changed";
 
+/**
+ * Shared compatibility gate for baseline comparisons. Order matters and
+ * mirrors compareScanResult: a comparison-version (semantics) mismatch is
+ * reported before a scan-profile (settings) mismatch, because fingerprint
+ * identity itself cannot be trusted across semantics changes.
+ */
+export type BaselineMismatchReason = "settings-changed" | "semantics-changed";
+
+export function resolveBaselineCompatibility(
+	baselineComparisonVersion: number,
+	baselineScanProfile: string,
+	currentProfile: string,
+): BaselineMismatchReason | null {
+	if (baselineComparisonVersion !== COMPARISON_VERSION) return "semantics-changed";
+	if (baselineScanProfile !== currentProfile) return "settings-changed";
+	return null;
+}
+
 export type LifecycleComparison = {
 	available: boolean;
 	reason?: ComparisonUnavailableReason;
@@ -27,11 +45,13 @@ export function compareScanResult(
 	currentProfile: string,
 ): LifecycleComparison {
 	if (snapshot === null) return unavailable("first-scan");
-	if (snapshot.comparisonVersion !== COMPARISON_VERSION) {
-		return { ...unavailable("semantics-changed"), previousScanAt: snapshot.createdAt };
-	}
-	if (snapshot.scanProfile !== currentProfile) {
-		return { ...unavailable("settings-changed"), previousScanAt: snapshot.createdAt };
+	const mismatch = resolveBaselineCompatibility(
+		snapshot.comparisonVersion,
+		snapshot.scanProfile,
+		currentProfile,
+	);
+	if (mismatch) {
+		return { ...unavailable(mismatch), previousScanAt: snapshot.createdAt };
 	}
 
 	const previousByFingerprint = new Map(

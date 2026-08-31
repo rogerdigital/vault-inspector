@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Issue, ScanResult } from "../scanner/Issue";
-import { compareScanResult } from "../scanner/result-diff";
+import {
+	compareScanResult,
+	resolveBaselineCompatibility,
+} from "../scanner/result-diff";
 import {
 	COMPARISON_VERSION,
 	createScanSnapshot,
@@ -178,5 +181,29 @@ describe("compareScanResult", () => {
 
 		expect(result.statuses.size).toBe(10_000);
 		expect(result.resolvedIssues).toHaveLength(5_000);
+	});
+});
+
+describe("resolveBaselineCompatibility", () => {
+	it("accepts a matching comparison version and scan profile", () => {
+		expect(resolveBaselineCompatibility(2, "profile", "profile")).toBeNull();
+	});
+
+	it("rejects a changed comparison version before checking settings", () => {
+		expect(resolveBaselineCompatibility(3, "profile", "profile")).toBe(
+			"semantics-changed",
+		);
+	});
+
+	it("prefers semantics-changed when both version and profile differ", () => {
+		expect(resolveBaselineCompatibility(3, "old-profile", "new-profile")).toBe(
+			"semantics-changed",
+		);
+	});
+
+	it("rejects a changed scan profile", () => {
+		expect(resolveBaselineCompatibility(2, "old-profile", "new-profile")).toBe(
+			"settings-changed",
+		);
 	});
 });

@@ -14,6 +14,10 @@ import { requestPublicHttpStatus } from "./public-http";
 import type { ExternalRequestAdapter } from "../src/scanner/ScanContext";
 import { createScanProfile } from "../src/scanner/scan-profile";
 import { COMPARISON_VERSION } from "../src/snapshot/scan-snapshot";
+import {
+	resolveBaselineCompatibility,
+	type BaselineMismatchReason,
+} from "../src/scanner/result-diff";
 
 type OutputFormat = "json" | "markdown";
 type FailOn = "any" | "error" | "warning" | "new" | "none";
@@ -45,6 +49,22 @@ export type CliComparison = {
 	scanProfile: string;
 	comparisonVersion: number;
 };
+
+/**
+ * A parsed --baseline file. "current" baselines carry well-formed
+ * comparison.scanProfile/comparisonVersion metadata (written by the CLI
+ * since Task 4.1) and include ignoredIssues fingerprints, mirroring
+ * createScanSnapshot. "legacy" baselines are pre-4.1 reports without the
+ * comparison object; their fingerprint extraction is frozen to `issues`.
+ */
+export type BaselineReport =
+	| {
+			kind: "current";
+			fingerprints: Set<string>;
+			scanProfile: string;
+			comparisonVersion: number;
+		}
+	| { kind: "legacy"; fingerprints: Set<string> };
 
 type CliOptions = {
 	command: "scan";
@@ -139,17 +159,34 @@ export async function runCli(args: string[], runtime: CliRuntime = {}): Promise<
 				? (progress) => writeStderr(formatProgressLine(progress))
 				: undefined,
 		});
-		const baselineFingerprints = parsed.baselinePath
-			? await readBaselineFingerprints(parsed.baselinePath)
+		const baseline = parsed.baselinePath
+			? await readBaseline(parsed.baselinePath)
 			: null;
-		const comparison = buildCliComparison(scanResult, baselineFingerprints, scanProfile);
+		const mismatch = baseline?.kind === "current"
+			? resolveBaselineCompatibility(
+					baseline.comparisonVersion,
+					baseline.scanProfile,
+					scanProfile,
+				)
+			: null;
+		if (baseline?.kind === "legacy") {
+			writeStderr(
+				`Baseline ${parsed.baselinePath} has no scan profile metadata; comparing fingerprints only (legacy mode). Regenerate the baseline to enable profile-aware comparison.\n`,
+			);
+		}
+		if (mismatch) {
+			writeStderr(
+				`Baseline is not comparable (reason: ${mismatch}). Regenerate the baseline or rerun without --baseline.\n`,
+			);
+		}
+		const comparison = buildCliComparison(scanResult, baseline, scanProfile, mismatch);
 		const result = applyOutputFilters(
 			scanResult,
 			parsed,
-			baselineFingerprints ?? new Set<string>(),
+			mismatch ? null : baseline ? baseline.fingerprints : new Set<string>(),
 		);
 		const output = formatResult(result, vaultPath, parsed.format, comparison);
-		const exitCode = getExitCode(result, parsed.failOn);
+		const exitCode = mismatch ? 2 : getExitCode(result, parsed.failOn);
 
 		if (parsed.outputPath) {
 			await writeFile(parsed.outputPath, output, "utf8");
@@ -437,7 +474,7 @@ type CliScanResult = Omit<ScanResult, "issues" | "ignoredIssues"> & {
 function applyOutputFilters(
 	result: ScanResult,
 	options: CliOptions,
-	baselineFingerprints: Set<string>,
+	baselineFingerprints: Set<string> | null,
 ): CliScanResult {
 	const filterIssue = (issue: ScanResult["issues"][number]) => {
 		if (options.severity && !options.severity.includes(issue.severity)) return false;
@@ -449,12 +486,17 @@ function applyOutputFilters(
 		return true;
 	};
 
-	const annotate = (issue: ScanResult["issues"][number]): CliIssue => ({
-		...issue,
-		isNew: baselineFingerprints.size === 0
-			? true
-			: !baselineFingerprints.has(issue.fingerprint),
-	});
+	// null means the baseline is not comparable: no isNew annotation is
+	// fabricated from an incompatible baseline.
+	const annotate = (issue: ScanResult["issues"][number]): CliIssue =>
+		baselineFingerprints === null
+			? issue
+			: {
+					...issue,
+					isNew: baselineFingerprints.size === 0
+						? true
+						: !baselineFingerprints.has(issue.fingerprint),
+				};
 
 	return {
 		...result,
@@ -463,29 +505,71 @@ function applyOutputFilters(
 	};
 }
 
-async function readBaselineFingerprints(path: string): Promise<Set<string>> {
+async function readBaseline(path: string): Promise<BaselineReport> {
 	const raw = await readFile(path, "utf8");
-	const parsed = JSON.parse(raw) as { issues?: Array<{ fingerprint?: unknown }> };
-	return new Set(
-		(parsed.issues ?? [])
+	const parsed = JSON.parse(raw) as {
+		issues?: Array<{ fingerprint?: unknown }>;
+		ignoredIssues?: Array<{ fingerprint?: unknown }>;
+		comparison?: unknown;
+	};
+
+	const readFingerprints = (
+		issues: Array<{ fingerprint?: unknown }> | undefined,
+	): string[] =>
+		(issues ?? [])
 			.map((issue) => issue.fingerprint)
-			.filter((fingerprint): fingerprint is string => typeof fingerprint === "string"),
+			.filter((fingerprint): fingerprint is string => typeof fingerprint === "string");
+
+	if (parsed.comparison === undefined) {
+		return { kind: "legacy", fingerprints: new Set(readFingerprints(parsed.issues)) };
+	}
+
+	if (!isBaselineComparisonMetadata(parsed.comparison)) {
+		throw new Error("Invalid baseline: comparison metadata is malformed");
+	}
+
+	return {
+		kind: "current",
+		fingerprints: new Set([
+			...readFingerprints(parsed.issues),
+			...readFingerprints(parsed.ignoredIssues),
+		]),
+		scanProfile: parsed.comparison.scanProfile,
+		comparisonVersion: parsed.comparison.comparisonVersion,
+	};
+}
+
+function isBaselineComparisonMetadata(
+	value: unknown,
+): value is { scanProfile: string; comparisonVersion: number } {
+	if (typeof value !== "object" || value === null) return false;
+	const record = value as { scanProfile?: unknown; comparisonVersion?: unknown };
+	return (
+		typeof record.scanProfile === "string" &&
+		record.scanProfile !== "" &&
+		typeof record.comparisonVersion === "number" &&
+		Number.isSafeInteger(record.comparisonVersion) &&
+		record.comparisonVersion > 0
 	);
 }
 
 /**
  * Builds the additive comparison metadata for one CLI run. Without a
  * baseline the comparison is honestly unavailable (zero counts, never
- * "everything is new"). With a baseline — always fingerprint-only today —
- * the mode is "legacy" and the counts cover the FULL unfiltered result
+ * "everything is new"). A current-format baseline that fails
+ * resolveBaselineCompatibility is a setup failure: available is false, the
+ * reason names the mismatch, and all counts are zero. Legacy baselines are
+ * compared fingerprint-only ("legacy"); matched current baselines compare
+ * under "profile". Counts always cover the FULL unfiltered result
  * (issues + ignoredIssues), mirroring compareScanResult in
  * src/scanner/result-diff.ts so output filters never inflate
  * resolvedIssues.
  */
 function buildCliComparison(
 	result: ScanResult,
-	baseline: Set<string> | null,
+	baseline: BaselineReport | null,
 	scanProfile: string,
+	mismatch: BaselineMismatchReason | null,
 ): CliComparison {
 	const metadata = {
 		scanProfile,
@@ -512,7 +596,7 @@ function buildCliComparison(
 	let newIssues = 0;
 	let persistingIssues = 0;
 	for (const fingerprint of currentFingerprints) {
-		if (baseline.has(fingerprint)) {
+		if (baseline.fingerprints.has(fingerprint)) {
 			persistingIssues++;
 		} else {
 			newIssues++;
@@ -520,13 +604,25 @@ function buildCliComparison(
 	}
 
 	let resolvedIssues = 0;
-	for (const fingerprint of baseline) {
+	for (const fingerprint of baseline.fingerprints) {
 		if (!currentFingerprints.has(fingerprint)) resolvedIssues++;
+	}
+
+	if (mismatch) {
+		return {
+			available: false,
+			mode: "profile",
+			reason: mismatch,
+			newIssues: 0,
+			persistingIssues: 0,
+			resolvedIssues: 0,
+			...metadata,
+		};
 	}
 
 	return {
 		available: true,
-		mode: "legacy",
+		mode: baseline.kind === "current" ? "profile" : "legacy",
 		newIssues,
 		persistingIssues,
 		resolvedIssues,
