@@ -19,19 +19,16 @@ import { showConfirmModal } from "./fix/confirm-modal";
 import { runFixBatch } from "./fix/fix-runner";
 import type { DispositionOutcome } from "./fix/action-outcomes";
 import { parsePluginData, type PersistedPluginData } from "./settings/plugin-data";
-import {
-	createScanSnapshot,
-	type ScanSnapshot,
-} from "./snapshot/scan-snapshot";
-import {
-	appendScanHistoryEntry,
-	createScanHistoryEntry,
-	type ScanHistoryEntry,
-	type ScanTrigger,
-} from "./snapshot/scan-history";
+import type { ScanSnapshot } from "./snapshot/scan-snapshot";
+import type { ScanHistoryEntry } from "./snapshot/scan-history";
 import { createScanProfile } from "./scanner/scan-profile";
-import { compareScanResult } from "./scanner/result-diff";
-import type { ScanResult } from "./scanner/Issue";
+import {
+	acceptScanResult,
+	runScanOperation,
+	runScanSession,
+	type ScanDeps,
+	type ScanSessionHooks,
+} from "./scanner/scan-session";
 import { SCANNER_LABELS } from "./scanner/Issue";
 import { openPluginSettings } from "./utils/open-plugin-settings";
 
@@ -175,7 +172,7 @@ export default class VaultInspectorPlugin extends Plugin {
 					this.settings.ignoredIssueFingerprints,
 					fingerprints,
 				);
-				await this.performScanAndRenderHandled(view);
+				await this.performScanAndRender(view);
 				view.setOperationOutcomes(requestedIssues.map((issue): DispositionOutcome => ({
 					fingerprint: issue.fingerprint,
 					outcome: "ignored",
@@ -205,7 +202,7 @@ export default class VaultInspectorPlugin extends Plugin {
 				this.settings.ignoredIssueFingerprints = this.settings.ignoredIssueFingerprints.filter(
 					(fp) => !toRestore.has(fp),
 				);
-				await this.performScanAndRenderHandled(view);
+				await this.performScanAndRender(view);
 				view.setOperationOutcomes(requestedIssues.map((issue): DispositionOutcome => ({
 					fingerprint: issue.fingerprint,
 					outcome: "restored",
@@ -233,11 +230,17 @@ export default class VaultInspectorPlugin extends Plugin {
 					let acceptanceError: unknown;
 					if (batch.verificationResult) {
 						try {
-							await this.acceptScanResult(
-								view,
+							const accepted = await acceptScanResult(
+								this.scanDeps(),
+								this.viewHooks(view),
 								batch.verificationResult,
 								scanProfile,
 							);
+							if (accepted.persistWarning) {
+								new Notice(
+									`Scan completed, but the comparison snapshot could not be saved: ${accepted.persistWarning}`,
+								);
+							}
 						} catch (error) {
 							acceptanceFailed = true;
 							acceptanceError = error;
@@ -287,7 +290,7 @@ export default class VaultInspectorPlugin extends Plugin {
 					this.settings.ignoredIssueFingerprints,
 					[issue.fingerprint],
 				);
-				await this.performScanAndRenderHandled(view);
+				await this.performScanAndRender(view);
 				view.setOperationOutcomes([{
 					fingerprint: issue.fingerprint,
 					outcome: "ignored",
@@ -316,7 +319,7 @@ export default class VaultInspectorPlugin extends Plugin {
 					this.settings.ignoredFoldersByScanner[request.scannerId],
 					[request.folder],
 				);
-				await this.performScanAndRenderHandled(view);
+				await this.performScanAndRender(view);
 				view.setOperationOutcomes([{
 					scannerId: request.scannerId,
 					outcome: "excluded",
@@ -339,17 +342,8 @@ export default class VaultInspectorPlugin extends Plugin {
 	private scanAndRender(view: InspectorView): Promise<void> {
 		return this.enqueueOperation(async () => {
 			view.setOperationOutcomes([]);
-			await this.performScanAndRenderHandled(view);
-		});
-	}
-
-	private async performScanAndRenderHandled(view: InspectorView): Promise<void> {
-		try {
 			await this.performScanAndRender(view);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			new Notice(`Vault Inspector scan failed: ${message}`);
-		}
+		});
 	}
 
 	private enqueueOperation(operation: () => Promise<void>): Promise<void> {
@@ -361,79 +355,53 @@ export default class VaultInspectorPlugin extends Plugin {
 	}
 
 	private async performScanAndRender(view: InspectorView) {
-		const scanSettings = structuredClone(this.settings);
-		const scanProfile = await createScanProfile(scanSettings);
-		try {
-			const result = await this.scan(view, scanSettings);
-			if (!result) return;
-			await this.acceptScanResult(view, result, scanProfile);
-		} catch (error) {
-			this.stopScanningBestEffort(view);
-			throw error;
+		const outcome = await runScanSession(
+			this.scanDeps(),
+			this.settings,
+			this.viewHooks(view),
+		);
+		if (outcome.status === "failed") {
+			new Notice(`Vault Inspector scan failed: ${outcome.message}`);
+			return;
 		}
-	}
-
-	private async acceptScanResult(
-		view: InspectorView,
-		result: ScanResult,
-		scanProfile: string,
-		trigger: ScanTrigger = "manual",
-	) {
-		const comparison = compareScanResult(
-			result,
-			this.lastSuccessfulSnapshot,
-			scanProfile,
-		);
-		view.setResult(result, comparison);
-
-		const nextSnapshot = createScanSnapshot(
-			result,
-			scanProfile,
-			this.manifest.version,
-		);
-		const nextHistory = appendScanHistoryEntry(
-			this.scanHistory,
-			createScanHistoryEntry({
-				result,
-				comparison,
-				scanProfile,
-				toolVersion: this.manifest.version,
-				trigger,
-			}),
-		);
-		try {
-			await this.persistPluginData({
-				acceptedSnapshot: nextSnapshot,
-				acceptedHistory: nextHistory,
-			});
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
+		if (outcome.persistWarning) {
 			new Notice(
-				`Scan completed, but the comparison snapshot could not be saved: ${message}`,
+				`Scan completed, but the comparison snapshot could not be saved: ${outcome.persistWarning}`,
 			);
 		}
 	}
 
-	private async scan(view: InspectorView, settings: InspectorSettings) {
-		try {
-			view.setScanning(true);
-			return await this.scanRunner.run(this.app, settings, {
-				onProgress: (progress) => view.setScanProgress(progress),
-			});
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			new Notice(`Vault Inspector scan failed: ${message}`);
-			this.stopScanningBestEffort(view);
-			return null;
-		}
+	private scanDeps(): ScanDeps {
+		return {
+			app: this.app,
+			runner: this.scanRunner,
+			createProfile: createScanProfile,
+			toolVersion: this.manifest.version,
+			getSnapshot: () => this.lastSuccessfulSnapshot,
+			getHistory: () => this.scanHistory,
+			persistAccepted: (accepted) => this.persistPluginData(accepted),
+		};
 	}
 
-	private stopScanningBestEffort(view: InspectorView) {
-		try {
-			view.setScanning(false);
-		} catch {
-			// Preserve the original scan outcome when view cleanup is unavailable.
+	private viewHooks(view: InspectorView): ScanSessionHooks {
+		return {
+			onScanningChange: (scanning) => view.setScanning(scanning),
+			onProgress: (progress) => view.setScanProgress(progress),
+			onResult: (result, comparison) => view.setResult(result, comparison),
+		};
+	}
+
+	private async scan(view: InspectorView, settings: InspectorSettings) {
+		const outcome = await runScanOperation(
+			this.scanDeps(),
+			settings,
+			this.viewHooks(view),
+		);
+		if (outcome.status === "failed") {
+			new Notice(`Vault Inspector scan failed: ${outcome.message}`);
+			return null;
 		}
+		return outcome.result;
 	}
 
 	private async exportReport() {
