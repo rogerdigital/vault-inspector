@@ -35,6 +35,24 @@ export type FixAction = {
 	selection?: KeepOneSelection;
 };
 
+/**
+ * Whether a fix action may execute, derived centrally from the finding's
+ * classification, action-evidence completeness, and reference coverage.
+ * Never part of a fingerprint.
+ */
+export type FixEligibility = "eligible" | "review-required" | "blocked";
+
+/**
+ * Impact preview for a fix action, derived from the shared reference index.
+ * Plain JSON values only. Never part of a fingerprint.
+ */
+export type FixImpact = {
+	filesChanged: number;
+	filesTrashed: number;
+	inboundReferences: number;
+	coverageComplete: boolean;
+};
+
 export type FindingClassification = "confirmed" | "candidate" | "unverified";
 
 export type FindingExplanation = {
@@ -55,6 +73,10 @@ export type Issue = {
 	evidence: Record<string, string | number | boolean>;
 	fingerprint: string;
 	fixAction?: FixAction;
+	/** Policy decision for `fixAction`; absent when there is no fix action. */
+	eligibility?: FixEligibility;
+	/** Impact preview for `fixAction`; absent when there is no fix action. */
+	impact?: FixImpact;
 };
 
 export type ScanResult = {
