@@ -20,6 +20,10 @@ export type InspectorSettings = {
 	ignoredFoldersByScanner: Record<ScannerId, string[]>;
 	ignoreUnresolvedNoteLinks: boolean;
 	ignoredProperties: string[];
+	/** Hours after which a startup check may run one read-only scan. 0 disables. */
+	automaticScanIntervalHours: number;
+	/** Whether automatic scans may include the external-link scanner. */
+	automaticScanNetworkChecks: boolean;
 	reportFolderPath: string;
 };
 
@@ -50,5 +54,7 @@ export const DEFAULT_SETTINGS: InspectorSettings = {
 	ignoredFoldersByScanner: createEmptyIgnoredFoldersByScanner(),
 	ignoreUnresolvedNoteLinks: false,
 	ignoredProperties: [],
+	automaticScanIntervalHours: 0,
+	automaticScanNetworkChecks: false,
 	reportFolderPath: "Vault Inspector Reports",
 };

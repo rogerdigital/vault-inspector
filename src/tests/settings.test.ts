@@ -18,6 +18,24 @@ describe("DEFAULT_SETTINGS", () => {
 		expect(DEFAULT_SETTINGS.duplicateKeepMode).toBe("always-ask");
 	});
 
+	it("keeps automatic scans off by default", () => {
+		expect(DEFAULT_SETTINGS.automaticScanIntervalHours).toBe(0);
+		expect(DEFAULT_SETTINGS.automaticScanNetworkChecks).toBe(false);
+	});
+
+	it("preserves persisted automatic scan settings", async () => {
+		const plugin = new VaultInspectorPlugin({} as any, {} as any);
+		plugin.loadData = vi.fn(async () => ({
+			automaticScanIntervalHours: 24,
+			automaticScanNetworkChecks: true,
+		}));
+
+		await plugin.loadSettings();
+
+		expect(plugin.settings.automaticScanIntervalHours).toBe(24);
+		expect(plugin.settings.automaticScanNetworkChecks).toBe(true);
+	});
+
 	it("loads old settings with the safe duplicate keep default", async () => {
 		const plugin = new VaultInspectorPlugin({} as any, {} as any);
 		plugin.loadData = vi.fn(async () => ({

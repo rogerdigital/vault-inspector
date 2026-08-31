@@ -80,10 +80,42 @@ export class InspectorSettingTab extends PluginSettingTab {
 								}),
 						);
 					},
-				})),
-			},
-			{
-				heading: "Fix actions",
+					})),
+				},
+				{
+					heading: "Automatic scanning",
+					items: [
+						{
+							name: "Automatic scan interval (hours)",
+							desc: "Run one read-only scan after startup when the last successful scan is older than this many hours. 0 disables automatic scans.",
+							render: (setting) => {
+								setting.addSlider((slider) =>
+									slider.setLimits(0, 168, 1)
+										.setValue(this.plugin.settings.automaticScanIntervalHours)
+										.onChange(async (value) => {
+											this.plugin.settings.automaticScanIntervalHours = value;
+											await this.plugin.saveSettings();
+										}),
+								);
+							},
+						},
+						{
+							name: "Automatic scan network checks",
+							desc: "Allow automatic scans to include the external link scanner. Off by default, so automatic scans never touch the network without a separate opt-in.",
+							render: (setting) => {
+								setting.addToggle((toggle) =>
+									toggle.setValue(this.plugin.settings.automaticScanNetworkChecks)
+										.onChange(async (value) => {
+											this.plugin.settings.automaticScanNetworkChecks = value;
+											await this.plugin.saveSettings();
+										}),
+								);
+							},
+						},
+					],
+				},
+				{
+					heading: "Fix actions",
 				items: [
 					{
 						name: "Enable fix actions",

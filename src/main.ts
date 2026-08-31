@@ -29,6 +29,10 @@ import {
 	type ScanDeps,
 	type ScanSessionHooks,
 } from "./scanner/scan-session";
+import {
+	createStartupScanScheduler,
+	type StartupScanScheduler,
+} from "./scanner/scan-scheduler";
 import { SCANNER_LABELS } from "./scanner/Issue";
 import { openPluginSettings } from "./utils/open-plugin-settings";
 
@@ -37,7 +41,9 @@ export default class VaultInspectorPlugin extends Plugin {
 	lastSuccessfulSnapshot: ScanSnapshot | null = null;
 	scanHistory: ScanHistoryEntry[] = [];
 	private saveQueue: Promise<void> = Promise.resolve();
-	private operationQueue: Promise<void> = Promise.resolve();
+	private operationQueue: Promise<unknown> = Promise.resolve();
+	private operationRunning = false;
+	private startupScanScheduler: StartupScanScheduler | null = null;
 	scanRunner = new ScanRunner(async (url, method) => {
 		const response = await requestUrl({
 			url,
@@ -69,6 +75,19 @@ export default class VaultInspectorPlugin extends Plugin {
 		});
 		registerDefaultScanners(this.scanRunner);
 		this.addSettingTab(new InspectorSettingTab(this.app, this));
+
+		this.startupScanScheduler = createStartupScanScheduler({
+			getSettings: () => this.settings,
+			getSnapshot: () => this.lastSuccessfulSnapshot,
+			isBusy: () => this.operationRunning,
+			now: () => Date.now(),
+			whenSettled: (run) => this.app.workspace.onLayoutReady(run),
+			runAutomaticScan: (settings) =>
+				this.enqueueOperation(() =>
+					runScanSession(this.scanDeps(), settings, {}, "automatic")),
+			notify: (message) => new Notice(message),
+		});
+		this.startupScanScheduler.schedule();
 
 		this.addRibbonIcon("shield-check", "Run scan", () => this.runScan());
 	}
@@ -346,12 +365,21 @@ export default class VaultInspectorPlugin extends Plugin {
 		});
 	}
 
-	private enqueueOperation(operation: () => Promise<void>): Promise<void> {
+	private enqueueOperation<T>(operation: () => Promise<T>): Promise<T> {
 		const run = this.operationQueue
 			.catch(() => undefined)
-			.then(operation);
+			.then(() => this.runOperation(operation));
 		this.operationQueue = run.catch(() => undefined);
 		return run;
+	}
+
+	private async runOperation<T>(operation: () => Promise<T>): Promise<T> {
+		this.operationRunning = true;
+		try {
+			return await operation();
+		} finally {
+			this.operationRunning = false;
+		}
 	}
 
 	private async performScanAndRender(view: InspectorView) {
