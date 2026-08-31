@@ -3,6 +3,7 @@ import type { Issue, ScanProgressCallback, ScanResult, ScannerId } from "./Issue
 import type { ExternalRequestAdapter, ScanContext } from "./ScanContext";
 import type { InspectorSettings } from "../settings/settings";
 import { buildReferenceIndex } from "./reference-index";
+import { withActionPolicy } from "../fix/action-policy";
 
 export type Scanner = {
 	id: ScannerId;
@@ -123,10 +124,13 @@ export class ScanRunner {
 				});
 			});
 			for (const issue of result) {
-				if (ctx.ignoredFingerprints.has(issue.fingerprint)) {
-					ignoredIssues.push(issue);
+				// Central policy derivation: scanners stay pure detection
+				// units; eligibility/impact never enters the fingerprint.
+				const annotated = withActionPolicy(issue, referenceIndex);
+				if (ctx.ignoredFingerprints.has(annotated.fingerprint)) {
+					ignoredIssues.push(annotated);
 				} else {
-					issues.push(issue);
+					issues.push(annotated);
 				}
 			}
 			emitProgress("scanner-complete");

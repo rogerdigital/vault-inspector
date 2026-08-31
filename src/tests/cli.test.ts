@@ -673,6 +673,84 @@ describe("runCli", () => {
 		);
 	});
 
+	it("adds additive eligibility and impact fields to fix actions while keeping fix metadata stable", async () => {
+		await withVault(
+			{
+				"notes/source.md": "[Missing](missing.md)\n",
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"broken-links",
+				]);
+
+				expect(result.exitCode).toBe(1);
+				const issues = JSON.parse(result.stdout).issues;
+				expect(issues).toEqual([
+					expect.objectContaining({
+						scannerId: "broken-links",
+						classification: "confirmed",
+						eligibility: "eligible",
+						impact: {
+							filesChanged: 1,
+							filesTrashed: 0,
+							inboundReferences: 0,
+							coverageComplete: true,
+						},
+					}),
+				]);
+				// Every pre-existing fix-action field is emitted unchanged.
+				expect(issues[0].fixAction).toEqual({
+					kind: "remove-link-text",
+					label: "Remove link",
+					description:
+						'Replace "[Missing](missing.md)" with "Missing" in "notes/source.md"',
+					targetPaths: ["notes/source.md"],
+					original: "[Missing](missing.md)",
+					replacement: "Missing",
+				});
+			},
+		);
+	});
+
+	it("marks candidate trash findings as review-required in CLI output", async () => {
+		await withVault(
+			{
+				"empty.md": "# Empty\n",
+			},
+			async (vaultPath) => {
+				const result = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"empty-notes",
+				]);
+
+				expect(result.exitCode).toBe(1);
+				const issues = JSON.parse(result.stdout).issues;
+				expect(issues).toEqual([
+					expect.objectContaining({
+						scannerId: "empty-notes",
+						classification: "candidate",
+						eligibility: "review-required",
+						impact: {
+							filesChanged: 0,
+							filesTrashed: 1,
+							inboundReferences: 0,
+							coverageComplete: true,
+						},
+					}),
+				]);
+				expect(issues[0].fixAction).toMatchObject({
+					kind: "trash-file",
+					targetPaths: ["empty.md"],
+				});
+			},
+		);
+	});
+
 	it("ignores unresolved plain note wikilinks through a CLI flag", async () => {
 		await withVault(
 			{
