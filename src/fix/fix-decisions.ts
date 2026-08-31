@@ -11,6 +11,16 @@ export type FixDecisionState = {
 	decisions: FixDecision[];
 };
 
+/**
+ * Whether an issue's fix must never execute. Only the explicit `blocked`
+ * tier qualifies: a missing eligibility field degrades to review-required
+ * (fixable through an explicit per-item decision), and review-required
+ * items are gated by the confirmation plan's decision omission, not here.
+ */
+export function isBlockedFromExecution(issue: Issue): boolean {
+	return issue.fixAction !== undefined && issue.eligibility === "blocked";
+}
+
 export function buildFixDecisionState(
 	issues: Issue[],
 	mode: DuplicateKeepMode,
@@ -80,6 +90,7 @@ export function getFreshFixAction(
 		|| freshIssue?.fingerprint !== requestedIssue.fingerprint
 		|| !requested
 		|| !fresh
+		|| isBlockedFromExecution(freshIssue)
 	) {
 		return null;
 	}

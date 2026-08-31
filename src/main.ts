@@ -209,7 +209,8 @@ export default class VaultInspectorPlugin extends Plugin {
 					const fixSettings = structuredClone(this.settings);
 					const scanProfile = await createScanProfile(fixSettings);
 					const batch = await runFixBatch(issues, decisions, {
-						scan: () => this.scan(view, structuredClone(fixSettings)),
+						settings: () => fixSettings,
+						scan: (batchSettings) => this.scan(view, batchSettings),
 						execute: (action) => executeFixAction(this.app, action),
 					});
 					let acceptanceFailed = false;

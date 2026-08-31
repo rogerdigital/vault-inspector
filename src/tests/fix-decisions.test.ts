@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	buildFixDecisionState,
 	getFreshFixAction,
+	isBlockedFromExecution,
 	resolveDecisionAction,
 } from "../fix/fix-decisions";
 import type { FixAction, Issue } from "../scanner/Issue";
@@ -204,5 +205,41 @@ describe("fix decisions", () => {
 			fingerprint: "duplicates",
 			keepPath: "c.md",
 		})).toBeNull();
+	});
+});
+
+describe("action policy enforcement in fix decisions", () => {
+	it("identifies only explicitly blocked fix-bearing issues as blocked from execution", () => {
+		expect(
+			isBlockedFromExecution({ ...makePlainIssue(), eligibility: "blocked" as const }),
+		).toBe(true);
+		expect(
+			isBlockedFromExecution({ ...makePlainIssue(), eligibility: "eligible" as const }),
+		).toBe(false);
+		expect(
+			isBlockedFromExecution({
+				...makePlainIssue(),
+				eligibility: "review-required" as const,
+			}),
+		).toBe(false);
+		// A missing eligibility field degrades to review-required, never blocked.
+		expect(isBlockedFromExecution(makePlainIssue())).toBe(false);
+		expect(
+			isBlockedFromExecution({
+				...makePlainIssue(),
+				fixAction: undefined,
+				eligibility: "blocked" as const,
+			}),
+		).toBe(false);
+	});
+
+	it("refuses a fresh issue that the policy re-evaluated as blocked", () => {
+		const requested = makePlainIssue();
+		const fresh = { ...makePlainIssue(), eligibility: "blocked" as const };
+		expect(
+			getFreshFixAction(requested, fresh, {
+				fingerprint: requested.fingerprint,
+			}),
+		).toBeNull();
 	});
 });

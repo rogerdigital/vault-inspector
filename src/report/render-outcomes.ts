@@ -13,6 +13,19 @@ const OUTCOME_LABELS: Record<OperationOutcome["outcome"], string> = {
 	failed: "Failed",
 };
 
+/**
+ * Per-item outcome label. Failures carry their phase in the label because
+ * "the mutation happened but could not be verified" must not read as a
+ * generic failure; skipped items keep their phase in the details row.
+ */
+export function describeOutcomeLabel(outcome: OperationOutcome): string {
+	if (outcome.outcome === "failed" && "phase" in outcome) {
+		if (outcome.phase === "verification") return "Verification failed";
+		if (outcome.phase === "execution") return "Execution failed";
+	}
+	return OUTCOME_LABELS[outcome.outcome];
+}
+
 export function renderOperationOutcomes(
 	container: HTMLElement,
 	outcomes: OperationOutcome[],
@@ -55,10 +68,10 @@ export function renderOperationOutcomes(
 		const item = list.createEl("li", { cls: "vi-outcome-item" });
 		item.createSpan({
 			cls: `vi-outcome-label vi-outcome-${outcome.outcome}`,
-			text: OUTCOME_LABELS[outcome.outcome],
+			text: describeOutcomeLabel(outcome),
 		});
 		item.createDiv({ cls: "vi-outcome-message", text: outcome.message });
-		if ("phase" in outcome && outcome.phase) {
+		if ("phase" in outcome && outcome.phase && outcome.outcome !== "failed") {
 			item.createDiv({
 				cls: "vi-outcome-phase",
 				text: `Phase: ${outcome.phase}`,
