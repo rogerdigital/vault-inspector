@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { FixAction, Issue, ScanResult } from "../scanner/Issue";
+import { DEFAULT_SETTINGS } from "../settings/settings";
 import { runFixBatch } from "../fix/fix-runner";
 
 function action(
@@ -62,7 +63,7 @@ describe("runFixBatch", () => {
 		const batch = await runFixBatch(
 			[requested],
 			[{ fingerprint: requested.fingerprint }],
-			{ scan, execute: vi.fn().mockResolvedValue(2) },
+			{ settings: () => DEFAULT_SETTINGS, scan, execute: vi.fn().mockResolvedValue(2) },
 		);
 
 		expect(batch.outcomes).toEqual([{
@@ -84,7 +85,7 @@ describe("runFixBatch", () => {
 		const batch = await runFixBatch(
 			[requested],
 			[{ fingerprint: requested.fingerprint }],
-			{ scan, execute: vi.fn().mockResolvedValue(1) },
+			{ settings: () => DEFAULT_SETTINGS, scan, execute: vi.fn().mockResolvedValue(1) },
 		);
 
 		expect(batch.outcomes).toEqual([{
@@ -108,7 +109,7 @@ describe("runFixBatch", () => {
 		const batch = await runFixBatch(
 			[requested],
 			[{ fingerprint: requested.fingerprint }],
-			{ scan, execute },
+			{ settings: () => DEFAULT_SETTINGS, scan, execute },
 		);
 
 		expect(batch.outcomes).toEqual([{
@@ -131,7 +132,7 @@ describe("runFixBatch", () => {
 		const batch = await runFixBatch(
 			[missing, confirmed],
 			[{ fingerprint: confirmed.fingerprint }],
-			{ scan, execute: vi.fn().mockResolvedValue(1) },
+			{ settings: () => DEFAULT_SETTINGS, scan, execute: vi.fn().mockResolvedValue(1) },
 		);
 
 		expect(batch.outcomes.map((outcome) => outcome.fingerprint)).toEqual([
@@ -158,7 +159,7 @@ describe("runFixBatch", () => {
 		const batch = await runFixBatch(
 			[requested],
 			[{ fingerprint: requested.fingerprint }],
-			{ scan, execute },
+			{ settings: () => DEFAULT_SETTINGS, scan, execute },
 		);
 
 		expect(batch.outcomes).toEqual([{
@@ -186,7 +187,7 @@ describe("runFixBatch", () => {
 		const batch = await runFixBatch(
 			[failed, later],
 			[failed, later].map(({ fingerprint }) => ({ fingerprint })),
-			{ scan, execute },
+			{ settings: () => DEFAULT_SETTINGS, scan, execute },
 		);
 
 		expect(batch.outcomes).toEqual([
@@ -218,7 +219,7 @@ describe("runFixBatch", () => {
 		const batch = await runFixBatch(
 			[first, second],
 			[first, second].map(({ fingerprint }) => ({ fingerprint })),
-			{ scan, execute: vi.fn().mockResolvedValue(1) },
+			{ settings: () => DEFAULT_SETTINGS, scan, execute: vi.fn().mockResolvedValue(1) },
 		);
 
 		expect(batch.verificationResult).toBeNull();
@@ -248,7 +249,7 @@ describe("runFixBatch", () => {
 		const batch = await runFixBatch(
 			[staleWithMatchingAction],
 			[{ fingerprint: "ignored" }],
-			{ scan, execute: vi.fn().mockResolvedValue(1) },
+			{ settings: () => DEFAULT_SETTINGS, scan, execute: vi.fn().mockResolvedValue(1) },
 		);
 
 		expect(batch.outcomes[0]).toMatchObject({
@@ -281,7 +282,7 @@ describe("runFixBatch", () => {
 		const batch = await runFixBatch(
 			[fixed, present, changed, failed],
 			[fixed, present, changed, failed].map(({ fingerprint }) => ({ fingerprint })),
-			{ scan, execute },
+			{ settings: () => DEFAULT_SETTINGS, scan, execute },
 		);
 
 		expect(batch.outcomes).toEqual([
@@ -313,10 +314,77 @@ describe("runFixBatch", () => {
 		const batch = await runFixBatch(
 			[first, second],
 			[first, second].map(({ fingerprint }) => ({ fingerprint })),
-			{ scan, execute: vi.fn().mockResolvedValue(1) },
+			{ settings: () => DEFAULT_SETTINGS, scan, execute: vi.fn().mockResolvedValue(1) },
 		);
 
 		expect(batch.verificationResult).toBe(finalResult);
 		expect(scan).toHaveBeenCalledTimes(3);
+	});
+
+	it("freezes detection settings for the whole batch", async () => {
+		const first = issue("first");
+		const second = issue("second");
+		const live = { ...DEFAULT_SETTINGS };
+		const scan = vi.fn().mockImplementation(async () => {
+			live.duplicateKeepMode = "always-ask";
+			return result([first, second]);
+		});
+
+		const batch = await runFixBatch(
+			[first, second],
+			[first, second].map(({ fingerprint }) => ({ fingerprint })),
+			{ settings: () => live, scan, execute: vi.fn().mockResolvedValue(1) },
+		);
+
+		expect(scan).toHaveBeenCalledTimes(3);
+		for (const [received] of scan.mock.calls) {
+			expect(received).not.toBe(live);
+			expect(received.duplicateKeepMode).toBe(DEFAULT_SETTINGS.duplicateKeepMode);
+		}
+		expect(batch.outcomes.every((outcome) => outcome.outcome === "still-present")).toBe(true);
+	});
+
+	it("never executes an issue that was blocked at request time", async () => {
+		const blocked = { ...issue("blocked"), eligibility: "blocked" as const };
+		const scan = vi.fn();
+		const execute = vi.fn();
+
+		const batch = await runFixBatch(
+			[blocked],
+			[{ fingerprint: "blocked" }],
+			{ settings: () => DEFAULT_SETTINGS, scan, execute },
+		);
+
+		expect(batch.outcomes).toEqual([{
+			fingerprint: "blocked",
+			outcome: "skipped",
+			phase: "preflight",
+			message: "The fix is blocked by the action policy.",
+			affectedPaths: ["blocked.md"],
+		}]);
+		expect(scan).not.toHaveBeenCalled();
+		expect(execute).not.toHaveBeenCalled();
+	});
+
+	it("skips when the preflight re-evaluates the finding as blocked", async () => {
+		const requested = issue("reblocked");
+		const fresh = { ...issue("reblocked"), eligibility: "blocked" as const };
+		const scan = vi.fn().mockResolvedValue(result([fresh]));
+		const execute = vi.fn();
+
+		const batch = await runFixBatch(
+			[requested],
+			[{ fingerprint: "reblocked" }],
+			{ settings: () => DEFAULT_SETTINGS, scan, execute },
+		);
+
+		expect(batch.outcomes).toEqual([{
+			fingerprint: "reblocked",
+			outcome: "skipped",
+			phase: "preflight",
+			message: "The finding was re-evaluated as blocked before execution.",
+			affectedPaths: ["reblocked.md"],
+		}]);
+		expect(execute).not.toHaveBeenCalled();
 	});
 });

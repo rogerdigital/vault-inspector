@@ -1,12 +1,17 @@
 import type { FixAction, Issue, ScanResult } from "../scanner/Issue";
+import type { InspectorSettings } from "../settings/settings";
 import type { ActionOutcome } from "./action-outcomes";
 import {
 	getFreshFixAction,
+	isBlockedFromExecution,
 	type FixDecision,
 } from "./fix-decisions";
 
 export type FixRunnerDependencies = {
-	scan: () => Promise<ScanResult | null>;
+	/** Read live settings once; the batch clones and freezes the value for every scan. */
+	settings: () => InspectorSettings;
+	/** Receives a clone of the frozen settings on every call (preflights + final verification). */
+	scan: (settings: InspectorSettings) => Promise<ScanResult | null>;
 	execute: (action: FixAction) => Promise<number>;
 };
 
@@ -27,13 +32,25 @@ export async function runFixBatch(
 	decisions: FixDecision[],
 	dependencies: FixRunnerDependencies,
 ): Promise<FixBatchResult> {
+	const frozenSettings = structuredClone(dependencies.settings());
+	const scanOnce = () => dependencies.scan(structuredClone(frozenSettings));
+
 	const decisionsByFingerprint = new Map(
 		decisions.map((decision) => [decision.fingerprint, decision]),
 	);
 	const outcomes: Array<ActionOutcome | null> = issues.map(() => null);
 	const pending: PendingAction[] = [];
+	let scannedDuringBatch = false;
 
 	for (const [index, issue] of issues.entries()) {
+		if (isBlockedFromExecution(issue)) {
+			outcomes[index] = skipped(
+				issue,
+				"The fix is blocked by the action policy.",
+			);
+			continue;
+		}
+
 		const decision = decisionsByFingerprint.get(issue.fingerprint);
 		if (!decision) {
 			outcomes[index] = skipped(
@@ -43,12 +60,20 @@ export async function runFixBatch(
 			continue;
 		}
 
-		const freshResult = await dependencies.scan();
+		const freshResult = await scanOnce();
+		scannedDuringBatch = true;
 		const freshIssue = freshResult
 			? [...freshResult.issues, ...freshResult.ignoredIssues].find(
 				(candidate) => candidate.fingerprint === issue.fingerprint,
 			)
 			: undefined;
+		if (freshIssue && isBlockedFromExecution(freshIssue)) {
+			outcomes[index] = skipped(
+				issue,
+				"The finding was re-evaluated as blocked before execution.",
+			);
+			continue;
+		}
 		const freshAction = getFreshFixAction(issue, freshIssue, decision);
 		if (!freshAction) {
 			outcomes[index] = skipped(
@@ -78,7 +103,11 @@ export async function runFixBatch(
 		}
 	}
 
-	const verificationResult = await dependencies.scan();
+	// Nothing was scanned and nothing executed (every item skipped before any
+	// preflight): there is no batch state to verify, so skip the final scan.
+	const verificationResult = pending.length > 0 || scannedDuringBatch
+		? await scanOnce()
+		: null;
 	if (!verificationResult) {
 		for (const action of pending) {
 			outcomes[action.index] = {

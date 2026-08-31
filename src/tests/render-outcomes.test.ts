@@ -133,6 +133,58 @@ describe("renderOperationOutcomes", () => {
 		expect(onDismiss).toHaveBeenCalledOnce();
 	});
 
+	it("labels execution and verification failures distinctly", () => {
+		const container = new FakeElement();
+
+		renderOperationOutcomes(
+			container as unknown as HTMLElement,
+			[
+				{
+					fingerprint: "exec",
+					outcome: "failed",
+					phase: "execution",
+					message: "Permission denied",
+					affectedPaths: ["exec.md"],
+				},
+				{
+					fingerprint: "verify",
+					outcome: "failed",
+					phase: "verification",
+					message: "The final verification scan did not complete.",
+					affectedPaths: ["verify.md"],
+				},
+			],
+			vi.fn(),
+		);
+
+		const text = flattenedText(container);
+		expect(text).toContain("Execution failed");
+		expect(text).toContain("Verification failed");
+		expect(text).not.toContain("Phase: execution");
+		expect(text).not.toContain("Phase: verification");
+		const summary = findByClass(container, "vi-outcomes-summary")[0];
+		expect(summary.text).toContain("Failed 2");
+	});
+
+	it("keeps the phase row for skipped outcomes", () => {
+		const container = new FakeElement();
+
+		renderOperationOutcomes(
+			container as unknown as HTMLElement,
+			[{
+				fingerprint: "skipped",
+				outcome: "skipped",
+				phase: "preflight",
+				message: "The finding or fix evidence changed before execution.",
+				affectedPaths: ["skipped.md"],
+			}],
+			vi.fn(),
+		);
+
+		expect(flattenedText(container)).toContain("Skipped");
+		expect(flattenedText(container)).toContain("Phase: preflight");
+	});
+
 	it("renders nothing for an empty outcome list", () => {
 		const container = new FakeElement();
 
