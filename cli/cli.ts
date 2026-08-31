@@ -12,10 +12,39 @@ import { formatDuration } from "../src/utils/format";
 import { matchesGlob } from "../src/utils/paths";
 import { requestPublicHttpStatus } from "./public-http";
 import type { ExternalRequestAdapter } from "../src/scanner/ScanContext";
+import { createScanProfile } from "../src/scanner/scan-profile";
+import { COMPARISON_VERSION } from "../src/snapshot/scan-snapshot";
 
 type OutputFormat = "json" | "markdown";
 type FailOn = "any" | "error" | "warning" | "new" | "none";
 type Severity = "error" | "warning" | "info";
+
+export type CliComparisonMode = "profile" | "legacy" | "none";
+export type CliComparisonReason =
+	| "missing-baseline"
+	| "settings-changed"
+	| "semantics-changed";
+
+/**
+ * Additive top-level comparison metadata for CLI JSON output. `available`
+ * mirrors the plugin's LifecycleComparison semantics: whether the
+ * new/persisting/resolved counts are trustworthy lifecycle claims. Counts
+ * cover the full unfiltered result (issues + ignoredIssues), so they can
+ * differ from the filtered `summary.newIssues`. `mode: "profile"` and the
+ * settings/semantics reasons are reserved for compatibility-aware baseline
+ * reading (roadmap Task 4.2); 4.1 baselines are fingerprint-only
+ * ("legacy").
+ */
+export type CliComparison = {
+	available: boolean;
+	mode: CliComparisonMode;
+	reason?: CliComparisonReason;
+	newIssues: number;
+	persistingIssues: number;
+	resolvedIssues: number;
+	scanProfile: string;
+	comparisonVersion: number;
+};
 
 type CliOptions = {
 	command: "scan";
@@ -103,16 +132,23 @@ export async function runCli(args: string[], runtime: CliRuntime = {}): Promise<
 		const app = await createLocalApp(vaultPath);
 		if (parsed.progress) writeStderr("Scanning vault...\n");
 		const scanStartedAt = Date.now();
-		const scanResult = await scanRunner.run(app, makeSettings(parsed), {
+		const scanSettings = makeSettings(parsed);
+		const scanProfile = await createScanProfile(scanSettings);
+		const scanResult = await scanRunner.run(app, scanSettings, {
 			onProgress: parsed.progress
 				? (progress) => writeStderr(formatProgressLine(progress))
 				: undefined,
 		});
 		const baselineFingerprints = parsed.baselinePath
 			? await readBaselineFingerprints(parsed.baselinePath)
-			: new Set<string>();
-		const result = applyOutputFilters(scanResult, parsed, baselineFingerprints);
-		const output = formatResult(result, vaultPath, parsed.format);
+			: null;
+		const comparison = buildCliComparison(scanResult, baselineFingerprints, scanProfile);
+		const result = applyOutputFilters(
+			scanResult,
+			parsed,
+			baselineFingerprints ?? new Set<string>(),
+		);
+		const output = formatResult(result, vaultPath, parsed.format, comparison);
 		const exitCode = getExitCode(result, parsed.failOn);
 
 		if (parsed.outputPath) {
@@ -326,9 +362,10 @@ function formatResult(
 	result: CliScanResult,
 	vaultPath: string,
 	format: OutputFormat,
+	comparison: CliComparison,
 ): string {
 	if (format === "markdown") return generateMarkdownReport(result);
-	return JSON.stringify(toJsonPayload(result, vaultPath), null, 2);
+	return JSON.stringify(toJsonPayload(result, vaultPath, comparison), null, 2);
 }
 
 function formatProgressLine(progress: ScanProgress): string {
@@ -358,7 +395,11 @@ function formatProgressDetail(progress: ScanProgress): string {
 	return parts.join(", ");
 }
 
-function toJsonPayload(result: CliScanResult, vaultPath: string): Record<string, unknown> {
+function toJsonPayload(
+	result: CliScanResult,
+	vaultPath: string,
+	comparison: CliComparison,
+): Record<string, unknown> {
 	const errors = result.issues.filter((issue) => issue.severity === "error").length;
 	const warnings = result.issues.filter((issue) => issue.severity === "warning").length;
 	const info = result.issues.filter((issue) => issue.severity === "info").length;
@@ -383,6 +424,7 @@ function toJsonPayload(result: CliScanResult, vaultPath: string): Record<string,
 		},
 		issues: result.issues,
 		ignoredIssues: result.ignoredIssues,
+		comparison,
 	};
 }
 
@@ -429,6 +471,67 @@ async function readBaselineFingerprints(path: string): Promise<Set<string>> {
 			.map((issue) => issue.fingerprint)
 			.filter((fingerprint): fingerprint is string => typeof fingerprint === "string"),
 	);
+}
+
+/**
+ * Builds the additive comparison metadata for one CLI run. Without a
+ * baseline the comparison is honestly unavailable (zero counts, never
+ * "everything is new"). With a baseline — always fingerprint-only today —
+ * the mode is "legacy" and the counts cover the FULL unfiltered result
+ * (issues + ignoredIssues), mirroring compareScanResult in
+ * src/scanner/result-diff.ts so output filters never inflate
+ * resolvedIssues.
+ */
+function buildCliComparison(
+	result: ScanResult,
+	baseline: Set<string> | null,
+	scanProfile: string,
+): CliComparison {
+	const metadata = {
+		scanProfile,
+		comparisonVersion: COMPARISON_VERSION,
+	};
+
+	if (baseline === null) {
+		return {
+			available: false,
+			mode: "none",
+			reason: "missing-baseline",
+			newIssues: 0,
+			persistingIssues: 0,
+			resolvedIssues: 0,
+			...metadata,
+		};
+	}
+
+	const currentFingerprints = new Set([
+		...result.issues.map((issue) => issue.fingerprint),
+		...result.ignoredIssues.map((issue) => issue.fingerprint),
+	]);
+
+	let newIssues = 0;
+	let persistingIssues = 0;
+	for (const fingerprint of currentFingerprints) {
+		if (baseline.has(fingerprint)) {
+			persistingIssues++;
+		} else {
+			newIssues++;
+		}
+	}
+
+	let resolvedIssues = 0;
+	for (const fingerprint of baseline) {
+		if (!currentFingerprints.has(fingerprint)) resolvedIssues++;
+	}
+
+	return {
+		available: true,
+		mode: "legacy",
+		newIssues,
+		persistingIssues,
+		resolvedIssues,
+		...metadata,
+	};
 }
 
 function getExitCode(result: CliScanResult, failOn: FailOn): number {
