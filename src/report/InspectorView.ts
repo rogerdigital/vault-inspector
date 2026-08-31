@@ -7,7 +7,7 @@ import {
 	type ReportModel,
 } from "./report-model";
 import { renderSummary } from "./render-summary";
-import { renderIssueList } from "./render-issues";
+import { renderIssueList, selectBulkFixable } from "./render-issues";
 import { renderResolvedChanges } from "./render-changes";
 import { renderOperationOutcomes } from "./render-outcomes";
 import { setIcon } from "obsidian";
@@ -452,7 +452,8 @@ export class InspectorView extends ItemView {
 
 		const visibleIssues = this.getVisibleIssues();
 		const selectedIssues = visibleIssues.filter((i) => this.model.selectedFingerprints.has(i.fingerprint));
-		const selectedFixable = selectedIssues.filter((i) => i.fixAction);
+		const bulkSelection = selectBulkFixable(selectedIssues);
+		const selectedFixable = bulkSelection.bulk;
 
 		const bar = container.createDiv({ cls: "vi-action-bar" });
 		const left = bar.createDiv({ cls: "vi-action-bar-left" });
@@ -492,6 +493,20 @@ export class InspectorView extends ItemView {
 					"Fixing issues",
 				);
 			});
+		}
+
+		if (this.model.enableFixActions) {
+			const excluded = bulkSelection.reviewRequired + bulkSelection.blocked;
+			if (excluded > 0) {
+				const note = right.createSpan({
+					cls: "vi-bulk-excluded-note",
+					text: `${excluded} ${excluded === 1 ? "needs" : "need"} review`,
+				});
+				setTooltip(
+					note,
+					"Review-required and blocked findings are excluded from this batch. Fix them one at a time.",
+				);
+			}
 		}
 
 		if (selectedIssues.length > 0) {

@@ -69,4 +69,44 @@ describe("styles.css", () => {
 		expect(css).toMatch(/@media\s*\(max-width:\s*500px\)\s*\{[\s\S]*?\.vi-large-report-buttons\s*\{[^}]*flex-direction:\s*column;/);
 		expect(css).toMatch(/@media\s*\(max-width:\s*500px\)\s*\{[\s\S]*?\.vi-large-report-buttons\s*>\s*\*\s*\{[^}]*width:\s*100%;/);
 	});
+
+	it("styles fix impact preview elements and keeps them readable on narrow screens", async () => {
+		const css = await readFile("styles.css", "utf8");
+
+		for (const className of [
+			"vi-eligibility-badge",
+			"vi-eligibility-eligible",
+			"vi-eligibility-review-required",
+			"vi-eligibility-blocked",
+			"vi-impact-card",
+			"vi-impact-card-muted",
+			"vi-impact-card-title",
+			"vi-impact-reason",
+			"vi-impact-rows",
+			"vi-impact-row",
+			"vi-impact-row-path",
+			"vi-impact-row-meta",
+			"vi-impact-coverage",
+			"vi-impact-keep",
+			"vi-review-checkbox",
+			"vi-issue-fix-reason",
+			"vi-bulk-excluded-note",
+		]) {
+			expect(css, `missing .${className}`).toContain(`.${className}`);
+		}
+
+		const impactStyles = css.slice(css.indexOf("/* Fix impact preview */"));
+		expect(impactStyles.length).toBeGreaterThan(0);
+		const backgrounds = [...impactStyles.matchAll(/background(?:-color)?\s*:\s*([^;]+);/g)]
+			.map((match) => match[1].trim());
+		expect(backgrounds.length).toBeGreaterThan(0);
+		expect(backgrounds.every((value) => value.startsWith("var(--"))).toBe(true);
+		expect(impactStyles).toMatch(/\.vi-impact-row\s*\{[^}]*flex-wrap:\s*wrap;/);
+		expect(impactStyles).toMatch(/\.vi-impact-row-path\s*\{[^}]*overflow-wrap:\s*anywhere;/);
+
+		const mobile = css.match(/@media\s*\(max-width:\s*500px\)\s*\{([\s\S]*?)\n\}/)?.[1];
+		expect(mobile).toBeDefined();
+		expect(mobile).toMatch(/\.vi-impact-row\s*\{[^}]*flex-direction:\s*column;/);
+		expect(mobile).toMatch(/\.vi-bulk-excluded-note\s*\{[^}]*overflow-wrap:\s*anywhere;/);
+	});
 });

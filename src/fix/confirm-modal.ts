@@ -1,6 +1,12 @@
-import { App, Modal } from "obsidian";
-import type { FixAction, Issue, KeepOneSelection } from "../scanner/Issue";
+import { App, Modal, TFile } from "obsidian";
+import type {
+	FixAction,
+	FixEligibility,
+	Issue,
+	KeepOneSelection,
+} from "../scanner/Issue";
 import type { DuplicateKeepMode } from "../settings/settings";
+import { formatSize } from "../utils/format";
 import {
 	buildFixDecisionState,
 	type FixDecision,
@@ -90,10 +96,170 @@ export function shouldAskForKeep(
 	return mode === "always-ask" || selection.requiresReview === true;
 }
 
+/**
+ * One eligibility view shared by the confirmation model, the modal
+ * controls, the report rows, and the bulk-selection gate. A missing field
+ * (hand-built issue) degrades to review-required: fixable only through an
+ * explicit per-item decision, never silently.
+ */
+export function resolveEligibility(issue: Issue): FixEligibility {
+	return issue.eligibility ?? "review-required";
+}
+
+export type EligibilityExplanation = { status: string; reason: string };
+
+/**
+ * Sentence-case status and reason for the modal and the report row. The
+ * status ALWAYS derives from `resolveEligibility` so the tier and its
+ * explanation can never disagree; the reason picks the first matching
+ * condition.
+ */
+export function describeEligibility(
+	issue: Issue,
+): EligibilityExplanation {
+	const action = issue.fixAction;
+	if (!action) {
+		return { status: "No fix action", reason: "This finding has no fix action." };
+	}
+	const eligibility = resolveEligibility(issue);
+	const status = eligibility === "blocked"
+		? "Blocked"
+		: eligibility === "review-required"
+			? "Review required"
+			: "Eligible";
+	let reason: string;
+	if (issue.classification === "unverified") {
+		reason = "The finding is unverified, so its fix cannot run.";
+	} else if (
+		action.kind === "trash-file"
+		&& issue.impact?.coverageComplete === false
+	) {
+		reason =
+			"Reference coverage is incomplete, so files cannot be moved to trash safely.";
+	} else if (action.selection?.requiresReview === true) {
+		reason =
+			"Several copies are referenced, so an explicit keep choice is required.";
+	} else if (issue.classification !== "confirmed") {
+		reason = "The finding needs review before its fix can run.";
+	} else if (
+		action.kind === "remove-link-text"
+		&& (action.original === undefined || action.replacement === undefined)
+	) {
+		reason = "The replacement text is not fully specified.";
+	} else if (eligibility === "blocked") {
+		reason = "The finding cannot be fixed in this state.";
+	} else {
+		reason = eligibility === "review-required"
+			? "The finding needs review before its fix can run."
+			: "The fix is confirmed and its evidence is complete.";
+	}
+	return { status, reason };
+}
+
+export type EligibilityGroups = {
+	eligible: Issue[];
+	reviewRequired: Issue[];
+	blocked: Issue[];
+};
+
+export function groupByEligibility(issues: Issue[]): EligibilityGroups {
+	const groups: EligibilityGroups = {
+		eligible: [],
+		reviewRequired: [],
+		blocked: [],
+	};
+	for (const issue of issues) {
+		if (!issue.fixAction) continue;
+		const eligibility = resolveEligibility(issue);
+		if (eligibility === "eligible") groups.eligible.push(issue);
+		else if (eligibility === "blocked") groups.blocked.push(issue);
+		else groups.reviewRequired.push(issue);
+	}
+	return groups;
+}
+
+/**
+ * Whether a review-required item has its explicit per-item decision:
+ * a valid keep choice for duplicate groups (the Milestone 1 radio flow),
+ * an approved fingerprint for everything else.
+ */
+export function isReviewApproved(
+	issue: Issue,
+	mode: DuplicateKeepMode,
+	selectedKeeps: ReadonlyMap<string, string>,
+	approvedReviews: ReadonlySet<string>,
+): boolean {
+	const selection = issue.fixAction?.selection;
+	if (selection && shouldAskForKeep(mode, selection)) {
+		const keepPath = selectedKeeps.get(issue.fingerprint);
+		return keepPath !== undefined
+			&& selection.candidatePaths.includes(keepPath);
+	}
+	return approvedReviews.has(issue.fingerprint);
+}
+
+export type ConfirmationPlan = {
+	groups: EligibilityGroups;
+	/** Eligible issues plus approved review-required issues. */
+	actionable: Issue[];
+	/** True when at least one action exists and every actionable decision resolves. */
+	complete: boolean;
+};
+
+export function buildConfirmationPlan(
+	issues: Issue[],
+	mode: DuplicateKeepMode,
+	selectedKeeps: ReadonlyMap<string, string>,
+	approvedReviews: ReadonlySet<string>,
+): ConfirmationPlan {
+	const groups = groupByEligibility(issues);
+	const actionable = [
+		...groups.eligible,
+		...groups.reviewRequired.filter((issue) =>
+			isReviewApproved(issue, mode, selectedKeeps, approvedReviews)),
+	];
+	const state = buildFixDecisionState(actionable, mode, selectedKeeps);
+	return {
+		groups,
+		actionable,
+		complete: actionable.length > 0 && state.complete,
+	};
+}
+
+export type FileStatInfo = { size: number; mtime: number };
+
+export type ImpactRow = {
+	path: string;
+	size: string;
+	mtime: string;
+};
+
+/**
+ * Impact preview rows for an action's target paths. Paths missing from the
+ * stat map render explicit "unknown" text — every target path is always
+ * listed, never silently dropped.
+ */
+export function buildImpactRows(
+	paths: string[],
+	stats: ReadonlyMap<string, FileStatInfo>,
+): ImpactRow[] {
+	return paths.map((path) => {
+		const stat = stats.get(path);
+		return {
+			path,
+			size: stat ? formatSize(stat.size) : "Size unknown",
+			mtime: stat
+				? new Date(stat.mtime).toLocaleDateString()
+				: "Modified date unknown",
+		};
+	});
+}
+
 class ConfirmFixModal extends Modal {
 	private issues: Issue[];
 	private mode: DuplicateKeepMode;
 	private selectedKeeps = new Map<string, string>();
+	private approvedReviews = new Set<string>();
 	private settle: (result: FixDecision[] | null) => boolean;
 
 	constructor(
@@ -122,21 +288,37 @@ class ConfirmFixModal extends Modal {
 		if (this.settle(result)) this.close();
 	}
 
+	private collectStats(paths: string[]): Map<string, FileStatInfo> {
+		const stats = new Map<string, FileStatInfo>();
+		for (const path of paths) {
+			const file = this.app.vault.getAbstractFileByPath(path);
+			if (file instanceof TFile) {
+				stats.set(path, { size: file.stat.size, mtime: file.stat.mtime });
+			}
+		}
+		return stats;
+	}
+
 	private renderContent(): void {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass("vi-confirm-modal");
 
-		const state = buildFixDecisionState(
+		const plan = buildConfirmationPlan(
 			this.issues,
 			this.mode,
 			this.selectedKeeps,
+			this.approvedReviews,
 		);
-		const decisionsByFingerprint = new Map(
-			state.decisions.map((decision) => [decision.fingerprint, decision]),
+		const state = buildFixDecisionState(
+			plan.actionable,
+			this.mode,
+			this.selectedKeeps,
 		);
-		const actions = this.issues.flatMap((issue) => {
-			const decision = decisionsByFingerprint.get(issue.fingerprint);
+		const actions = plan.actionable.flatMap((issue) => {
+			const decision = state.decisions.find(
+				(candidate) => candidate.fingerprint === issue.fingerprint,
+			);
 			if (!decision) return [];
 			const action = resolveDecisionAction(issue, decision);
 			return action ? [action] : [];
@@ -149,15 +331,93 @@ class ConfirmFixModal extends Modal {
 				: "Confirm fix",
 		});
 		contentEl.createEl("p", {
-			text: state.complete
+			text: plan.complete
 				? summary.description
-				: "Choose one file to keep in every duplicate group.",
+				: "Approve at least one fix and choose one file to keep in every duplicate group.",
 		});
 
+		const stats = this.collectStats([
+			...new Set(
+				this.issues.flatMap((issue) => issue.fixAction?.targetPaths ?? []),
+			),
+		]);
+
 		for (const issue of this.issues) {
-			const selection = issue.fixAction?.selection;
-			if (!selection || !shouldAskForKeep(this.mode, selection)) continue;
-			const group = contentEl.createDiv({ cls: "vi-keep-group" });
+			this.renderImpactCard(contentEl, issue, stats);
+		}
+
+		const btnRow = contentEl.createDiv({ cls: "vi-confirm-buttons" });
+		btnRow.createEl("button", { text: "Cancel" })
+			.addEventListener("click", () => this.finish(null));
+		const confirmBtn = btnRow.createEl("button", {
+			cls: "vi-confirm-destructive",
+			text: "Confirm",
+		});
+		confirmBtn.disabled = !plan.complete;
+		confirmBtn.addEventListener("click", () => {
+			if (plan.complete) this.finish(state.decisions);
+		});
+	}
+
+	private renderImpactCard(
+		container: HTMLElement,
+		issue: Issue,
+		stats: ReadonlyMap<string, FileStatInfo>,
+	): void {
+		const action = issue.fixAction;
+		if (!action) return;
+		const eligibility = resolveEligibility(issue);
+		const explanation = describeEligibility(issue);
+		const approved = eligibility === "eligible"
+			|| isReviewApproved(
+				issue,
+				this.mode,
+				this.selectedKeeps,
+				this.approvedReviews,
+			);
+
+		const card = container.createDiv({
+			cls: eligibility === "review-required" && !approved
+				? "vi-impact-card vi-impact-card-muted"
+				: "vi-impact-card",
+		});
+		const titleRow = card.createDiv({ cls: "vi-impact-card-title-row" });
+		titleRow.createSpan({ cls: "vi-impact-card-title", text: issue.title });
+		titleRow.createSpan({
+			cls: `vi-eligibility-badge vi-eligibility-${eligibility}`,
+			text: explanation.status,
+		});
+		card.createDiv({ cls: "vi-impact-reason", text: explanation.reason });
+
+		const rows = card.createDiv({ cls: "vi-impact-rows" });
+		for (const row of buildImpactRows(action.targetPaths, stats)) {
+			const rowEl = rows.createDiv({ cls: "vi-impact-row" });
+			rowEl.createSpan({
+				cls: "vi-impact-row-path",
+				text: row.path,
+			});
+			rowEl.createSpan({
+				cls: "vi-impact-row-meta",
+				text: `${row.size} · modified ${row.mtime}`,
+			});
+		}
+
+		if (issue.impact) {
+			card.createDiv({
+				cls: "vi-impact-coverage",
+				text: `Inbound references: ${issue.impact.inboundReferences} · Reference coverage: ${issue.impact.coverageComplete ? "complete" : "incomplete"}`,
+			});
+		}
+
+		const selection = action.selection;
+		if (selection) {
+			const keepPath = this.selectedKeeps.get(issue.fingerprint)
+				?? selection.automaticKeepPath;
+			card.createDiv({ cls: "vi-impact-keep", text: `Keep: ${keepPath}` });
+		}
+
+		if (selection && shouldAskForKeep(this.mode, selection)) {
+			const group = card.createDiv({ cls: "vi-keep-group" });
 			group.createDiv({
 				cls: "vi-keep-group-title",
 				text: "Choose one file to keep",
@@ -183,23 +443,19 @@ class ConfirmFixModal extends Modal {
 			}
 		}
 
-		if (this.issues.length > 1 || actions.length > 1) {
-			const list = contentEl.createDiv({ cls: "vi-file-list" });
-			for (const path of summary.paths) {
-				list.createDiv({ cls: "vi-file-list-item", text: path });
-			}
+		if (eligibility === "review-required" && !selection) {
+			const label = card.createEl("label", { cls: "vi-review-checkbox" });
+			const checkbox = label.createEl("input", { type: "checkbox" });
+			checkbox.checked = this.approvedReviews.has(issue.fingerprint);
+			checkbox.addEventListener("change", () => {
+				if (checkbox.checked) {
+					this.approvedReviews.add(issue.fingerprint);
+				} else {
+					this.approvedReviews.delete(issue.fingerprint);
+				}
+				this.renderContent();
+			});
+			label.createSpan({ text: "I reviewed this file" });
 		}
-
-		const btnRow = contentEl.createDiv({ cls: "vi-confirm-buttons" });
-		btnRow.createEl("button", { text: "Cancel" })
-			.addEventListener("click", () => this.finish(null));
-		const confirmBtn = btnRow.createEl("button", {
-			cls: "vi-confirm-destructive",
-			text: "Confirm",
-		});
-		confirmBtn.disabled = !state.complete;
-		confirmBtn.addEventListener("click", () => {
-			if (state.complete) this.finish(state.decisions);
-		});
 	}
 }

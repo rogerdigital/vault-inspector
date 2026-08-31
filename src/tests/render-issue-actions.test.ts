@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Issue } from "../scanner/Issue";
-import { renderIssueList } from "../report/render-issues";
+import { renderIssueList, selectBulkFixable } from "../report/render-issues";
 
 class FakeEvent {
 	propagationStopped = false;
@@ -169,3 +169,114 @@ describe("renderIssueList contextual actions", () => {
 		expect(findByTag(container, "details")).toHaveLength(2);
 	});
 });
+
+function makeFixIssueWith(
+	eligibility: "eligible" | "review-required" | "blocked" | undefined,
+	path: string,
+): Issue {
+	return {
+		...makeIssue(path),
+		// Blocked fixtures are unverified, mirroring the only policy path
+		// that annotates a fix-bearing finding as blocked with an otherwise
+		// complete action shape.
+		...(eligibility === "blocked"
+			? { classification: "unverified" as const, eligibility }
+			: eligibility
+				? { eligibility }
+				: {}),
+		fixAction: {
+			kind: "trash-file",
+			label: "Delete",
+			description: `Move "${path}" to trash`,
+			targetPaths: [path],
+		},
+	};
+}
+
+describe("fix eligibility reporting and bulk gating", () => {
+	it("renders a Fix status token and reason for fix-bearing issues", () => {
+		for (const eligibility of ["eligible", "review-required", "blocked"] as const) {
+			const container = new FakeElement();
+			renderIssueList(container as any, {
+				issues: [makeFixIssueWith(eligibility, "notes/file.md")],
+				scannersRun: ["broken-links"],
+				selectionMode: false,
+				selectedFingerprints: new Set(),
+				onOpenIssue: vi.fn(),
+				onToggleSelect: vi.fn(),
+			});
+			const label = findByText(container, "Fix");
+			expect(label?.cls).toContain("vi-issue-target-label");
+			const token = findByText(
+				container,
+				eligibility === "eligible" ? "Eligible"
+					: eligibility === "review-required" ? "Review required"
+						: "Blocked",
+			);
+			expect(token?.cls.split(/\s+/)).toContain(
+				`vi-eligibility-${eligibility}`,
+			);
+			const reason = findByText(
+				container,
+				describeReasonFor(eligibility),
+			);
+			expect(reason?.cls).toContain("vi-issue-fix-reason");
+		}
+	});
+
+	it("treats a missing eligibility field as review-required in the report", () => {
+		const container = new FakeElement();
+		renderIssueList(container as any, {
+			issues: [makeFixIssueWith(undefined, "notes/file.md")],
+			scannersRun: ["broken-links"],
+			selectionMode: false,
+			selectedFingerprints: new Set(),
+			onOpenIssue: vi.fn(),
+			onToggleSelect: vi.fn(),
+		});
+		expect(findByText(container, "Review required")).toBeDefined();
+		expect(findByText(container, "Blocked")).toBeUndefined();
+	});
+
+	it("renders no fix row for issues without a fix action", () => {
+		const container = new FakeElement();
+		renderIssueList(container as any, {
+			issues: [makeIssue("notes/file.md")],
+			scannersRun: ["broken-links"],
+			selectionMode: false,
+			selectedFingerprints: new Set(),
+			onOpenIssue: vi.fn(),
+			onToggleSelect: vi.fn(),
+		});
+		expect(findByText(container, "Fix")).toBeUndefined();
+		expect(
+			container.children.some((child) =>
+				(child.cls ?? "").includes("vi-issue-fix-reason")),
+		).toBe(false);
+	});
+
+	it("limits bulk fix to eligible issues and counts the excluded tiers", () => {
+		const eligible = makeFixIssueWith("eligible", "a.md");
+		const review = makeFixIssueWith("review-required", "b.md");
+		const blocked = makeFixIssueWith("blocked", "c.md");
+		const plain = makeIssue("d.md");
+
+		expect(selectBulkFixable([eligible, review, blocked, plain])).toEqual({
+			bulk: [eligible],
+			reviewRequired: 1,
+			blocked: 1,
+		});
+	});
+});
+
+function describeReasonFor(
+	eligibility: "eligible" | "review-required" | "blocked",
+): string {
+	if (eligibility === "eligible") {
+		return "The fix is confirmed and its evidence is complete.";
+	}
+	if (eligibility === "blocked") {
+		return "The finding is unverified, so its fix cannot run.";
+	}
+	return "The finding needs review before its fix can run.";
+}
