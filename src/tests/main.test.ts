@@ -155,7 +155,40 @@ describe("VaultInspectorPlugin", () => {
 		expect(saveData).toHaveBeenCalledWith({
 			settings: plugin.settings,
 			lastSuccessfulSnapshot: plugin.lastSuccessfulSnapshot,
+			scanHistory: [expect.objectContaining({
+				toolVersion: "0.5.0",
+				scanProfile: "current-profile",
+				trigger: "manual",
+			})],
 		});
+		expect(plugin.scanHistory).toHaveLength(1);
+	});
+
+	it("appends one history entry per accepted scan and none for failed scans", async () => {
+		const result = makeScanResult([makeLifecycleIssue("current")]);
+		const { plugin, run, saveData, view } = makeScanSubject(result);
+		plugin.lastSuccessfulSnapshot = makeSnapshot("current-profile");
+
+		await (plugin as any).scanAndRender(view);
+
+		expect(plugin.scanHistory).toHaveLength(1);
+		expect(plugin.scanHistory[0]).toMatchObject({
+			trigger: "manual",
+			scanProfile: "current-profile",
+			totals: {
+				active: 1,
+				ignored: 0,
+				newIssues: 1,
+				persistingIssues: 0,
+				resolvedIssues: 0,
+			},
+		});
+
+		run.mockRejectedValueOnce(new Error("scanner exploded"));
+		await (plugin as any).scanAndRender(view);
+
+		expect(plugin.scanHistory).toHaveLength(1);
+		expect(saveData).toHaveBeenCalledTimes(1);
 	});
 
 	it("clears old operation outcomes when an ordinary queued scan starts", async () => {
