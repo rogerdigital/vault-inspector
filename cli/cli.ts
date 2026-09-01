@@ -4,7 +4,11 @@ import { ScanRunner } from "../src/scanner/ScanRunner";
 import type { ScanProgress, ScanResult, ScannerId } from "../src/scanner/Issue";
 import { SCANNER_IDS, SCANNER_LABELS } from "../src/scanner/Issue";
 import { registerDefaultScanners } from "../src/scanner/register-scanners";
-import { DEFAULT_SETTINGS, type InspectorSettings } from "../src/settings/settings";
+import {
+	createEmptyIgnoredFoldersByScanner,
+	DEFAULT_SETTINGS,
+	type InspectorSettings,
+} from "../src/settings/settings";
 import { generateMarkdownReport } from "../src/report/markdown-export";
 import { createLocalApp } from "./local-vault";
 import { TOOL_VERSION } from "./version";
@@ -76,6 +80,7 @@ type CliOptions = {
 	include: string[];
 	exclude: string[];
 	ignoredFolders: string[];
+	ignoredFoldersByScanner: Record<ScannerId, string[]>;
 	ignoreUnresolvedNoteLinks: boolean;
 	baselinePath?: string;
 	failOn: FailOn;
@@ -225,6 +230,7 @@ function parseArgs(args: string[]): ParsedArgs | { error: string } {
 		include: [],
 		exclude: [],
 		ignoredFolders: [],
+		ignoredFoldersByScanner: createEmptyIgnoredFoldersByScanner(),
 		ignoreUnresolvedNoteLinks: false,
 		failOn: "any",
 		fix: false,
@@ -316,7 +322,9 @@ type CliConfig = Partial<
 		| "watchedTags"
 		| "ignoredProperties"
 	>
->;
+> & {
+	ignoredFoldersByScanner?: Partial<Record<ScannerId, string[]>>;
+};
 
 async function loadConfig(args: ParsedArgs): Promise<CliOptions | { error: string }> {
 	if (!args.configPath) return args;
@@ -336,6 +344,9 @@ async function loadConfig(args: ParsedArgs): Promise<CliOptions | { error: strin
 				args.ignoredFolders.length > 0
 					? args.ignoredFolders
 					: config.ignoredFolders ?? [],
+			ignoredFoldersByScanner: config.ignoredFoldersByScanner
+				? { ...args.ignoredFoldersByScanner, ...config.ignoredFoldersByScanner }
+				: args.ignoredFoldersByScanner,
 			ignoreUnresolvedNoteLinks:
 				args.ignoreUnresolvedNoteLinks ||
 				(config.ignoreUnresolvedNoteLinks ?? false),
@@ -390,6 +401,7 @@ function makeSettings(options: CliOptions): InspectorSettings {
 			options.emptyNoteWordThreshold ?? DEFAULT_SETTINGS.emptyNoteWordThreshold,
 		watchedTags: options.watchedTags ?? DEFAULT_SETTINGS.watchedTags,
 		ignoredFolders: options.ignoredFolders,
+		ignoredFoldersByScanner: options.ignoredFoldersByScanner,
 		ignoreUnresolvedNoteLinks: options.ignoreUnresolvedNoteLinks,
 		ignoredProperties: options.ignoredProperties ?? DEFAULT_SETTINGS.ignoredProperties,
 	};
@@ -659,6 +671,26 @@ function validateConfig(config: CliConfig): string | null {
 		typeof config.ignoreUnresolvedNoteLinks !== "boolean"
 	) {
 		return "ignoreUnresolvedNoteLinks must be a boolean";
+	}
+	if (config.ignoredFoldersByScanner !== undefined) {
+		if (
+			typeof config.ignoredFoldersByScanner !== "object" ||
+			config.ignoredFoldersByScanner === null ||
+			Array.isArray(config.ignoredFoldersByScanner)
+		) {
+			return "ignoredFoldersByScanner must be an object of scanner IDs to folder arrays";
+		}
+		for (const [scannerId, folders] of Object.entries(config.ignoredFoldersByScanner)) {
+			if (!SCANNER_IDS.includes(scannerId as ScannerId)) {
+				return `Unknown scanner in ignoredFoldersByScanner: ${scannerId}`;
+			}
+			if (
+				!Array.isArray(folders) ||
+				folders.some((folder) => typeof folder !== "string")
+			) {
+				return `ignoredFoldersByScanner.${scannerId} must be an array of folder paths`;
+			}
+		}
 	}
 	return null;
 }

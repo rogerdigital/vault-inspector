@@ -357,6 +357,141 @@ describe("runCli", () => {
 		});
 	});
 
+		it("loads per-scanner ignored folders from config", async () => {
+			await withVault(
+				{
+					"drafts/empty.md": "",
+					"drafts/large.md": "x".repeat(30),
+					"active/empty.md": "",
+				},
+				async (vaultPath) => {
+					const configPath = join(vaultPath, "vault-inspector.config.json");
+					await writeFile(
+						configPath,
+						JSON.stringify({
+							scanners: ["empty-notes", "large-files"],
+							largeMarkdownBytes: 10,
+							ignoredFoldersByScanner: { "empty-notes": ["drafts"] },
+						}),
+						"utf8",
+					);
+
+					const result = await runCli(["scan", vaultPath, "--config", configPath]);
+
+					expect(result.exitCode).toBe(1);
+					const payload = JSON.parse(result.stdout);
+					expect(payload.summary.issues).toBe(2);
+					expect(payload.issues).toEqual(
+						expect.arrayContaining([
+							expect.objectContaining({
+								scannerId: "empty-notes",
+								primaryPath: "active/empty.md",
+							}),
+							expect.objectContaining({
+								scannerId: "large-files",
+								primaryPath: "drafts/large.md",
+							}),
+						]),
+					);
+					expect(payload.issues).not.toContainEqual(
+						expect.objectContaining({ primaryPath: "drafts/empty.md" }),
+					);
+				},
+			);
+		});
+
+		it("changes the scan profile when per-scanner folders change", async () => {
+			await withVault({ "drafts/empty.md": "", "active/empty.md": "" }, async (vaultPath) => {
+				const first = await runCli([
+					"scan",
+					vaultPath,
+					"--scanner",
+					"empty-notes",
+					"--fail-on",
+					"none",
+				]);
+				const baselinePath = join(vaultPath, "baseline.json");
+				await writeFile(baselinePath, first.stdout, "utf8");
+
+				const configPath = join(vaultPath, "vault-inspector.config.json");
+				await writeFile(
+					configPath,
+					JSON.stringify({
+						scanners: ["empty-notes"],
+						ignoredFoldersByScanner: { "empty-notes": ["drafts"] },
+					}),
+					"utf8",
+				);
+
+				const second = await runCli([
+					"scan",
+					vaultPath,
+					"--config",
+					configPath,
+					"--baseline",
+					baselinePath,
+					"--fail-on",
+					"none",
+				]);
+
+				const payload = JSON.parse(second.stdout);
+				expect(second.exitCode).toBe(2);
+				expect(second.stderr).toContain("settings-changed");
+				expect(payload.comparison).toEqual({
+					available: false,
+					mode: "profile",
+					reason: "settings-changed",
+					newIssues: 0,
+					persistingIssues: 0,
+					resolvedIssues: 0,
+					scanProfile: expect.any(String),
+					comparisonVersion: 2,
+				});
+			});
+		});
+
+		it("rejects an unknown scanner in ignoredFoldersByScanner", async () => {
+			await withVault({ "empty.md": "" }, async (vaultPath) => {
+				const configPath = join(vaultPath, "vault-inspector.config.json");
+				await writeFile(
+					configPath,
+					JSON.stringify({
+						ignoredFoldersByScanner: { "empty-note": ["drafts"] },
+					}),
+					"utf8",
+				);
+
+				const result = await runCli([vaultPath, "--config", configPath]);
+
+				expect(result.exitCode).toBe(2);
+				expect(result.stdout).toBe("");
+				expect(result.stderr).toContain(
+					"Unknown scanner in ignoredFoldersByScanner: empty-note",
+				);
+			});
+		});
+
+		it("rejects a non-array ignoredFoldersByScanner entry", async () => {
+			await withVault({ "empty.md": "" }, async (vaultPath) => {
+				const configPath = join(vaultPath, "vault-inspector.config.json");
+				await writeFile(
+					configPath,
+					JSON.stringify({
+						ignoredFoldersByScanner: { "empty-notes": "drafts" },
+					}),
+					"utf8",
+				);
+
+				const result = await runCli([vaultPath, "--config", configPath]);
+
+				expect(result.exitCode).toBe(2);
+				expect(result.stdout).toBe("");
+				expect(result.stderr).toContain(
+					"ignoredFoldersByScanner.empty-notes must be an array of folder paths",
+				);
+			});
+		});
+
 	it("uses fail-on to control exit status", async () => {
 		await withVault({ "empty.md": "" }, async (vaultPath) => {
 			const belowThreshold = await runCli([

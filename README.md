@@ -171,6 +171,7 @@ Config files are JSON and use the same option names:
   "include": ["notes/**"],
   "exclude": ["templates/**"],
   "ignoredFolders": [".trash"],
+  "ignoredFoldersByScanner": { "empty-notes": ["drafts"] },
   "ignoreUnresolvedNoteLinks": true,
   "failOn": "warning",
   "largeMarkdownBytes": 102400
@@ -193,6 +194,13 @@ example, `ignoredLargeMarkdownFrontmatterKeys` already defaults to
 If your config lists the older `"excalidraw"` key, update it to
 `"excalidraw-plugin"`.
 
+`ignoredFoldersByScanner` maps scanner IDs to folders that are ignored for
+that scanner only, on top of the global `ignoredFolders`. Omitted scanner
+keys mean no per-scanner exclusions. Per-scanner folders are detection
+inputs: changing them changes `comparison.scanProfile`, so baselines
+recorded under different per-scanner folders are reported as not comparable
+instead of producing misleading new/resolved counts.
+
 JSON output has a stable top-level protocol for automation:
 
 - `schemaVersion` — currently `1`
@@ -205,19 +213,40 @@ JSON output has a stable top-level protocol for automation:
 `classification` and `explanation` are additive stable fields. Existing stable
 fields have not been removed or renamed.
 
-Baseline comparison uses issue `fingerprint` values from a previous JSON report.
-When `--baseline` is provided, each issue includes `isNew`, and `summary.newIssues`
-counts issues not found in the baseline.
+Baseline comparison uses issue `fingerprint` values from a previous JSON
+report. When `--baseline` is provided, each issue includes `isNew`, and
+`summary.newIssues` counts issues not found in the baseline. The top-level
+`comparison` object describes whether the lifecycle counts are trustworthy:
 
-CLI baseline comparison is separate from the Obsidian plugin lifecycle. In
-version 0.5.0, CLI output does not include plugin scan snapshots, persisting or
-resolved lifecycle rows, or the plugin's resolved-history view.
+- `available` — gate on this field. When `false`, the new/persisting/resolved
+  counts are zeroed and must not be reported as lifecycle results.
+- `mode` — `"profile"` for baselines carrying scan-profile metadata,
+  `"legacy"` for older fingerprint-only baselines, `"none"` when no
+  `--baseline` was given.
+- `reason` — present when `available` is `false`: `missing-baseline`,
+  `settings-changed` (the baseline was recorded under different detection
+  settings, including `ignoredFoldersByScanner`), or `semantics-changed`
+  (the baseline predates current comparison semantics).
+- `newIssues`, `persistingIssues`, `resolvedIssues` — lifecycle counts over
+  the full unfiltered result when `available` is `true`.
+
+A current-format baseline whose profile or comparison semantics no longer
+match is a setup failure: the CLI exits with code `2` (overriding
+`--fail-on`, including `none`), omits `isNew` from every issue, and prints a
+stderr message naming the reason. Regenerate the baseline or rerun without
+`--baseline`. Legacy baselines without comparison metadata still compare
+fingerprint-only with a stderr warning recommending regeneration.
+
+CLI baseline comparison is separate from the Obsidian plugin lifecycle. CLI
+output does not include plugin scan snapshots or the plugin's
+resolved-history view.
 
 Exit codes:
 
 - `0` — scan completed and did not match the configured `--fail-on` threshold.
 - `1` — scan completed and matched the configured `--fail-on` threshold.
-- `2` — invalid CLI usage or scan setup failure.
+- `2` — invalid CLI usage, scan setup failure, or a `--baseline` file that is
+  not comparable (`settings-changed` / `semantics-changed`).
 
 `--fail-on` accepts `any` (default), `warning`, `error`, `new`, and `none`.
 
