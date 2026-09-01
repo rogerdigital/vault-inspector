@@ -1059,7 +1059,7 @@ describe("runCli", () => {
 			expect(second.stderr).toBe("");
 			expect(payload.comparison).toEqual({
 				available: true,
-				mode: "legacy",
+				mode: "profile",
 				newIssues: 0,
 				persistingIssues: 1,
 				resolvedIssues: 0,
@@ -1069,7 +1069,7 @@ describe("runCli", () => {
 		});
 	});
 
-	it("reports legacy comparison counts including resolved issues", async () => {
+	it("reports profile comparison counts including resolved issues", async () => {
 		await withVault({ "keep.md": "", "drop.md": "" }, async (vaultPath) => {
 			const first = await runCli([
 				"scan",
@@ -1101,7 +1101,7 @@ describe("runCli", () => {
 			expect(second.stderr).toBe("");
 			expect(payload.comparison).toEqual({
 				available: true,
-				mode: "legacy",
+				mode: "profile",
 				newIssues: 1,
 				persistingIssues: 1,
 				resolvedIssues: 1,
@@ -1115,6 +1115,180 @@ describe("runCli", () => {
 			expect(payload.issues.find(
 				(issue: { isNew?: boolean }) => issue.isNew === false,
 			).primaryPath).toBe("keep.md");
+		});
+	});
+
+	it("compares legacy baselines with a stderr warning", async () => {
+		await withVault({ "keep.md": "", "drop.md": "" }, async (vaultPath) => {
+			const first = await runCli([
+				"scan",
+				vaultPath,
+				"--scanner",
+				"empty-notes",
+				"--fail-on",
+				"none",
+			]);
+			const baseline = JSON.parse(first.stdout);
+			delete baseline.comparison;
+			const baselinePath = join(vaultPath, "baseline.json");
+			await writeFile(baselinePath, JSON.stringify(baseline), "utf8");
+
+			await rm(join(vaultPath, "drop.md"), { force: true });
+			await writeFile(join(vaultPath, "added.md"), "");
+
+			const second = await runCli([
+				"scan",
+				vaultPath,
+				"--scanner",
+				"empty-notes",
+				"--baseline",
+				baselinePath,
+				"--fail-on",
+				"new",
+			]);
+
+			const payload = JSON.parse(second.stdout);
+			expect(second.exitCode).toBe(1);
+			expect(second.stderr).toContain(
+				"Baseline " + baselinePath + " has no scan profile metadata",
+			);
+			expect(second.stderr).toContain("legacy mode");
+			expect(payload.comparison).toEqual({
+				available: true,
+				mode: "legacy",
+				newIssues: 1,
+				persistingIssues: 1,
+				resolvedIssues: 1,
+				scanProfile: expect.any(String),
+				comparisonVersion: 2,
+			});
+			expect(payload.issues.find(
+				(issue: { isNew?: boolean }) => issue.isNew === true,
+			).primaryPath).toBe("added.md");
+			expect(payload.issues.find(
+				(issue: { isNew?: boolean }) => issue.isNew === false,
+			).primaryPath).toBe("keep.md");
+		});
+	});
+
+	it("fails with exit code 2 when baseline settings changed", async () => {
+		await withVault({ "empty.md": "" }, async (vaultPath) => {
+			const first = await runCli([
+				"scan",
+				vaultPath,
+				"--scanner",
+				"empty-notes",
+				"--fail-on",
+				"none",
+			]);
+			const baselinePath = join(vaultPath, "baseline.json");
+			await writeFile(baselinePath, first.stdout, "utf8");
+
+			const second = await runCli([
+				"scan",
+				vaultPath,
+				"--scanner",
+				"broken-links,empty-notes",
+				"--baseline",
+				baselinePath,
+				"--fail-on",
+				"new",
+			]);
+
+			const payload = JSON.parse(second.stdout);
+			expect(second.exitCode).toBe(2);
+			expect(second.stderr).toContain("settings-changed");
+			expect(payload.comparison).toEqual({
+				available: false,
+				mode: "profile",
+				reason: "settings-changed",
+				newIssues: 0,
+				persistingIssues: 0,
+				resolvedIssues: 0,
+				scanProfile: expect.any(String),
+				comparisonVersion: 2,
+			});
+			// No lifecycle annotations are fabricated from an incompatible baseline.
+			expect(payload.issues.every(
+				(issue: { isNew?: boolean }) => issue.isNew === undefined,
+			)).toBe(true);
+		});
+	});
+
+	it("fails with exit code 2 when baseline comparison semantics changed", async () => {
+		await withVault({ "empty.md": "" }, async (vaultPath) => {
+			const first = await runCli([
+				"scan",
+				vaultPath,
+				"--scanner",
+				"empty-notes",
+				"--fail-on",
+				"none",
+			]);
+			const baseline = JSON.parse(first.stdout);
+			baseline.comparison.comparisonVersion = 3;
+			const baselinePath = join(vaultPath, "baseline.json");
+			await writeFile(baselinePath, JSON.stringify(baseline), "utf8");
+
+			const second = await runCli([
+				"scan",
+				vaultPath,
+				"--scanner",
+				"empty-notes",
+				"--baseline",
+				baselinePath,
+				"--fail-on",
+				"none",
+			]);
+
+			const payload = JSON.parse(second.stdout);
+			expect(second.exitCode).toBe(2);
+			expect(second.stderr).toContain("semantics-changed");
+			expect(payload.comparison).toEqual({
+				available: false,
+				mode: "profile",
+				reason: "semantics-changed",
+				newIssues: 0,
+				persistingIssues: 0,
+				resolvedIssues: 0,
+				scanProfile: expect.any(String),
+				comparisonVersion: 2,
+			});
+			expect(payload.issues.every(
+				(issue: { isNew?: boolean }) => issue.isNew === undefined,
+			)).toBe(true);
+		});
+	});
+
+	it("rejects malformed baseline comparison metadata", async () => {
+		await withVault({ "empty.md": "" }, async (vaultPath) => {
+			const first = await runCli([
+				"scan",
+				vaultPath,
+				"--scanner",
+				"empty-notes",
+				"--fail-on",
+				"none",
+			]);
+			const baseline = JSON.parse(first.stdout);
+			baseline.comparison = { scanProfile: 1 };
+			const baselinePath = join(vaultPath, "baseline.json");
+			await writeFile(baselinePath, JSON.stringify(baseline), "utf8");
+
+			const second = await runCli([
+				"scan",
+				vaultPath,
+				"--scanner",
+				"empty-notes",
+				"--baseline",
+				baselinePath,
+				"--fail-on",
+				"none",
+			]);
+
+			expect(second.exitCode).toBe(2);
+			expect(second.stdout).toBe("");
+			expect(second.stderr).toContain("Invalid baseline");
 		});
 	});
 });
