@@ -14,7 +14,8 @@ Use Vault Inspector as a read-only quality gate for Obsidian vault maintenance. 
 - Do not present `--fix` as available. The CLI currently exits with an error for fix execution.
 - Do not automatically delete orphan attachments, duplicate candidates, or large files. Summarize evidence and recommend manual review.
 - Do not treat `title`, `message`, `generatedAt`, or `durationMs` as stable automation identifiers.
-- Use stable fields for automation: `schemaVersion`, `toolVersion`, `summary`, `scannerId`, `severity`, `classification`, `explanation`, `primaryPath`, `relatedPaths`, `evidence`, `fingerprint`, `fixAction`, `isNew`, and `summary.newIssues`.
+- Use stable fields for automation: `schemaVersion`, `toolVersion`, `summary`, `scannerId`, `severity`, `classification`, `explanation`, `primaryPath`, `relatedPaths`, `evidence`, `fingerprint`, `fixAction`, `isNew`, `summary.newIssues`, and the top-level `comparison` object (`available`, `mode`, `reason`, `newIssues`, `persistingIssues`, `resolvedIssues`).
+- Gate baseline interpretation on `comparison.available`. Use `mode` and `reason` for diagnosis, never as pass/fail signals.
 - Keep scan progress on stderr with `--progress`; keep stdout machine-readable.
 
 ## When To Run
@@ -79,7 +80,27 @@ Fail only on new findings:
 vinspect . --baseline .vault-inspector-baseline.json --fail-on new --format json
 ```
 
-When a baseline is used, inspect `summary.newIssues` and each issue's `isNew` field. Report new issues before existing known issues. CLI `isNew` is a baseline annotation and is separate from the Obsidian plugin's scan lifecycle. The CLI does not output plugin snapshots or resolved-history rows.
+When a baseline is used, read the top-level `comparison` object first and
+interpret it read-only:
+
+- `available: false` — no lifecycle verdict exists. With `reason:
+  "missing-baseline"`, state that no baseline was compared. With
+  `"settings-changed"` or `"semantics-changed"`, the CLI exits `2`: report
+  the setup problem (regenerate the baseline or rerun without `--baseline`)
+  and do not present stdout counts as lifecycle results; issues without
+  `isNew` are still valid current findings.
+- `mode: "legacy"` — counts are fingerprint-only from a pre-comparison
+  baseline and a stderr warning recommends regenerating it. Report the
+  counts with that caveat.
+- `available: true` — report `newIssues` first (triage or fix manually),
+  then `persistingIssues` as known debt without re-alerting each one, and
+  name the resolved findings confirmed against the baseline. Never edit or
+  delete the baseline to make findings disappear; regeneration is a fresh
+  `--output` run the user decides on.
+
+CLI `isNew` is a baseline annotation and is separate from the Obsidian
+plugin's scan lifecycle. The CLI does not output plugin snapshots or
+resolved-history rows.
 
 ## Exit Codes
 
