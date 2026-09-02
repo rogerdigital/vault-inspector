@@ -232,10 +232,13 @@ report. When `--baseline` is provided, each issue includes `isNew`, and
   the full unfiltered result when `available` is `true`.
 - `fingerprints` — the sorted, unique, complete identity set of the scan:
   every fingerprint from the full unfiltered result (`issues` +
-  `ignoredIssues`). Output filters such as `--scanner`, `--severity`,
-  `--include`, and `--exclude` may shrink the visible `issues` and
-  `ignoredIssues` arrays for presentation, but those filtered arrays do not
-  define baseline completeness — only `comparison.fingerprints` does.
+  `ignoredIssues`). Output filters such as `--severity`, `--include`, and
+  `--exclude` may shrink the visible `issues` and `ignoredIssues` arrays
+  for presentation, but those filtered arrays do not define baseline
+  completeness — only `comparison.fingerprints` does. Note that `--scanner`
+  is not an output filter: it defines the detection scope (which scanners
+  run, recorded in the scan profile), so findings from excluded scanners are
+  absent from the scan result entirely, not merely hidden.
 
 When a report is saved and reused as `--baseline`, the CLI reads the
 baseline identity from its `comparison.fingerprints` field, so findings

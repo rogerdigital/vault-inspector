@@ -103,8 +103,11 @@ When saving a scan report for later reuse as a baseline, preserve the
 identity set of the unfiltered scan and the field the CLI reads as the
 baseline identity. Never rebuild or substitute a current report's identity
 from its filtered visible `issues`/`ignoredIssues` arrays — output filters
-(`--scanner`, `--severity`, `--include`, `--exclude`) may hide findings that
-are still part of the baseline. A profile-aware baseline without a complete
+(`--severity`, `--include`, `--exclude`) may hide findings that are still
+part of the baseline. `--scanner` is not an output filter: it defines the
+detection scope (which scanners run, recorded in the scan profile), so
+excluded scanners' findings are absent from the scan result entirely. A
+profile-aware baseline without a complete
 fingerprint set (created by an older CLI version) is rejected with exit code
 `2` and empty stdout; regenerate it with a fresh scan using the current
 Vault Inspector version.
