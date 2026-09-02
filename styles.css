@@ -88,7 +88,8 @@ button.vi-stat-clickable:focus-visible { outline: 2px solid var(--interactive-ac
 
 /* Finding interpretation and lifecycle */
 .vi-classification-badge, .vi-status-badge { display: inline-flex; align-items: center; flex: 0 0 auto; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; line-height: 1.5; text-transform: uppercase; }
-.vi-classification-confirmed { background: var(--background-modifier-success); color: var(--text-success); }
+.vi-classification-badge { align-self: flex-start; max-width: 100%; }
+.vi-classification-confirmed { background: var(--background-secondary); color: var(--text-success); border: 1px solid var(--text-success); }
 .vi-classification-candidate { background: var(--background-modifier-hover); color: var(--text-warning); }
 .vi-classification-unverified { background: var(--background-secondary); color: var(--text-muted); }
 .vi-status-new { background: var(--interactive-accent); color: var(--text-on-accent); }
@@ -222,7 +223,7 @@ button.vi-resolved-header:focus-visible { outline: 2px solid var(--interactive-a
 
 /* Fix impact preview */
 .vi-eligibility-badge { display: inline-flex; align-items: center; flex: 0 0 auto; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; line-height: 1.5; text-transform: uppercase; }
-.vi-eligibility-eligible { background: var(--background-modifier-success); color: var(--text-success); }
+.vi-eligibility-eligible { background: var(--background-secondary); color: var(--text-success); border: 1px solid var(--text-success); }
 .vi-eligibility-review-required { background: var(--background-modifier-hover); color: var(--text-warning); }
 .vi-eligibility-blocked { background: var(--background-secondary); color: var(--text-error); }
 .vi-impact-card { min-width: 0; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--background-modifier-border); border-radius: 4px; }
