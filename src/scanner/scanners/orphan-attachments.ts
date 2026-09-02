@@ -49,7 +49,7 @@ export const orphanAttachmentsScanner = {
 					orphan: true,
 				}),
 				// Delete eligibility requires complete reference coverage:
-				// unresolved Canvas content could reference this file.
+				// unindexed Markdown or Canvas sources could reference this file.
 				...(index.coverageComplete
 					? {
 							fixAction: {
@@ -81,7 +81,7 @@ function buildCoverageFinding(failures: ReferenceCoverageFailure[]): Issue {
 		scannerId: "orphan-attachments",
 		severity: "info",
 		title: "Reference coverage incomplete",
-		message: `${failedPaths.length} Canvas file${failedPaths.length === 1 ? "" : "s"} could not be parsed (${reasons}); orphan results may be incomplete`,
+		message: `${failedPaths.length} reference source file${failedPaths.length === 1 ? "" : "s"} could not be indexed (${reasons}); orphan results may be incomplete`,
 		primaryPath: failedPaths[0],
 		relatedPaths: failedPaths,
 		evidence: {
@@ -91,8 +91,8 @@ function buildCoverageFinding(failures: ReferenceCoverageFailure[]): Issue {
 		},
 		...describeFinding(
 			"unverified",
-			"Canvas reference sources could not be fully parsed, so the absence of references for some attachments is not yet trustworthy.",
-			"Fix or remove the malformed Canvas file(s) listed here, then rescan.",
+			"Markdown metadata or Canvas reference sources could not be fully indexed, so the absence of references for some attachments is not yet trustworthy.",
+			"Resolve the reference coverage failures listed here, then rescan.",
 		),
 		fingerprint: generateFingerprint("orphan-attachments", failedPaths[0], {
 			coverageFailure: true,

@@ -110,6 +110,27 @@ describe("buildReferenceIndex markdown sources", () => {
 		expect(isReferenced(index, "assets/used.png")).toBe(true);
 	});
 
+	it("marks coverage incomplete when a Markdown metadata cache entry is missing", async () => {
+		const source = makeTestFile("notes/uncached.md");
+		const attachment = makeTestFile("assets/maybe-used.png");
+		const ctx = makeScanContext({
+			files: [source, attachment],
+			metadataByPath: {},
+			overrides: {
+				metadataCache: {
+					getFileCache: () => null,
+				} as any,
+			},
+		});
+
+		const index = await buildReferenceIndex(ctx);
+
+		expect(index.coverageComplete).toBe(false);
+		expect(index.coverageFailures).toEqual([
+			{ path: "notes/uncached.md", reason: "metadata-cache-missing" },
+		]);
+	});
+
 	it("performs no vault reads when no canvas files exist", async () => {
 		let reads = 0;
 		const ctx = makeScanContext({
@@ -161,6 +182,32 @@ describe("buildReferenceIndex canvas sources", () => {
 		});
 		expect(getInboundReference(index, "notes/a.md")).toMatchObject({
 			kinds: ["canvas"],
+		});
+	});
+
+	it("records Canvas group background references", async () => {
+		const ctx = canvasContext({
+			"canvas/board.canvas": JSON.stringify({
+				nodes: [
+					{
+						id: "group-1",
+						type: "group",
+						background: "assets/background.png",
+					},
+				],
+				edges: [],
+			}),
+		});
+		const background = makeTestFile("assets/background.png");
+		ctx.allFiles = [...ctx.allFiles, background];
+		ctx.filePathIndex = new Set([...ctx.filePathIndex, background.path]);
+
+		const index = await buildReferenceIndex(ctx);
+
+		expect(getInboundReference(index, background.path)).toEqual({
+			count: 1,
+			kinds: ["canvas"],
+			sources: ["canvas/board.canvas"],
 		});
 	});
 

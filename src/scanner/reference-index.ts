@@ -5,7 +5,11 @@ export type ReferenceSourceKind = "note-link" | "embed" | "frontmatter" | "canva
 
 export type ReferenceCoverageFailure = {
 	path: string;
-	reason: "malformed-json" | "read-failed" | "unexpected-shape";
+	reason:
+		| "metadata-cache-missing"
+		| "malformed-json"
+		| "read-failed"
+		| "unexpected-shape";
 	detail?: string;
 };
 
@@ -49,6 +53,7 @@ export function isReferenced(index: ReferenceIndex, path: string): boolean {
 type CanvasNode = {
 	type?: unknown;
 	file?: unknown;
+	background?: unknown;
 };
 
 /**
@@ -97,7 +102,13 @@ export async function buildReferenceIndex(
 
 	for (const file of ctx.markdownFiles) {
 		const cache = ctx.metadataCache.getFileCache(file);
-		if (!cache) continue;
+		if (!cache) {
+			coverageFailures.push({
+				path: file.path,
+				reason: "metadata-cache-missing",
+			});
+			continue;
+		}
 		for (const link of cache.links ?? []) {
 			const resolved = resolveTarget(link.link, file.path);
 			if (resolved) addReference(resolved, file.path, "note-link");
@@ -147,15 +158,14 @@ export async function buildReferenceIndex(
 		}
 		for (const node of nodes) {
 			const canvasNode = node as CanvasNode | null;
-			if (
-				canvasNode === null ||
-				canvasNode.type !== "file" ||
-				typeof canvasNode.file !== "string" ||
-				canvasNode.file === ""
-			) {
-				continue;
-			}
-			const resolved = resolveTarget(canvasNode.file, file.path);
+			if (canvasNode === null) continue;
+			const target = canvasNode.type === "file"
+				? canvasNode.file
+				: canvasNode.type === "group"
+					? canvasNode.background
+					: undefined;
+			if (typeof target !== "string" || target === "") continue;
+			const resolved = resolveTarget(target, file.path);
 			if (resolved) addReference(resolved, file.path, "canvas");
 		}
 	}
