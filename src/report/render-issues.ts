@@ -18,6 +18,7 @@ export type IssueListConfig = {
 	onIgnoreIssue?: (issue: Issue) => void;
 	onExcludeFolder?: (issue: Issue) => void;
 	onOpenScannerSettings?: (scannerId: ScannerId) => void;
+	onFixIssue?: (issue: Issue) => void | Promise<void>;
 };
 
 export type BulkFixSelection = {
@@ -155,12 +156,23 @@ function renderIssueActions(
 	config: IssueListConfig,
 ): void {
 	const issuePath = getIssuePath(issue);
+	const eligibility = issue.fixAction ? resolveEligibility(issue) : null;
+	const canFixIssue = Boolean(
+		config.onFixIssue
+			&& issue.fixAction
+			&& eligibility !== "blocked",
+	);
 	const canExcludeFolder = Boolean(
 		config.onExcludeFolder
-		&& issuePath
-		&& getParentFolder(issuePath),
+			&& issuePath
+			&& getParentFolder(issuePath),
 	);
-	if (!config.onIgnoreIssue && !canExcludeFolder && !config.onOpenScannerSettings) {
+	if (
+		!canFixIssue
+		&& !config.onIgnoreIssue
+		&& !canExcludeFolder
+		&& !config.onOpenScannerSettings
+	) {
 		return;
 	}
 
@@ -169,6 +181,13 @@ function renderIssueActions(
 	disclosure.createEl("summary", { text: "Actions" });
 	const actions = disclosure.createDiv({ cls: "vi-context-actions" });
 
+	if (canFixIssue) {
+		createActionButton(
+			actions,
+			eligibility === "review-required" ? "Review fix" : "Fix this issue",
+			() => { void config.onFixIssue?.(issue); },
+		);
+	}
 	if (config.onIgnoreIssue) {
 		createActionButton(actions, "Ignore this issue", () => {
 			config.onIgnoreIssue?.(issue);

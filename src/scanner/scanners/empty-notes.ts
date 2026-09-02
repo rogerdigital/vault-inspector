@@ -110,14 +110,20 @@ export function countWords(text: string): number {
  * Count meaningful structures in a note body (after frontmatter and title
  * removal), independently from the prose word count:
  *
- * - internal links and embeds (every `[[...]]` occurrence);
+ * - wiki links/embeds and Markdown links/images (every `[[...]]` and
+ *   `[...](...)` occurrence);
  * - Markdown task items (`- [ ]` / `- [x]`, bullet or ordered);
  * - non-empty list items (bullet or ordered);
  * - fenced code blocks with at least one non-blank inner line (once per
  *   block; an unterminated fence counts nothing — its text is already
  *   measured by countWords);
- * - other non-prose visible blocks: table blocks (once per run of `|` rows),
- *   Markdown images, and `<img>` lines.
+ * - other non-prose visible blocks: table blocks (once per run of `|` rows)
+ *   and `<img>` lines.
+ *
+ * HTML comments are stripped before counting: their content is never
+ * rendered, so a commented-out link or table is not meaningful structure.
+ * Markdown links whose opening bracket is backslash-escaped (e.g.
+ * `\[literal](target)`) are literal text and count nothing.
  *
  * Plain prose paragraphs deliberately count ZERO structures: countWords
  * already measures them, so counting them would make every prose stub
@@ -127,16 +133,25 @@ export function countWords(text: string): number {
  */
 export function countMeaningfulStructures(body: string): number {
 	let count = 0;
-	// Internal links and embeds, wherever they appear.
-	for (const match of body.matchAll(/\[\[[^\]]+\]\]/g)) {
+	// HTML comments never render, so structures inside them are not visible.
+	const visible = body.replace(/<!--[\s\S]*?-->/g, "");
+	// Wiki links and embeds, wherever they appear.
+	for (const match of visible.matchAll(/\[\[[^\]]+\]\]/g)) {
 		void match;
+		count++;
+	}
+
+	// Markdown links and images (including external bookmark-style links).
+	for (const match of visible.matchAll(/!?\[[^\]\r\n]*\]\(\s*(?:<[^>\r\n]+>|[^)\r\n]+)\s*\)/g)) {
+		const bracketIndex = match.index + (match[0].startsWith("!") ? 1 : 0);
+		if (visible[bracketIndex - 1] === "\\") continue;
 		count++;
 	}
 
 	let inFence = false;
 	let fenceHasContent = false;
 	let inTable = false;
-	for (const line of body.split("\n")) {
+	for (const line of visible.split("\n")) {
 		const trimmed = line.trim();
 		if (/^(```|~~~)/.test(trimmed)) {
 			if (inFence && fenceHasContent) count++;
@@ -173,7 +188,7 @@ export function countMeaningfulStructures(body: string): number {
 			count++;
 			continue;
 		}
-		if (/^!\[[^\]]*\]\([^)]*\)/.test(trimmed) || /<img\b/.test(trimmed)) {
+		if (/<img\b/.test(trimmed)) {
 			count++;
 		}
 		// Plain prose line: not a structure — countWords covers it.

@@ -11,9 +11,9 @@ function makeDuplicateIssue(
 	fingerprint = "duplicates",
 	paths = ["a.md", "b.md", "c.md"],
 	referencedPaths: string[] = [],
+	automaticKeepPath = paths.slice().sort()[0],
 ): Issue {
 	const sorted = paths.slice().sort();
-	const automaticKeepPath = sorted[0];
 	const action: FixAction = {
 		kind: "trash-file",
 		label: "Delete duplicates",
@@ -191,6 +191,66 @@ describe("fix decisions", () => {
 			complete: true,
 			decisions: [{ fingerprint: "duplicates", keepPath: "a.md" }],
 		});
+	});
+
+	it("rejects a duplicate decision when the automatic keep path changed", () => {
+		const requested = makeDuplicateIssue(
+			"duplicates",
+			["a.md", "b.md", "c.md"],
+			["a.md"],
+			"a.md",
+		);
+		const fresh = makeDuplicateIssue(
+			"duplicates",
+			["a.md", "b.md", "c.md"],
+			["a.md"],
+			"b.md",
+		);
+
+		expect(getFreshFixAction(requested, fresh, {
+			fingerprint: "duplicates",
+			keepPath: "a.md",
+		})).toBeNull();
+	});
+
+	it("rejects a duplicate decision when referenced paths changed", () => {
+		const requested = makeDuplicateIssue(
+			"duplicates",
+			["a.md", "b.md", "c.md"],
+			["a.md"],
+			"a.md",
+		);
+		const fresh = makeDuplicateIssue(
+			"duplicates",
+			["a.md", "b.md", "c.md"],
+			["a.md", "b.md"],
+			"a.md",
+		);
+
+		expect(getFreshFixAction(requested, fresh, {
+			fingerprint: "duplicates",
+			keepPath: "a.md",
+		})).toBeNull();
+	});
+
+	it("accepts a duplicate decision when referenced paths are reordered", () => {
+		const requested = makeDuplicateIssue(
+			"duplicates",
+			["a.md", "b.md", "c.md"],
+			["a.md", "b.md"],
+			"a.md",
+		);
+		const fresh = makeDuplicateIssue(
+			"duplicates",
+			["a.md", "b.md", "c.md"],
+			["b.md", "a.md"],
+			"a.md",
+		);
+
+		expect(getFreshFixAction(requested, fresh, {
+			fingerprint: "duplicates",
+			keepPath: "a.md",
+		})).not.toBeNull();
 	});
 
 	it("rejects a fresh action whose review requirement changed", () => {

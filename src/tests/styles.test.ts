@@ -109,4 +109,25 @@ describe("styles.css", () => {
 		expect(mobile).toMatch(/\.vi-impact-row\s*\{[^}]*flex-direction:\s*column;/);
 		expect(mobile).toMatch(/\.vi-bulk-excluded-note\s*\{[^}]*overflow-wrap:\s*anywhere;/);
 	});
+
+	it("keeps confirmed and eligible statuses compact and contrast-safe", async () => {
+		const css = await readFile("styles.css", "utf8");
+
+		expect(css).toMatch(
+			/\.vi-classification-badge\s*\{[^}]*align-self:\s*flex-start;/,
+		);
+		for (const className of [
+			"vi-classification-confirmed",
+			"vi-eligibility-eligible",
+		]) {
+			const rule = css.match(new RegExp(`\\.${className}\\s*\\{([^}]*)\\}`))?.[1];
+			expect(rule, `missing .${className}`).toBeDefined();
+			expect(rule).toContain("background: var(--background-secondary)");
+			expect(rule).toContain("color: var(--text-success)");
+			expect(rule).toContain("border: 1px solid var(--text-success)");
+			expect(rule).not.toContain(
+				"background: var(--background-modifier-success)",
+			);
+		}
+	});
 });

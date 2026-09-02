@@ -93,7 +93,13 @@ describe("runCli", () => {
 				resolvedIssues: 0,
 				scanProfile: expect.any(String),
 				comparisonVersion: 2,
+				fingerprints: expect.any(Array),
 			});
+			// The identity set is the complete unfiltered set, not just the
+			// visible (filtered) issues.
+			expect(payload.comparison.fingerprints).toEqual(
+				[payload.issues[0].fingerprint],
+			);
 			expect(payload).not.toHaveProperty("resolvedIssues");
 		});
 	});
@@ -446,6 +452,7 @@ describe("runCli", () => {
 					resolvedIssues: 0,
 					scanProfile: expect.any(String),
 					comparisonVersion: 2,
+					fingerprints: expect.any(Array),
 				});
 			});
 		});
@@ -1200,9 +1207,14 @@ describe("runCli", () => {
 				resolvedIssues: 0,
 				scanProfile: expect.any(String),
 				comparisonVersion: 2,
+				fingerprints: expect.any(Array),
+			});
+			// The identity set is the complete unfiltered set.
+			expect(payload.comparison.fingerprints).toEqual(
+				[payload.issues[0].fingerprint],
+			);
 			});
 		});
-	});
 
 	it("reports profile comparison counts including resolved issues", async () => {
 		await withVault({ "keep.md": "", "drop.md": "" }, async (vaultPath) => {
@@ -1242,7 +1254,13 @@ describe("runCli", () => {
 				resolvedIssues: 1,
 				scanProfile: expect.any(String),
 				comparisonVersion: 2,
+				fingerprints: expect.any(Array),
 			});
+			// The identity set is the complete unfiltered set: sorted and unique.
+			expect(payload.comparison.fingerprints).toEqual(
+				payload.issues.map((issue: { fingerprint: string }) => issue.fingerprint)
+					.sort(),
+			);
 			// The same fingerprint set drives isNew and the counts.
 			expect(payload.issues.find(
 				(issue: { isNew?: boolean }) => issue.isNew === true,
@@ -1296,6 +1314,7 @@ describe("runCli", () => {
 				resolvedIssues: 1,
 				scanProfile: expect.any(String),
 				comparisonVersion: 2,
+				fingerprints: expect.any(Array),
 			});
 			expect(payload.issues.find(
 				(issue: { isNew?: boolean }) => issue.isNew === true,
@@ -1303,6 +1322,72 @@ describe("runCli", () => {
 			expect(payload.issues.find(
 				(issue: { isNew?: boolean }) => issue.isNew === false,
 			).primaryPath).toBe("keep.md");
+		});
+	});
+
+	it("preserves hidden findings when a filtered report becomes the baseline", async () => {
+		await withVault({ "error-source.md": "[[missing]]", "empty.md": "" }, async (vaultPath) => {
+			const filtered = await runCli([
+				"scan",
+				vaultPath,
+				"--scanner",
+				"broken-links,empty-notes",
+				"--severity",
+				"error",
+				"--fail-on",
+				"none",
+			]);
+			const filteredPayload = JSON.parse(filtered.stdout);
+			expect(filteredPayload.issues).toHaveLength(1);
+			expect(filteredPayload.comparison.fingerprints).toHaveLength(2);
+
+			const baselinePath = join(vaultPath, "baseline.json");
+			await writeFile(baselinePath, filtered.stdout, "utf8");
+			const current = await runCli([
+				"scan",
+				vaultPath,
+				"--scanner",
+				"broken-links,empty-notes",
+				"--baseline",
+				baselinePath,
+				"--fail-on",
+				"new",
+			]);
+			const payload = JSON.parse(current.stdout);
+
+			expect(current.exitCode).toBe(0);
+			expect(payload.comparison).toMatchObject({
+				available: true,
+				mode: "profile",
+				newIssues: 0,
+				persistingIssues: 2,
+				resolvedIssues: 0,
+			});
+			expect(payload.issues.every(
+				(issue: { isNew?: boolean }) => issue.isNew === false,
+			)).toBe(true);
+		});
+	});
+
+	it("rejects a profile-aware baseline without a complete fingerprint set", async () => {
+		await withVault({ "empty.md": "" }, async (vaultPath) => {
+			const first = await runCli([
+				"scan", vaultPath, "--scanner", "empty-notes", "--fail-on", "none",
+			]);
+			const baseline = JSON.parse(first.stdout);
+			delete baseline.comparison.fingerprints;
+			const baselinePath = join(vaultPath, "baseline.json");
+			await writeFile(baselinePath, JSON.stringify(baseline), "utf8");
+
+			const second = await runCli([
+				"scan", vaultPath, "--scanner", "empty-notes",
+				"--baseline", baselinePath, "--fail-on", "none",
+			]);
+
+			expect(second.exitCode).toBe(2);
+			expect(second.stdout).toBe("");
+			expect(second.stderr).toContain("complete fingerprint set");
+			expect(second.stderr).toContain("Regenerate");
 		});
 	});
 
@@ -1342,6 +1427,7 @@ describe("runCli", () => {
 				resolvedIssues: 0,
 				scanProfile: expect.any(String),
 				comparisonVersion: 2,
+				fingerprints: expect.any(Array),
 			});
 			// No lifecycle annotations are fabricated from an incompatible baseline.
 			expect(payload.issues.every(
@@ -1388,6 +1474,7 @@ describe("runCli", () => {
 				resolvedIssues: 0,
 				scanProfile: expect.any(String),
 				comparisonVersion: 2,
+				fingerprints: expect.any(Array),
 			});
 			expect(payload.issues.every(
 				(issue: { isNew?: boolean }) => issue.isNew === undefined,

@@ -159,6 +159,33 @@ describe("orphanAttachmentsScanner", () => {
 		);
 	});
 
+	it("blocks deletion when a Markdown reference source was not indexed", async () => {
+		const img = makeFile("assets/maybe-used.png", OLD_MTIME);
+		const ctx = makeCtx({
+			allFiles: [img],
+			filePathIndex: new Set([img.path]),
+			referenceIndex: makeIndex({}, [
+				{ path: "notes/uncached.md", reason: "metadata-cache-missing" },
+			]),
+		});
+
+		const issues = await orphanAttachmentsScanner.scan(ctx);
+		const orphan = issues.find((issue) => issue.title === "Orphan attachment");
+		const coverage = issues.find(
+			(issue) => issue.title === "Reference coverage incomplete",
+		);
+
+		expect(orphan?.fixAction).toBeUndefined();
+		expect(orphan?.evidence.coverageComplete).toBe(false);
+		expect(coverage).toMatchObject({
+			classification: "unverified",
+			primaryPath: "notes/uncached.md",
+			evidence: { reasons: "metadata-cache-missing" },
+		});
+		expect(coverage?.message).toContain("reference source");
+		expect(coverage?.explanation.why).toContain("Markdown metadata");
+	});
+
 	it("emits exactly one unverified coverage finding summarizing all failures", async () => {
 		const img = makeFile("assets/orphan.png", OLD_MTIME);
 		const failures: ReferenceCoverageFailure[] = [
@@ -186,7 +213,7 @@ describe("orphanAttachmentsScanner", () => {
 			},
 		});
 		expect(coverage[0].fixAction).toBeUndefined();
-		expect(coverage[0].explanation.why).toContain("Canvas reference sources");
+		expect(coverage[0].explanation.why).toContain("Markdown metadata or Canvas reference sources");
 	});
 
 	it("fingerprints the coverage finding deterministically per failure set", async () => {

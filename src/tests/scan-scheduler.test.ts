@@ -32,10 +32,11 @@ function makeSettings(
 function makeIssue(
 	fingerprint: string,
 	classification: Issue["classification"] = "confirmed",
+	severity: Issue["severity"] = "error",
 ): Issue {
 	return {
 		scannerId: "broken-links",
-		severity: "warning",
+		severity,
 		classification,
 		explanation: {
 			why: "Test evidence confirms this fixture.",
@@ -182,24 +183,26 @@ describe("automaticScanSettings", () => {
 });
 
 describe("confirmedNewIssues", () => {
-	it("counts only new confirmed issues from the active result", () => {
-		const current = makeIssue("current");
-		const persisting = makeIssue("persisting");
-		const candidate = makeIssue("candidate", "candidate");
-		const unverified = makeIssue("unverified", "unverified");
-		const result = makeResult([current, persisting, candidate, unverified]);
+	it("returns only new confirmed errors from the active result", () => {
+		const error = makeIssue("error", "confirmed", "error");
+		const warning = makeIssue("warning", "confirmed", "warning");
+		const info = makeIssue("info", "confirmed", "info");
+		const candidate = makeIssue("candidate", "candidate", "error");
+		const persisting = makeIssue("persisting", "confirmed", "error");
+		const result = makeResult([error, warning, info, candidate, persisting]);
 
 		const issues = confirmedNewIssues(
 			result,
 			makeComparison(new Map([
-				[current.fingerprint, "new"],
-				[persisting.fingerprint, "persisting"],
+				[error.fingerprint, "new"],
+				[warning.fingerprint, "new"],
+				[info.fingerprint, "new"],
 				[candidate.fingerprint, "new"],
-				[unverified.fingerprint, "new"],
+				[persisting.fingerprint, "persisting"],
 			])),
 		);
 
-		expect(issues.map((issue) => issue.fingerprint)).toEqual(["current"]);
+		expect(issues.map((issue) => issue.fingerprint)).toEqual(["error"]);
 	});
 
 	it("ignores ignored findings even when they are new", () => {
@@ -227,12 +230,12 @@ describe("confirmedNewIssues", () => {
 describe("automaticScanNotice", () => {
 	it("uses the singular form for one issue", () => {
 		expect(automaticScanNotice([makeIssue("only")]))
-			.toBe("Vault Inspector automatic scan found 1 new confirmed issue.");
+			.toBe("Vault Inspector automatic scan found 1 new confirmed error.");
 	});
 
 	it("uses the plural form for several issues", () => {
 		expect(automaticScanNotice([makeIssue("a"), makeIssue("b")]))
-			.toBe("Vault Inspector automatic scan found 2 new confirmed issues.");
+			.toBe("Vault Inspector automatic scan found 2 new confirmed errors.");
 	});
 });
 
@@ -370,8 +373,26 @@ describe("createStartupScanScheduler", () => {
 		);
 
 		expect(subject.notifications).toEqual([
-			"Vault Inspector automatic scan found 1 new confirmed issue.",
+			"Vault Inspector automatic scan found 1 new confirmed error.",
 		]);
+	});
+
+	it("stays silent when a new finding is only a confirmed warning", async () => {
+		const warning = makeIssue("warning", "confirmed", "warning");
+		const subject = makeSchedulerDeps({
+			snapshot: makeSnapshot(0),
+			outcome: completedOutcome(
+				[warning],
+				new Map([[warning.fingerprint, "new"]]),
+			),
+		});
+		createStartupScanScheduler(subject.deps).schedule();
+		subject.settle();
+		await vi.waitFor(() =>
+			expect(subject.runAutomaticScan).toHaveBeenCalledTimes(1),
+		);
+
+		expect(subject.notifications).toEqual([]);
 	});
 
 	it("stays silent when no finding is newly confirmed", async () => {

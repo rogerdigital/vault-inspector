@@ -5,7 +5,11 @@ export type ReferenceSourceKind = "note-link" | "embed" | "frontmatter" | "canva
 
 export type ReferenceCoverageFailure = {
 	path: string;
-	reason: "malformed-json" | "read-failed" | "unexpected-shape";
+	reason:
+		| "metadata-cache-missing"
+		| "malformed-json"
+		| "read-failed"
+		| "unexpected-shape";
 	detail?: string;
 };
 
@@ -46,9 +50,16 @@ export function isReferenced(index: ReferenceIndex, path: string): boolean {
 	return index.inboundByPath.has(path);
 }
 
+type MutableInboundReference = {
+	count: number;
+	kinds: Set<ReferenceSourceKind>;
+	sources: Set<string>;
+};
+
 type CanvasNode = {
 	type?: unknown;
 	file?: unknown;
+	background?: unknown;
 };
 
 /**
@@ -68,7 +79,7 @@ export async function buildReferenceIndex(
 		"metadataCache" | "vault" | "markdownFiles" | "allFiles" | "filePathIndex"
 	>,
 ): Promise<ReferenceIndex> {
-	const inboundByPath = new Map<string, InboundReference>();
+	const mutableInboundByPath = new Map<string, MutableInboundReference>();
 	const coverageFailures: ReferenceCoverageFailure[] = [];
 	const canvasFiles: string[] = [];
 
@@ -77,12 +88,15 @@ export async function buildReferenceIndex(
 		sourcePath: string,
 		kind: ReferenceSourceKind,
 	): void => {
-		const entry =
-			inboundByPath.get(targetPath) ?? { count: 0, kinds: [], sources: [] };
+		const entry = mutableInboundByPath.get(targetPath) ?? {
+			count: 0,
+			kinds: new Set<ReferenceSourceKind>(),
+			sources: new Set<string>(),
+		};
 		entry.count += 1;
-		if (!entry.kinds.includes(kind)) entry.kinds.push(kind);
-		if (!entry.sources.includes(sourcePath)) entry.sources.push(sourcePath);
-		inboundByPath.set(targetPath, entry);
+		entry.kinds.add(kind);
+		entry.sources.add(sourcePath);
+		mutableInboundByPath.set(targetPath, entry);
 	};
 
 	const resolveTarget = (link: string, sourcePath: string): string | null => {
@@ -97,7 +111,13 @@ export async function buildReferenceIndex(
 
 	for (const file of ctx.markdownFiles) {
 		const cache = ctx.metadataCache.getFileCache(file);
-		if (!cache) continue;
+		if (!cache) {
+			coverageFailures.push({
+				path: file.path,
+				reason: "metadata-cache-missing",
+			});
+			continue;
+		}
 		for (const link of cache.links ?? []) {
 			const resolved = resolveTarget(link.link, file.path);
 			if (resolved) addReference(resolved, file.path, "note-link");
@@ -147,22 +167,25 @@ export async function buildReferenceIndex(
 		}
 		for (const node of nodes) {
 			const canvasNode = node as CanvasNode | null;
-			if (
-				canvasNode === null ||
-				canvasNode.type !== "file" ||
-				typeof canvasNode.file !== "string" ||
-				canvasNode.file === ""
-			) {
-				continue;
-			}
-			const resolved = resolveTarget(canvasNode.file, file.path);
+			if (canvasNode === null) continue;
+			const target = canvasNode.type === "file"
+				? canvasNode.file
+				: canvasNode.type === "group"
+					? canvasNode.background
+					: undefined;
+			if (typeof target !== "string" || target === "") continue;
+			const resolved = resolveTarget(target, file.path);
 			if (resolved) addReference(resolved, file.path, "canvas");
 		}
 	}
 
-	for (const entry of inboundByPath.values()) {
-		entry.kinds.sort();
-		entry.sources.sort();
+	const inboundByPath = new Map<string, InboundReference>();
+	for (const [path, entry] of mutableInboundByPath) {
+		inboundByPath.set(path, {
+			count: entry.count,
+			kinds: [...entry.kinds].sort(),
+			sources: [...entry.sources].sort(),
+		});
 	}
 
 	return {

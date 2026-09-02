@@ -1,10 +1,4 @@
 # Link Only MOC
 
-- [[target]]
-- [[sibling-note]]
-- [[目标笔记]]
-- [[target#Section One]]
-- [[genuine-empty]]
-- [[frontmatter-only]]
-- [[title-only]]
-- [[stub]]
+[genuine-empty](../empty/genuine-empty.md) [frontmatter-only](../empty/frontmatter-only.md)
+[title-only](../empty/title-only.md) [stub](../empty/stub.md)

@@ -50,9 +50,10 @@ export function automaticScanSettings(
 }
 
 /**
- * Active, non-ignored findings that are both newly detected and
- * confirmed. Anything else — persisting, candidate, unverified, ignored,
- * or compared against an unavailable baseline — is not worth a notice.
+ * Active, non-ignored findings that are newly detected, confirmed, and
+ * errors. Anything else — persisting, candidate, unverified, warning or
+ * info severity, ignored, or compared against an unavailable baseline —
+ * is not worth a notice.
  */
 export function confirmedNewIssues(
 	result: ScanResult,
@@ -61,12 +62,13 @@ export function confirmedNewIssues(
 	if (!comparison.available) return [];
 	return result.issues.filter((issue) =>
 		comparison.statuses.get(issue.fingerprint) === "new"
-		&& issue.classification === "confirmed");
+		&& issue.classification === "confirmed"
+		&& issue.severity === "error");
 }
 
 export function automaticScanNotice(newIssues: Issue[]): string {
 	const count = newIssues.length;
-	return `Vault Inspector automatic scan found ${count} new confirmed issue${count === 1 ? "" : "s"}.`;
+	return `Vault Inspector automatic scan found ${count} new confirmed error${count === 1 ? "" : "s"}.`;
 }
 
 export type StartupScanSchedulerDeps = {

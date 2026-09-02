@@ -52,13 +52,22 @@ export type CliComparison = {
 	resolvedIssues: number;
 	scanProfile: string;
 	comparisonVersion: number;
+	/**
+	 * Sorted, unique, complete identity set of the UNFILTERED scan result
+	 * (issues + ignoredIssues). Output filters may shrink the visible
+	 * `issues`/`ignoredIssues` arrays for presentation, but this field always
+	 * carries the full set so any saved report is a safe future baseline.
+	 */
+	fingerprints: string[];
 };
 
 /**
  * A parsed --baseline file. "current" baselines carry well-formed
- * comparison.scanProfile/comparisonVersion metadata (written by the CLI
- * since Task 4.1) and include ignoredIssues fingerprints, mirroring
- * createScanSnapshot. "legacy" baselines are pre-4.1 reports without the
+ * comparison.scanProfile/comparisonVersion/comparison.fingerprints
+ * metadata (written by the CLI since Task 4.1, fingerprints since the
+ * filtered-baseline fix); the complete identity set is read from
+ * comparison.fingerprints, never rebuilt from the (possibly filtered)
+ * issue arrays. "legacy" baselines are pre-4.1 reports without the
  * comparison object; their fingerprint extraction is frozen to `issues`.
  */
 export type BaselineReport =
@@ -69,6 +78,12 @@ export type BaselineReport =
 			comparisonVersion: number;
 		}
 	| { kind: "legacy"; fingerprints: Set<string> };
+
+type BaselineComparisonMetadata = {
+	scanProfile: string;
+	comparisonVersion: number;
+	fingerprints?: unknown;
+};
 
 type CliOptions = {
 	command: "scan";
@@ -536,22 +551,26 @@ async function readBaseline(path: string): Promise<BaselineReport> {
 		return { kind: "legacy", fingerprints: new Set(readFingerprints(parsed.issues)) };
 	}
 
-	if (!isBaselineComparisonMetadata(parsed.comparison)) {
+	if (!hasBaselineProfileMetadata(parsed.comparison)) {
 		throw new Error("Invalid baseline: comparison metadata is malformed");
+	}
+
+	const metadata = parsed.comparison as BaselineComparisonMetadata;
+	if (!isValidFingerprintArray(metadata.fingerprints)) {
+		throw new Error(
+			"Invalid baseline: complete fingerprint set is missing. Regenerate the baseline with the current Vault Inspector version.",
+		);
 	}
 
 	return {
 		kind: "current",
-		fingerprints: new Set([
-			...readFingerprints(parsed.issues),
-			...readFingerprints(parsed.ignoredIssues),
-		]),
-		scanProfile: parsed.comparison.scanProfile,
-		comparisonVersion: parsed.comparison.comparisonVersion,
+		fingerprints: new Set(metadata.fingerprints),
+		scanProfile: metadata.scanProfile,
+		comparisonVersion: metadata.comparisonVersion,
 	};
 }
 
-function isBaselineComparisonMetadata(
+function hasBaselineProfileMetadata(
 	value: unknown,
 ): value is { scanProfile: string; comparisonVersion: number } {
 	if (typeof value !== "object" || value === null) return false;
@@ -562,6 +581,14 @@ function isBaselineComparisonMetadata(
 		typeof record.comparisonVersion === "number" &&
 		Number.isSafeInteger(record.comparisonVersion) &&
 		record.comparisonVersion > 0
+	);
+}
+
+function isValidFingerprintArray(value: unknown): value is string[] {
+	if (!Array.isArray(value)) return false;
+	return value.every(
+		(fingerprint) =>
+			typeof fingerprint === "string" && fingerprint !== "",
 	);
 }
 
@@ -583,9 +610,15 @@ function buildCliComparison(
 	scanProfile: string,
 	mismatch: BaselineMismatchReason | null,
 ): CliComparison {
+	const fingerprints = [...new Set([
+		...result.issues.map((issue) => issue.fingerprint),
+		...result.ignoredIssues.map((issue) => issue.fingerprint),
+	])].sort();
+	const currentFingerprints = new Set(fingerprints);
 	const metadata = {
 		scanProfile,
 		comparisonVersion: COMPARISON_VERSION,
+		fingerprints,
 	};
 
 	if (baseline === null) {
@@ -599,11 +632,6 @@ function buildCliComparison(
 			...metadata,
 		};
 	}
-
-	const currentFingerprints = new Set([
-		...result.issues.map((issue) => issue.fingerprint),
-		...result.ignoredIssues.map((issue) => issue.fingerprint),
-	]);
 
 	let newIssues = 0;
 	let persistingIssues = 0;

@@ -208,6 +208,7 @@ JSON output has a stable top-level protocol for automation:
 - `toolVersion` — package version
 - `summary` — stable counts and scanner metadata, including the issue count in `summary.issues`
 - `issues` / `ignoredIssues` — issue records with stable `scannerId`, `severity`, `classification`, `explanation`, `primaryPath`, `relatedPaths`, `evidence`, `fingerprint`, and `fixAction` fields
+- `comparison.fingerprints` — sorted, unique, complete unfiltered fingerprint set used as the baseline identity when the report is reused with `--baseline`
 - `generatedAt`, `durationMs`, titles, and messages are informational and should not be used as stable identifiers
 
 `classification` and `explanation` are additive stable fields. Existing stable
@@ -229,6 +230,24 @@ report. When `--baseline` is provided, each issue includes `isNew`, and
   (the baseline predates current comparison semantics).
 - `newIssues`, `persistingIssues`, `resolvedIssues` — lifecycle counts over
   the full unfiltered result when `available` is `true`.
+- `fingerprints` — the sorted, unique, complete identity set of the scan:
+  every fingerprint from the full unfiltered result (`issues` +
+  `ignoredIssues`). Output filters such as `--severity`, `--include`, and
+  `--exclude` may shrink the visible `issues` and `ignoredIssues` arrays
+  for presentation, but those filtered arrays do not define baseline
+  completeness — only `comparison.fingerprints` does. Note that `--scanner`
+  is not an output filter: it defines the detection scope (which scanners
+  run, recorded in the scan profile), so findings from excluded scanners are
+  absent from the scan result entirely, not merely hidden.
+
+When a report is saved and reused as `--baseline`, the CLI reads the
+baseline identity from its `comparison.fingerprints` field, so findings
+hidden by output filters are still correctly classified as persisting or
+resolved. Profile-aware reports created before `comparison.fingerprints`
+existed are incomplete baselines: supplying one as `--baseline` exits with
+code `2` (no stdout) and asks you to regenerate the baseline with the
+current Vault Inspector version. The CLI never falls back to reconstructing
+the identity set from filtered visible arrays.
 
 A current-format baseline whose profile or comparison semantics no longer
 match is a setup failure: the CLI exits with code `2` (overriding
