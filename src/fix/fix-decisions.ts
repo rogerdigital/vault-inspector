@@ -102,6 +102,12 @@ export function getFreshFixAction(
 			|| requested.kind !== fresh.kind
 			|| requested.label !== fresh.label
 			|| requested.selection.requiresReview !== fresh.selection.requiresReview
+			|| requested.selection.automaticKeepPath
+				!== fresh.selection.automaticKeepPath
+			|| !samePaths(
+				requested.selection.referencedPaths ?? [],
+				fresh.selection.referencedPaths ?? [],
+			)
 			|| !samePaths(
 				requested.selection.candidatePaths,
 				fresh.selection.candidatePaths,
