@@ -50,6 +50,12 @@ export function isReferenced(index: ReferenceIndex, path: string): boolean {
 	return index.inboundByPath.has(path);
 }
 
+type MutableInboundReference = {
+	count: number;
+	kinds: Set<ReferenceSourceKind>;
+	sources: Set<string>;
+};
+
 type CanvasNode = {
 	type?: unknown;
 	file?: unknown;
@@ -73,7 +79,7 @@ export async function buildReferenceIndex(
 		"metadataCache" | "vault" | "markdownFiles" | "allFiles" | "filePathIndex"
 	>,
 ): Promise<ReferenceIndex> {
-	const inboundByPath = new Map<string, InboundReference>();
+	const mutableInboundByPath = new Map<string, MutableInboundReference>();
 	const coverageFailures: ReferenceCoverageFailure[] = [];
 	const canvasFiles: string[] = [];
 
@@ -82,12 +88,15 @@ export async function buildReferenceIndex(
 		sourcePath: string,
 		kind: ReferenceSourceKind,
 	): void => {
-		const entry =
-			inboundByPath.get(targetPath) ?? { count: 0, kinds: [], sources: [] };
+		const entry = mutableInboundByPath.get(targetPath) ?? {
+			count: 0,
+			kinds: new Set<ReferenceSourceKind>(),
+			sources: new Set<string>(),
+		};
 		entry.count += 1;
-		if (!entry.kinds.includes(kind)) entry.kinds.push(kind);
-		if (!entry.sources.includes(sourcePath)) entry.sources.push(sourcePath);
-		inboundByPath.set(targetPath, entry);
+		entry.kinds.add(kind);
+		entry.sources.add(sourcePath);
+		mutableInboundByPath.set(targetPath, entry);
 	};
 
 	const resolveTarget = (link: string, sourcePath: string): string | null => {
@@ -170,9 +179,13 @@ export async function buildReferenceIndex(
 		}
 	}
 
-	for (const entry of inboundByPath.values()) {
-		entry.kinds.sort();
-		entry.sources.sort();
+	const inboundByPath = new Map<string, InboundReference>();
+	for (const [path, entry] of mutableInboundByPath) {
+		inboundByPath.set(path, {
+			count: entry.count,
+			kinds: [...entry.kinds].sort(),
+			sources: [...entry.sources].sort(),
+		});
 	}
 
 	return {

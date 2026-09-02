@@ -304,6 +304,36 @@ describe("buildReferenceIndex against the precision fixture vault", () => {
 	});
 });
 
+describe("buildReferenceIndex high-degree targets", () => {
+	it("aggregates 50,000 unique sources within a bounded time", async () => {
+		const sourceCount = 50_000;
+		const target = makeTestFile("assets/shared.png");
+		const markdownFiles = Array.from({ length: sourceCount }, (_, index) =>
+			makeTestFile(`notes/source-${String(index).padStart(5, "0")}.md`),
+		);
+		const metadataByPath = Object.fromEntries(markdownFiles.map((file) => [
+			file.path,
+			{ links: [mdLink(target.path)], embeds: [], frontmatterLinks: [] },
+		]));
+		const ctx = makeScanContext({
+			files: [...markdownFiles, target],
+			metadataByPath,
+		});
+
+		const startedAt = performance.now();
+		const index = await buildReferenceIndex(ctx);
+		const elapsedMs = performance.now() - startedAt;
+		const inbound = getInboundReference(index, target.path);
+
+		expect(elapsedMs).toBeLessThan(5_000);
+		expect(inbound?.count).toBe(sourceCount);
+		expect(inbound?.kinds).toEqual(["note-link"]);
+		expect(inbound?.sources).toHaveLength(sourceCount);
+		expect(inbound?.sources[0]).toBe("notes/source-00000.md");
+		expect(inbound?.sources.at(-1)).toBe("notes/source-49999.md");
+	}, 30_000);
+});
+
 describe("makeEmptyReferenceIndex", () => {
 	it("provides a blank, complete index", () => {
 		const index = makeEmptyReferenceIndex();

@@ -41,15 +41,16 @@ export function makeTestFile(input: string | TestFileInput): TFile {
 
 export function makeScanContext(options: TestContextOptions = {}): ScanContext {
 	const files = (options.files ?? []).map(makeTestFile);
+	const filesByPath = new Map(files.map((file) => [file.path, file]));
 	const markdownPaths = options.markdownPaths ?? files
 		.filter((file) => file.path.endsWith(".md"))
 		.map((file) => file.path);
 	const markdownFiles = markdownPaths.map((path) =>
-		files.find((file) => file.path === path) ?? makeTestFile(path),
+		filesByPath.get(path) ?? makeTestFile(path),
 	);
 	const allFiles = [
 		...files,
-		...markdownFiles.filter((file) => !files.some((existing) => existing.path === file.path)),
+		...markdownFiles.filter((file) => !filesByPath.has(file.path)),
 	];
 	const metadataByPath = options.metadataByPath ?? {};
 
