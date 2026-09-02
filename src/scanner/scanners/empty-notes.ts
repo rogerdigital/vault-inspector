@@ -120,6 +120,11 @@ export function countWords(text: string): number {
  * - other non-prose visible blocks: table blocks (once per run of `|` rows)
  *   and `<img>` lines.
  *
+ * HTML comments are stripped before counting: their content is never
+ * rendered, so a commented-out link or table is not meaningful structure.
+ * Markdown links whose opening bracket is backslash-escaped (e.g.
+ * `\[literal](target)`) are literal text and count nothing.
+ *
  * Plain prose paragraphs deliberately count ZERO structures: countWords
  * already measures them, so counting them would make every prose stub
  * "structural" and defeat stub detection entirely. structureCount is a count
@@ -128,22 +133,25 @@ export function countWords(text: string): number {
  */
 export function countMeaningfulStructures(body: string): number {
 	let count = 0;
+	// HTML comments never render, so structures inside them are not visible.
+	const visible = body.replace(/<!--[\s\S]*?-->/g, "");
 	// Wiki links and embeds, wherever they appear.
-	for (const match of body.matchAll(/\[\[[^\]]+\]\]/g)) {
+	for (const match of visible.matchAll(/\[\[[^\]]+\]\]/g)) {
 		void match;
 		count++;
 	}
 
 	// Markdown links and images (including external bookmark-style links).
-	for (const match of body.matchAll(/!?\[[^\]\r\n]*\]\(\s*(?:<[^>\r\n]+>|[^)\r\n]+)\s*\)/g)) {
-		void match;
+	for (const match of visible.matchAll(/!?\[[^\]\r\n]*\]\(\s*(?:<[^>\r\n]+>|[^)\r\n]+)\s*\)/g)) {
+		const bracketIndex = match.index + (match[0].startsWith("!") ? 1 : 0);
+		if (visible[bracketIndex - 1] === "\\") continue;
 		count++;
 	}
 
 	let inFence = false;
 	let fenceHasContent = false;
 	let inTable = false;
-	for (const line of body.split("\n")) {
+	for (const line of visible.split("\n")) {
 		const trimmed = line.trim();
 		if (/^(```|~~~)/.test(trimmed)) {
 			if (inFence && fenceHasContent) count++;

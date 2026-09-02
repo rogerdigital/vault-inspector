@@ -129,6 +129,18 @@ describe("emptyNotesScanner", () => {
 		expect(issues).toEqual([]);
 	});
 
+	it("reports a note whose only structure is inside an HTML comment", async () => {
+		const file = { path: "notes/commented.md", stat: { size: 60, mtime: 1000 } } as any;
+		const content = "# Commented\n\n<!-- [draft](missing.md) -->";
+		const ctx = makeCtx({
+			markdownFiles: [file],
+			vault: { cachedRead: async () => content } as any,
+		});
+		const issues = await emptyNotesScanner.scan(ctx);
+		expect(issues).toHaveLength(1);
+		expect(issues[0].evidence.structureCount).toBe(0);
+	});
+
 	it("does not flag embed-only notes", async () => {
 		const file = { path: "embed.md", stat: { size: 30, mtime: 1000 } } as any;
 		const content = "# Embed\n\n![[photo.jpg]]";
@@ -386,6 +398,18 @@ describe("countMeaningfulStructures", () => {
 		expect(countMeaningfulStructures("![[embed]]")).toBe(1);
 		expect(countMeaningfulStructures("![[a.png]] and ![b](b.png)")).toBe(2);
 		expect(countMeaningfulStructures("[![img](i.png)](https://x)")).toBe(1);
+	});
+
+	it("ignores structures inside HTML comments and escaped brackets", () => {
+		expect(countMeaningfulStructures("<!-- [draft](missing.md) -->")).toBe(0);
+		expect(countMeaningfulStructures("<!-- [[target]] -->")).toBe(0);
+		expect(countMeaningfulStructures("<!-- - commented task -->")).toBe(0);
+		// A comment plus a real link: only the visible link counts.
+		expect(countMeaningfulStructures("<!-- [draft](missing.md) -->\n[Real](real.md)")).toBe(1);
+		// Backslash-escaped brackets are literal text, not links.
+		expect(countMeaningfulStructures("\\[literal](target)")).toBe(0);
+		// Escaping the bang only leaves a literal !; the link itself is real.
+		expect(countMeaningfulStructures("\\![img](i.png)")).toBe(1);
 	});
 
 	it("counts task items once each, checked or unchecked", () => {
