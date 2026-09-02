@@ -110,14 +110,15 @@ export function countWords(text: string): number {
  * Count meaningful structures in a note body (after frontmatter and title
  * removal), independently from the prose word count:
  *
- * - internal links and embeds (every `[[...]]` occurrence);
+ * - wiki links/embeds and Markdown links/images (every `[[...]]` and
+ *   `[...](...)` occurrence);
  * - Markdown task items (`- [ ]` / `- [x]`, bullet or ordered);
  * - non-empty list items (bullet or ordered);
  * - fenced code blocks with at least one non-blank inner line (once per
  *   block; an unterminated fence counts nothing — its text is already
  *   measured by countWords);
- * - other non-prose visible blocks: table blocks (once per run of `|` rows),
- *   Markdown images, and `<img>` lines.
+ * - other non-prose visible blocks: table blocks (once per run of `|` rows)
+ *   and `<img>` lines.
  *
  * Plain prose paragraphs deliberately count ZERO structures: countWords
  * already measures them, so counting them would make every prose stub
@@ -127,8 +128,14 @@ export function countWords(text: string): number {
  */
 export function countMeaningfulStructures(body: string): number {
 	let count = 0;
-	// Internal links and embeds, wherever they appear.
+	// Wiki links and embeds, wherever they appear.
 	for (const match of body.matchAll(/\[\[[^\]]+\]\]/g)) {
+		void match;
+		count++;
+	}
+
+	// Markdown links and images (including external bookmark-style links).
+	for (const match of body.matchAll(/!?\[[^\]\r\n]*\]\(\s*(?:<[^>\r\n]+>|[^)\r\n]+)\s*\)/g)) {
 		void match;
 		count++;
 	}
@@ -173,7 +180,7 @@ export function countMeaningfulStructures(body: string): number {
 			count++;
 			continue;
 		}
-		if (/^!\[[^\]]*\]\([^)]*\)/.test(trimmed) || /<img\b/.test(trimmed)) {
+		if (/<img\b/.test(trimmed)) {
 			count++;
 		}
 		// Plain prose line: not a structure — countWords covers it.

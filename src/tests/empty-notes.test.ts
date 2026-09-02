@@ -118,6 +118,17 @@ describe("emptyNotesScanner", () => {
 		expect(issues).toHaveLength(0);
 	});
 
+	it("does not report a Markdown-link-only MOC as empty", async () => {
+		const file = { path: "notes/moc.md", stat: { size: 40, mtime: 1000 } } as any;
+		const content = "# MOC\n\n[Target](target.md)";
+		const ctx = makeCtx({
+			markdownFiles: [file],
+			vault: { cachedRead: async () => content } as any,
+		});
+		const issues = await emptyNotesScanner.scan(ctx);
+		expect(issues).toEqual([]);
+	});
+
 	it("does not flag embed-only notes", async () => {
 		const file = { path: "embed.md", stat: { size: 30, mtime: 1000 } } as any;
 		const content = "# Embed\n\n![[photo.jpg]]";
@@ -359,11 +370,22 @@ describe("countMeaningfulStructures", () => {
 		expect(countMeaningfulStructures("你好")).toBe(0);
 	});
 
-	it("counts every internal link and embed occurrence", () => {
+	it("counts every wiki link and embed occurrence", () => {
 		expect(countMeaningfulStructures("[[target]] [[sibling-note]]")).toBe(2);
 		expect(countMeaningfulStructures("![[photo.jpg]]")).toBe(1);
 		expect(countMeaningfulStructures("[[target#Section One]]")).toBe(1);
 		expect(countMeaningfulStructures("[[目标笔记]]")).toBe(1);
+	});
+
+	it("counts Markdown links and images, internal or external, exactly once", () => {
+		expect(countMeaningfulStructures("[Target](target.md)")).toBe(1);
+		expect(countMeaningfulStructures("[Section](target.md#Part)")).toBe(1);
+		expect(countMeaningfulStructures("[External](https://example.com)")).toBe(1);
+		expect(countMeaningfulStructures("![alt](photo.jpg)")).toBe(1);
+		// No double counting at the wiki/Markdown boundary.
+		expect(countMeaningfulStructures("![[embed]]")).toBe(1);
+		expect(countMeaningfulStructures("![[a.png]] and ![b](b.png)")).toBe(2);
+		expect(countMeaningfulStructures("[![img](i.png)](https://x)")).toBe(1);
 	});
 
 	it("counts task items once each, checked or unchecked", () => {
