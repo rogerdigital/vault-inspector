@@ -14,7 +14,7 @@ Use Vault Inspector as a read-only quality gate for Obsidian vault maintenance. 
 - Do not present `--fix` as available. The CLI currently exits with an error for fix execution.
 - Do not automatically delete orphan attachments, duplicate candidates, or large files. Summarize evidence and recommend manual review.
 - Do not treat `title`, `message`, `generatedAt`, or `durationMs` as stable automation identifiers.
-- Use stable fields for automation: `schemaVersion`, `toolVersion`, `summary`, `scannerId`, `severity`, `classification`, `explanation`, `primaryPath`, `relatedPaths`, `evidence`, `fingerprint`, `fixAction`, `isNew`, `summary.newIssues`, and the top-level `comparison` object (`available`, `mode`, `reason`, `newIssues`, `persistingIssues`, `resolvedIssues`).
+- Use stable fields for automation: `schemaVersion`, `toolVersion`, `summary`, `scannerId`, `severity`, `classification`, `explanation`, `primaryPath`, `relatedPaths`, `evidence`, `fingerprint`, `fixAction`, `isNew`, `summary.newIssues`, and the top-level `comparison` object (`available`, `mode`, `reason`, `newIssues`, `persistingIssues`, `resolvedIssues`, `fingerprints`).
 - Gate baseline interpretation on `comparison.available`. Use `mode` and `reason` for diagnosis, never as pass/fail signals.
 - Keep scan progress on stderr with `--progress`; keep stdout machine-readable.
 
@@ -97,6 +97,17 @@ interpret it read-only:
   name the resolved findings confirmed against the baseline. Never edit or
   delete the baseline to make findings disappear; regeneration is a fresh
   `--output` run the user decides on.
+
+When saving a scan report for later reuse as a baseline, preserve the
+`comparison.fingerprints` field unchanged: it is the sorted, unique, complete
+identity set of the unfiltered scan and the field the CLI reads as the
+baseline identity. Never rebuild or substitute a current report's identity
+from its filtered visible `issues`/`ignoredIssues` arrays — output filters
+(`--scanner`, `--severity`, `--include`, `--exclude`) may hide findings that
+are still part of the baseline. A profile-aware baseline without a complete
+fingerprint set (created by an older CLI version) is rejected with exit code
+`2` and empty stdout; regenerate it with a fresh scan using the current
+Vault Inspector version.
 
 CLI `isNew` is a baseline annotation and is separate from the Obsidian
 plugin's scan lifecycle. The CLI does not output plugin snapshots or
