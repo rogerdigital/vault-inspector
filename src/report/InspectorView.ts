@@ -291,6 +291,13 @@ export class InspectorView extends ItemView {
 			onOpenScannerSettings: (scannerId) => {
 				this.onOpenScannerSettings?.(scannerId);
 			},
+			...(this.model.enableFixActions ? {
+				onFixIssue: (issue: Issue) => this.handleBatchAction(
+					this.onFixAllIssues,
+					[issue],
+					"Fixing issue",
+				),
+			} : {}),
 		});
 
 		this.renderResolvedSection(container);

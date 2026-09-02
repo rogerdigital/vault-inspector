@@ -120,6 +120,86 @@ describe("renderIssueList contextual actions", () => {
 		expect(onOpenScannerSettings).toHaveBeenCalledWith("broken-links");
 	});
 
+	it("renders an explicit review action for a review-required fix", () => {
+		const container = new FakeElement();
+		const issue = makeFixIssueWith("review-required", "notes/file.md");
+		const onFixIssue = vi.fn();
+
+		renderIssueList(container as any, {
+			issues: [issue],
+			scannersRun: ["broken-links"],
+			selectionMode: false,
+			selectedFingerprints: new Set(),
+			onOpenIssue: vi.fn(),
+			onToggleSelect: vi.fn(),
+			onFixIssue,
+		});
+
+		findByText(container, "Review fix")?.click();
+		expect(onFixIssue).toHaveBeenCalledOnce();
+		expect(onFixIssue).toHaveBeenCalledWith(issue);
+	});
+
+	it("renders a fix action for an eligible issue through the same callback", () => {
+		const container = new FakeElement();
+		const issue = makeFixIssueWith("eligible", "notes/file.md");
+		const onFixIssue = vi.fn();
+
+		renderIssueList(container as any, {
+			issues: [issue],
+			scannersRun: ["broken-links"],
+			selectionMode: false,
+			selectedFingerprints: new Set(),
+			onOpenIssue: vi.fn(),
+			onToggleSelect: vi.fn(),
+			onFixIssue,
+		});
+
+		findByText(container, "Fix this issue")?.click();
+		expect(onFixIssue).toHaveBeenCalledOnce();
+		expect(onFixIssue).toHaveBeenCalledWith(issue);
+		expect(findByText(container, "Review fix")).toBeUndefined();
+	});
+
+	it("does not render a fix action when the fix callback is not provided", () => {
+		// Mirrors the bulk fix button hiding when fix actions are disabled:
+		// InspectorView then omits onFixIssue from the config entirely.
+		const container = new FakeElement();
+		renderIssueList(container as any, {
+			issues: [
+				makeFixIssueWith("eligible", "a.md"),
+				makeFixIssueWith("review-required", "b.md"),
+			],
+			scannersRun: ["broken-links"],
+			selectionMode: false,
+			selectedFingerprints: new Set(),
+			onOpenIssue: vi.fn(),
+			onToggleSelect: vi.fn(),
+		});
+		expect(findByText(container, "Fix this issue")).toBeUndefined();
+		expect(findByText(container, "Review fix")).toBeUndefined();
+	});
+
+	it("does not render a fix action for blocked or non-fixable findings", () => {
+		for (const issue of [
+			makeFixIssueWith("blocked", "blocked.md"),
+			makeIssue("plain.md"),
+		]) {
+			const container = new FakeElement();
+			renderIssueList(container as any, {
+				issues: [issue],
+				scannersRun: ["broken-links"],
+				selectionMode: false,
+				selectedFingerprints: new Set(),
+				onOpenIssue: vi.fn(),
+				onToggleSelect: vi.fn(),
+				onFixIssue: vi.fn(),
+			});
+			expect(findByText(container, "Review fix")).toBeUndefined();
+			expect(findByText(container, "Fix this issue")).toBeUndefined();
+		}
+	});
+
 	it("hides parent-folder control for root findings and all Actions when no callback exists", () => {
 		const root = new FakeElement();
 		renderIssueList(root as any, {

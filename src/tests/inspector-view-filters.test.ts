@@ -318,10 +318,11 @@ describe("InspectorView report filter wiring", () => {
 		const onIgnoreIssue = vi.fn();
 		const onExcludeFolder = vi.fn();
 		const onOpenScannerSettings = vi.fn();
+		const onFixAllIssues = vi.fn();
 		view.setCallbacks({
 			onIgnoreAllIssues: vi.fn(),
 			onRestoreIssues: vi.fn(),
-			onFixAllIssues: vi.fn(),
+			onFixAllIssues,
 			onRevealIssue: vi.fn(),
 			onRunScan: vi.fn(),
 			onIgnoreIssue,
@@ -340,11 +341,15 @@ describe("InspectorView report filter wiring", () => {
 			onIgnoreIssue: expect.any(Function),
 			onExcludeFolder: expect.any(Function),
 			onOpenScannerSettings: expect.any(Function),
+			onFixIssue: expect.any(Function),
 		}));
 		expect(ignoredConfig).not.toHaveProperty("onIgnoreIssue");
 		expect(ignoredConfig).not.toHaveProperty("onExcludeFolder");
 		expect(ignoredConfig).not.toHaveProperty("onOpenScannerSettings");
+		expect(ignoredConfig).not.toHaveProperty("onFixIssue");
 
+		await activeConfig.onFixIssue(activeIssue);
+		expect(onFixAllIssues).toHaveBeenCalledWith([activeIssue]);
 		activeConfig.onIgnoreIssue(activeIssue);
 		activeConfig.onOpenScannerSettings("broken-links");
 		await activeConfig.onExcludeFolder(activeIssue);
