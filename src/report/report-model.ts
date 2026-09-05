@@ -183,6 +183,7 @@ export type ReportModel = {
 	enableFixActions: boolean;
 	selectionMode: boolean;
 	selectedFingerprints: Set<string>;
+	controlsExpanded: boolean;
 	ignoredExpanded: boolean;
 	resolvedExpanded: boolean;
 	ignoredSelectionMode: boolean;

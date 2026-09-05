@@ -1,7 +1,6 @@
 import { App, Modal, TFile } from "obsidian";
 import type {
 	FixAction,
-	FixEligibility,
 	Issue,
 	KeepOneSelection,
 } from "../scanner/Issue";
@@ -12,6 +11,10 @@ import {
 	type FixDecision,
 	resolveDecisionAction,
 } from "./fix-decisions";
+import {
+	describeEligibility,
+	resolveEligibility,
+} from "./fix-eligibility";
 
 export type FixActionSummary = {
 	title: string;
@@ -58,6 +61,23 @@ export function summarizeFixActions(actions: FixAction[]): FixActionSummary {
 	};
 }
 
+/**
+ * The confirm button names the mutation for a single action so the final
+ * click restates the decision; batches fall back to neutral wording.
+ */
+export function confirmButtonLabel(actions: FixAction[]): string {
+	if (actions.length !== 1) return "Apply selected fixes";
+	return actions[0].kind === "trash-file" ? "Move to trash" : "Apply fix";
+}
+
+/**
+ * Short card line naming what the action does to the vault, independent
+ * of eligibility — the visible consequence of confirming this card.
+ */
+export function describeActionConsequence(action: FixAction): string {
+	return action.kind === "trash-file" ? "Move file to trash" : "Modify note";
+}
+
 function pluralize(noun: string, count: number): string {
 	return count === 1 ? noun : `${noun}s`;
 }
@@ -94,66 +114,6 @@ export function shouldAskForKeep(
 	selection: KeepOneSelection,
 ): boolean {
 	return mode === "always-ask" || selection.requiresReview === true;
-}
-
-/**
- * One eligibility view shared by the confirmation model, the modal
- * controls, the report rows, and the bulk-selection gate. A missing field
- * (hand-built issue) degrades to review-required: fixable only through an
- * explicit per-item decision, never silently.
- */
-export function resolveEligibility(issue: Issue): FixEligibility {
-	return issue.eligibility ?? "review-required";
-}
-
-export type EligibilityExplanation = { status: string; reason: string };
-
-/**
- * Sentence-case status and reason for the modal and the report row. The
- * status ALWAYS derives from `resolveEligibility` so the tier and its
- * explanation can never disagree; the reason picks the first matching
- * condition.
- */
-export function describeEligibility(
-	issue: Issue,
-): EligibilityExplanation {
-	const action = issue.fixAction;
-	if (!action) {
-		return { status: "No fix action", reason: "This finding has no fix action." };
-	}
-	const eligibility = resolveEligibility(issue);
-	const status = eligibility === "blocked"
-		? "Blocked"
-		: eligibility === "review-required"
-			? "Review required"
-			: "Eligible";
-	let reason: string;
-	if (issue.classification === "unverified") {
-		reason = "The finding is unverified, so its fix cannot run.";
-	} else if (
-		action.kind === "trash-file"
-		&& issue.impact?.coverageComplete === false
-	) {
-		reason =
-			"Reference coverage is incomplete, so files cannot be moved to trash safely.";
-	} else if (action.selection?.requiresReview === true) {
-		reason =
-			"Several copies are referenced, so an explicit keep choice is required.";
-	} else if (issue.classification !== "confirmed") {
-		reason = "The finding needs review before its fix can run.";
-	} else if (
-		action.kind === "remove-link-text"
-		&& (action.original === undefined || action.replacement === undefined)
-	) {
-		reason = "The replacement text is not fully specified.";
-	} else if (eligibility === "blocked") {
-		reason = "The finding cannot be fixed in this state.";
-	} else {
-		reason = eligibility === "review-required"
-			? "The finding needs review before its fix can run."
-			: "The fix is confirmed and its evidence is complete.";
-	}
-	return { status, reason };
 }
 
 export type EligibilityGroups = {
@@ -260,6 +220,7 @@ class ConfirmFixModal extends Modal {
 	private mode: DuplicateKeepMode;
 	private selectedKeeps = new Map<string, string>();
 	private approvedReviews = new Set<string>();
+	private referenceDetailsOpen = false;
 	private settle: (result: FixDecision[] | null) => boolean;
 
 	constructor(
@@ -324,15 +285,14 @@ class ConfirmFixModal extends Modal {
 			return action ? [action] : [];
 		});
 		const summary = summarizeFixActions(actions);
+		const decisionSentence = actions.length === 1
+			? describeFixActions(actions)
+			: summary.description;
 
-		contentEl.createEl("h3", {
-			text: this.issues.length > 1
-				? `Confirm batch fix (${this.issues.length} actions)`
-				: "Confirm fix",
-		});
+		contentEl.createEl("h3", { text: summary.title });
 		contentEl.createEl("p", {
 			text: plan.complete
-				? summary.description
+				? decisionSentence
 				: "Approve at least one fix and choose one file to keep in every duplicate group.",
 		});
 
@@ -351,7 +311,7 @@ class ConfirmFixModal extends Modal {
 			.addEventListener("click", () => this.finish(null));
 		const confirmBtn = btnRow.createEl("button", {
 			cls: "vi-confirm-destructive",
-			text: "Confirm",
+			text: confirmButtonLabel(actions),
 		});
 		confirmBtn.disabled = !plan.complete;
 		confirmBtn.addEventListener("click", () => {
@@ -388,6 +348,10 @@ class ConfirmFixModal extends Modal {
 			text: explanation.status,
 		});
 		card.createDiv({ cls: "vi-impact-reason", text: explanation.reason });
+		card.createDiv({
+			cls: "vi-impact-consequence",
+			text: describeActionConsequence(action),
+		});
 
 		const rows = card.createDiv({ cls: "vi-impact-rows" });
 		for (const row of buildImpactRows(action.targetPaths, stats)) {
@@ -403,9 +367,19 @@ class ConfirmFixModal extends Modal {
 		}
 
 		if (issue.impact) {
-			card.createDiv({
-				cls: "vi-impact-coverage",
-				text: `Inbound references: ${issue.impact.inboundReferences} · Reference coverage: ${issue.impact.coverageComplete ? "complete" : "incomplete"}`,
+			const referenceDetails = card.createEl("details", {
+				cls: "vi-impact-reference-details",
+			});
+			referenceDetails.open = this.referenceDetailsOpen;
+			referenceDetails.addEventListener("toggle", () => {
+				this.referenceDetailsOpen = referenceDetails.open;
+			});
+			referenceDetails.createEl("summary", { text: "Reference details" });
+			referenceDetails.createDiv({
+				text: `Inbound references: ${issue.impact.inboundReferences}`,
+			});
+			referenceDetails.createDiv({
+				text: `Coverage: ${issue.impact.coverageComplete ? "Complete" : "Incomplete"}`,
 			});
 		}
 

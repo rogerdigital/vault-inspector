@@ -1,11 +1,13 @@
 import type { Issue, ScannerId } from "../scanner/Issue";
 import type { CurrentFindingStatus } from "../scanner/result-diff";
+import type { FixPresentation } from "./presentation";
 import { SCANNER_LABELS } from "../scanner/Issue";
 import { formatSize } from "../utils/format";
 import { renderFindingEvidence } from "./render-evidence";
 import { setTooltip } from "obsidian";
 import { getParentFolder } from "../utils/paths";
-import { describeEligibility, resolveEligibility } from "../fix/confirm-modal";
+import { presentFix, presentLifecycle } from "./presentation";
+import { resolveEligibility } from "../fix/fix-eligibility";
 
 export type IssueListConfig = {
 	issues: Issue[];
@@ -80,10 +82,13 @@ export function renderIssueList(container: HTMLElement, config: IssueListConfig)
 			});
 			const status = config.statuses?.get(issue.fingerprint);
 			if (status) {
-				li.createSpan({
-					cls: `vi-status-badge vi-status-${status}`,
-					text: status.toUpperCase(),
-				});
+				const presentation = presentLifecycle(status);
+				if (presentation.showOnCard) {
+					li.createSpan({
+						cls: `vi-status-badge ${presentation.className}`,
+						text: presentation.label,
+					});
+				}
 			}
 			li.createSpan({ cls: "vi-issue-title", text: issue.title });
 
@@ -139,29 +144,28 @@ function renderIssueDetails(container: HTMLElement, issue: Issue, config: IssueL
 		}
 	}
 
-	if (issue.fixAction) {
-		details.createDiv({
-			cls: "vi-issue-fix-reason",
-			text: describeEligibility(issue).reason,
-		});
+	const fix = presentFix(issue);
+	if (fix?.stateLabel) {
+		const state = details.createDiv({ cls: `vi-fix-state ${fix.className}` });
+		state.createSpan({ cls: "vi-fix-state-label", text: fix.stateLabel });
+		if (fix.reason) {
+			state.createSpan({ cls: "vi-fix-state-reason", text: fix.reason });
+		}
 	}
 
 	renderFindingEvidence(details, issue);
-	renderIssueActions(details, issue, config);
+	renderIssueActions(details, issue, config, fix);
 }
 
 function renderIssueActions(
 	container: HTMLElement,
 	issue: Issue,
 	config: IssueListConfig,
+	fix: FixPresentation | null,
 ): void {
 	const issuePath = getIssuePath(issue);
-	const eligibility = issue.fixAction ? resolveEligibility(issue) : null;
-	const canFixIssue = Boolean(
-		config.onFixIssue
-			&& issue.fixAction
-			&& eligibility !== "blocked",
-	);
+	const actionLabel = fix?.actionLabel ?? null;
+	const canFixIssue = actionLabel !== null && config.onFixIssue !== undefined;
 	const canExcludeFolder = Boolean(
 		config.onExcludeFolder
 			&& issuePath
@@ -184,7 +188,7 @@ function renderIssueActions(
 	if (canFixIssue) {
 		createActionButton(
 			actions,
-			eligibility === "review-required" ? "Review fix" : "Fix this issue",
+			actionLabel,
 			() => { void config.onFixIssue?.(issue); },
 		);
 	}
@@ -348,17 +352,6 @@ function getIssueDetailRows(issue: Issue): IssueDetailRow[] {
 	if (issue.scannerId === "large-files") {
 		const type = issue.evidence.type;
 		if (typeof type === "string") rows.push({ label: "Type", value: type });
-	}
-
-	if (issue.fixAction) {
-		const eligibility = resolveEligibility(issue);
-		rows.push({
-			label: "Fix",
-			items: [{
-				text: describeEligibility(issue).status,
-				className: `vi-eligibility-badge vi-eligibility-${eligibility}`,
-			}],
-		});
 	}
 
 	return rows;

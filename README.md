@@ -6,7 +6,7 @@ Use it before publishing, exporting, migrating, or cleaning up a long-lived vaul
 
 ![Vault Inspector scan results](docs/images/vault-inspector-errors-orphans.gif)
 
-## Features
+## What it checks
 
 - **Broken Links** — Detect wiki links, markdown links, and embeds pointing to non-existent notes or headings.
 - **Orphan Attachments** — Find images, PDFs, audio/video, and archives not referenced by any note.
@@ -16,268 +16,6 @@ Use it before publishing, exporting, migrating, or cleaning up a long-lived vaul
 - **Frontmatter Types** — Report properties used with inconsistent value types across notes.
 - **Tag Usage** — Watch for missing or underused tags from a configurable watchlist.
 - **Large Files** — Flag Markdown files and attachments exceeding configurable size thresholds.
-- **Scan Progress** — Show scanner progress in Obsidian and optional CLI progress on stderr.
-- **Explainable Findings** — Classify each finding as `confirmed`, `candidate`, or `unverified`, with **Why**, an optional **Caveat**, a **Next** step, and expandable raw evidence.
-- **Scan Lifecycle** — Compare successful scans made with the same detection profile to distinguish new, persisting, and resolved findings.
-- **Verified Actions** — Preflight fix actions against fresh scan data, then report each attempted fix as fixed, still present, skipped, or failed after final verification.
-
-## Install
-
-### Community Plugins
-
-Search **Vault Inspector** in Obsidian → Settings → Community plugins → Browse.
-
-### Manual
-
-Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/rogerdigital/vault-inspector/releases) and place them in `.obsidian/plugins/vault-inspector/`.
-
-### CLI
-
-The npm package also includes a read-only terminal scanner for local vaults,
-automation, and CI workflows:
-
-```bash
-npx vault-inspector /path/to/your/vault
-```
-
-Or install it globally:
-
-```bash
-npm install -g vault-inspector
-vinspect /path/to/your/vault
-```
-
-The Obsidian Community Plugin release assets contain only the in-app plugin
-files. The npm package additionally includes `cli.js` and exposes the
-`vault-inspector` and `vinspect` commands. Starting with `0.4.10`, the npm
-package is the supported CLI distribution path again.
-
-### Agent Skill
-
-Vault Inspector includes a read-only Agent Skill for CLI-based vault checks:
-
-```bash
-gh skill install rogerdigital/vault-inspector vault-inspector
-```
-
-It can also be installed with the skills CLI:
-
-```bash
-npx skills add rogerdigital/vault-inspector --skill vault-inspector
-```
-
-The skill teaches agents to run scans, interpret JSON/Markdown output, use
-baselines, and avoid modifying vault files.
-
-## Usage
-
-1. Open the command palette and run **Vault Inspector: Run scan**.
-2. The Inspector view opens in the right sidebar.
-3. Filter results by scanner, severity, lifecycle, or classification. Expand **Evidence** to inspect the raw scanner evidence behind the explanation.
-4. Click paths, URLs, targets, properties, or tags to jump to the relevant location.
-5. Open an active finding's **Actions** menu to ignore it, choose **Exclude parent folder**, or open its scanner settings. Parent-folder exclusions apply only to that scanner and can be removed from **Scanner-specific ignored folders** in settings.
-6. Click **Select** to enter selection mode, then batch delete or ignore issues. Fix results remain visible until dismissed and show whether each item was fixed, still present, skipped, or failed after verification.
-7. Expand **Resolved items** to review read-only rows from the previous compatible successful scan. Expand **Ignored items** to restore previously ignored issues.
-8. Run **Vault Inspector: Export report** to save results as Markdown. When a
-   complete in-vault report would exceed 1 MiB, choose a compact summary,
-   explicitly export the complete report anyway, or cancel.
-
-Scan results are selectable for copying. Duplicate file results show each file
-separately, tag results show `#tag` chips, and exported Markdown reports include
-scanner-specific detail fields.
-
-Plugin exports measure the complete Markdown output before writing into the
-vault. Reports larger than 1 MiB require an explicit choice because large
-Markdown files may make Obsidian unresponsive while indexing. Summary exports
-keep scan totals and per-scanner counts but omit per-finding details. This
-in-vault protection does not change CLI Markdown output.
-
-Each finding is classified as `confirmed`, `candidate`, or `unverified` and
-includes a plain-language explanation: why it was reported, an optional caveat,
-and a suggested next step. Raw evidence remains available separately for deeper
-inspection.
-
-Lifecycle comparison is available only after a successful scan and only when the
-previous successful scan used the same detection profile. The first successful
-scan establishes a baseline; changing detection settings or scanner semantics
-also establishes a new baseline instead of marking every finding as new. Ignoring
-a finding does not resolve it: ignored findings remain part of the active
-lifecycle comparison. Resolved rows are read-only historical records from the
-previous compatible snapshot, not current findings or proof that an action fixed
-them.
-
-## CLI
-
-Vault Inspector also exposes a read-only CLI for generated or agent-managed vaults.
-
-Scan a vault:
-
-```bash
-vinspect /path/to/your/vault
-```
-
-From inside a vault, `.` means the current directory:
-
-```bash
-cd /path/to/your/vault
-vinspect .
-```
-
-The full command also remains available:
-
-```bash
-vault-inspector /path/to/your/vault
-```
-
-Pin a specific npm version when repeatability matters:
-
-```bash
-npx vault-inspector@0.4.11 /path/to/your/vault
-```
-
-`vault-inspector scan /path/to/vault` is also supported for scripts that prefer
-an explicit subcommand.
-
-The default output format is JSON. It includes summary counts, scanners run,
-issues, ignored issues, fingerprints, classification, explanation, evidence, and
-available fix-action metadata so other tools can decide what to do next.
-
-Common options:
-
-```bash
-vinspect . --format markdown --output report.md
-vinspect . --scanner broken-links,empty-notes
-vinspect . --scanner external-links
-vinspect . --progress
-vinspect . --config vault-inspector.config.json
-vinspect . --ignore-unresolved-note-links
-```
-
-`--progress` writes scanner progress to stderr so JSON and Markdown output on
-stdout remain machine-readable.
-
-For CI baseline checks:
-
-```bash
-vinspect . --baseline .vault-inspector-baseline.json --fail-on new
-```
-
-Config files are JSON and use the same option names:
-
-```json
-{
-  "scanners": ["broken-links", "empty-notes", "large-files"],
-  "severity": ["error", "warning"],
-  "include": ["notes/**"],
-  "exclude": ["templates/**"],
-  "ignoredFolders": [".trash"],
-  "ignoredFoldersByScanner": { "empty-notes": ["drafts"] },
-  "ignoreUnresolvedNoteLinks": true,
-  "failOn": "warning",
-  "largeMarkdownBytes": 102400
-}
-```
-
-CLI flags override config file values.
-
-Set `ignoreUnresolvedNoteLinks` to `true`, or pass
-`--ignore-unresolved-note-links`, when unresolved plain wikilinks such as
-`[[Future Note]]` are intentional. The option does not hide embeds, missing
-attachments, Markdown links, or missing headings in notes that exist. It is a
-class-level ignore: unresolved path-like note wikilinks such as
-`[[projects/Tpyed Name]]` are also hidden, so leave it disabled when those must
-fail the scan.
-
-Settings omitted from a config file fall back to the plugin defaults — for
-example, `ignoredLargeMarkdownFrontmatterKeys` already defaults to
-`["excalidraw-plugin"]`, so Excalidraw drawings are ignored without any config.
-If your config lists the older `"excalidraw"` key, update it to
-`"excalidraw-plugin"`.
-
-`ignoredFoldersByScanner` maps scanner IDs to folders that are ignored for
-that scanner only, on top of the global `ignoredFolders`. Omitted scanner
-keys mean no per-scanner exclusions. Per-scanner folders are detection
-inputs: changing them changes `comparison.scanProfile`, so baselines
-recorded under different per-scanner folders are reported as not comparable
-instead of producing misleading new/resolved counts.
-
-JSON output has a stable top-level protocol for automation:
-
-- `schemaVersion` — currently `1`
-- `tool` — always `vault-inspector`
-- `toolVersion` — package version
-- `summary` — stable counts and scanner metadata, including the issue count in `summary.issues`
-- `issues` / `ignoredIssues` — issue records with stable `scannerId`, `severity`, `classification`, `explanation`, `primaryPath`, `relatedPaths`, `evidence`, `fingerprint`, and `fixAction` fields
-- `comparison.fingerprints` — sorted, unique, complete unfiltered fingerprint set used as the baseline identity when the report is reused with `--baseline`
-- `generatedAt`, `durationMs`, titles, and messages are informational and should not be used as stable identifiers
-
-`classification` and `explanation` are additive stable fields. Existing stable
-fields have not been removed or renamed.
-
-Baseline comparison uses issue `fingerprint` values from a previous JSON
-report. When `--baseline` is provided, each issue includes `isNew`, and
-`summary.newIssues` counts issues not found in the baseline. The top-level
-`comparison` object describes whether the lifecycle counts are trustworthy:
-
-- `available` — gate on this field. When `false`, the new/persisting/resolved
-  counts are zeroed and must not be reported as lifecycle results.
-- `mode` — `"profile"` for baselines carrying scan-profile metadata,
-  `"legacy"` for older fingerprint-only baselines, `"none"` when no
-  `--baseline` was given.
-- `reason` — present when `available` is `false`: `missing-baseline`,
-  `settings-changed` (the baseline was recorded under different detection
-  settings, including `ignoredFoldersByScanner`), or `semantics-changed`
-  (the baseline predates current comparison semantics).
-- `newIssues`, `persistingIssues`, `resolvedIssues` — lifecycle counts over
-  the full unfiltered result when `available` is `true`.
-- `fingerprints` — the sorted, unique, complete identity set of the scan:
-  every fingerprint from the full unfiltered result (`issues` +
-  `ignoredIssues`). Output filters such as `--severity`, `--include`, and
-  `--exclude` may shrink the visible `issues` and `ignoredIssues` arrays
-  for presentation, but those filtered arrays do not define baseline
-  completeness — only `comparison.fingerprints` does. Note that `--scanner`
-  is not an output filter: it defines the detection scope (which scanners
-  run, recorded in the scan profile), so findings from excluded scanners are
-  absent from the scan result entirely, not merely hidden.
-
-When a report is saved and reused as `--baseline`, the CLI reads the
-baseline identity from its `comparison.fingerprints` field, so findings
-hidden by output filters are still correctly classified as persisting or
-resolved. Profile-aware reports created before `comparison.fingerprints`
-existed are incomplete baselines: supplying one as `--baseline` exits with
-code `2` (no stdout) and asks you to regenerate the baseline with the
-current Vault Inspector version. The CLI never falls back to reconstructing
-the identity set from filtered visible arrays.
-
-A current-format baseline whose profile or comparison semantics no longer
-match is a setup failure: the CLI exits with code `2` (overriding
-`--fail-on`, including `none`), omits `isNew` from every issue, and prints a
-stderr message naming the reason. Regenerate the baseline or rerun without
-`--baseline`. Legacy baselines without comparison metadata still compare
-fingerprint-only with a stderr warning recommending regeneration.
-
-CLI baseline comparison is separate from the Obsidian plugin lifecycle. CLI
-output does not include plugin scan snapshots or the plugin's
-resolved-history view.
-
-Exit codes:
-
-- `0` — scan completed and did not match the configured `--fail-on` threshold.
-- `1` — scan completed and matched the configured `--fail-on` threshold.
-- `2` — invalid CLI usage, scan setup failure, or a `--baseline` file that is
-  not comparable (`settings-changed` / `semantics-changed`).
-
-`--fail-on` accepts `any` (default), `warning`, `error`, `new`, and `none`.
-
-CLI scan mode is read-only. `--fix` is reserved for a future explicit opt-in fix
-command and currently exits with an error instead of modifying files.
-
-The CLI and the Obsidian plugin share scanner logic, but they are different
-runtimes. The Obsidian plugin uses Obsidian metadata and UI actions; the CLI uses
-a local filesystem adapter and is intended for terminal, CI, and automation
-workflows.
-
-## Scanners
 
 ### Broken Links
 
@@ -286,6 +24,8 @@ Supports wiki links (`[[Note]]`), aliased links (`[[Note|Display]]`), heading li
 - `error` — unresolved link target
 - `warning` — missing heading in existing note
 
+Broken link detection relies on Obsidian's metadata cache; links inside code blocks or comments may be missed.
+
 ### Orphan Attachments
 
 Scans for attachment files not referenced by any Markdown file.
@@ -293,6 +33,8 @@ Scans for attachment files not referenced by any Markdown file.
 - `warning` — unreferenced file older than 24 hours
 - `info` — unreferenced file modified within 24 hours
 - Supported: png, jpg, jpeg, gif, webp, svg, pdf, mp3, mp4, wav, mov, zip
+
+Orphan detection cannot account for references from CSS, Canvas, Dataview queries, or external tools.
 
 ### Empty Notes
 
@@ -307,6 +49,7 @@ Opt-in scanner for checking HTTP/HTTPS URLs found in notes for availability. It 
 - `warning` — HTTP status 400 or higher
 - `info` — timed out, failed, or skipped URL checks
 - Checks Markdown links, frontmatter links, images/embeds, and bare HTTP/HTTPS URLs in note bodies.
+- Timeouts or blocked requests do not necessarily mean a URL is dead.
 
 ### Duplicate Files
 
@@ -319,6 +62,8 @@ Deletion is offered only for files confirmed identical by content hash. By
 default, Vault Inspector asks which file to keep. Automatic mode keeps the first
 complete vault-relative path in alphabetical order. Modification time, access
 time, and file size do not choose the keep file.
+
+Duplicate detection above the hash cap reports candidates only (no content verification).
 
 ### Frontmatter Type Inconsistencies
 
@@ -347,6 +92,79 @@ files without that frontmatter, add a path pattern such as
 You can use the same path patterns for other generated or workflow-specific
 Markdown files, for example `index/**/*.md` or `exports/**/*.md`.
 
+## Install in Obsidian
+
+### Community Plugins
+
+Search **Vault Inspector** in Obsidian → Settings → Community plugins → Browse.
+
+### Manual
+
+Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/rogerdigital/vault-inspector/releases) and place them in `.obsidian/plugins/vault-inspector/`.
+
+## Use in Obsidian
+
+The core workflow is: run a scan, review new findings, then fix or ignore each one.
+
+1. Open the command palette and run **Vault Inspector: Run scan**.
+2. The Inspector view opens in the right sidebar and shows scan progress while the scanners run.
+3. The summary highlights how many findings are new since the last comparable scan. Click **Review new findings** to focus the list on confirmed new findings.
+4. Filter results by scanner, severity, lifecycle, or classification. Expand **Technical evidence** to inspect the raw scanner evidence behind the explanation.
+5. Click paths, URLs, targets, properties, or tags to jump to the relevant location.
+6. Open a finding's **Actions** menu to ignore it, choose **Exclude parent folder**, or open its scanner settings. Parent-folder exclusions apply only to that scanner and can be removed from **Scanner-specific ignored folders** in settings.
+7. Expand **Filter and select**, then click **Select findings** to enter selection mode and batch delete or ignore issues.
+8. Expand **Resolved items** to review read-only rows from the previous compatible successful scan. Expand **Ignored items** to restore previously ignored issues.
+9. Run **Vault Inspector: Export report** to save results as Markdown. When a
+   complete in-vault report would exceed 1 MiB, choose a compact summary,
+   explicitly export the complete report anyway, or cancel.
+
+Scan results are selectable for copying. Duplicate file results show each file
+separately, tag results show `#tag` chips, and exported Markdown reports include
+scanner-specific detail fields.
+
+Plugin exports measure the complete Markdown output before writing into the
+vault. Reports larger than 1 MiB require an explicit choice because large
+Markdown files may make Obsidian unresponsive while indexing. Summary exports
+keep scan totals and per-scanner counts but omit per-finding details. This
+in-vault protection does not change CLI Markdown output.
+
+Each finding carries a confidence label — **Confirmed**, **Needs review**, or
+**Could not verify** — and a plain-language explanation: why it was reported, an
+optional caveat, and a suggested next step. Raw evidence remains available
+separately for deeper inspection.
+
+Lifecycle comparison is available only after a successful scan and only when the
+previous successful scan used the same detection profile. The first successful
+scan establishes a baseline; changing detection settings or scanner semantics
+also establishes a new baseline instead of marking every finding as new. Ignoring
+a finding does not resolve it: ignored findings remain part of the active
+lifecycle comparison. Resolved rows are read-only historical records from the
+previous compatible snapshot, not current findings or proof that an action fixed
+them.
+
+## How safe fixes work
+
+Vault Inspector is read-only by design: scans never modify, move, or delete
+vault files. The only writes are exported Markdown reports and fixes you
+explicitly confirm.
+
+Fixes run only after explicit confirmation. Before anything happens, a
+confirmation dialog lists every planned fix and its impact — the files it will
+move to trash, the link text it will remove, and the references around them.
+
+Each fix is preflight-checked against a fresh scan of the affected files:
+
+- **Ready to fix** — the finding is confirmed and its evidence is complete, so the fix can run from the confirmation dialog.
+- **Review before fixing** — the fix needs a decision first, for example choosing which of several referenced duplicate copies to keep, or reviewing a finding that was not fully verified.
+- **Fix unavailable** — the fix cannot run safely in the current state, for example when some references could not be checked or the finding could not be verified.
+
+After you confirm, every attempted fix is verified against fresh scan data and
+reported as **Fixed**, **Still present**, **Skipped**, or **Failed**. Fix results
+remain visible until dismissed.
+
+Fix actions can be turned off entirely in settings. Batch delete moves files to
+Obsidian's trash; it never permanently deletes them.
+
 ## Settings
 
 | Setting | Default | Description |
@@ -371,21 +189,33 @@ Global ignored folders apply to every scanner. Scanner-specific ignored folders
 are additional exclusions. For example, add `syncTrash` only to Broken Links if
 you want Duplicate Files to inspect that folder while broken-link checks skip it.
 
-## Privacy
+## Optional CLI automation
+
+The same scanner logic is available as a read-only terminal scanner for local
+vaults, automation, and CI workflows:
+
+```bash
+npx vault-inspector /path/to/your/vault
+```
+
+Or install it globally:
+
+```bash
+npm install -g vault-inspector
+vinspect /path/to/your/vault
+```
+
+CLI scan mode is read-only: it never modifies, moves, or deletes vault files.
+For all flags, configuration, the JSON protocol, baseline comparison, and exit
+codes, read the [CLI reference](docs/cli.md).
+
+## Privacy and network access
 
 Vault Inspector does not make network requests unless the External Links scanner is enabled. That scanner checks URLs you explicitly have in your notes. In Obsidian this uses Obsidian's `requestUrl`; in the CLI it uses HTTP HEAD requests through the runtime `fetch` API. No vault content leaves your device beyond those link-check requests.
 
 Vault Inspector enumerates vault files and Markdown metadata so scanners can detect
 broken links, orphan attachments, duplicate files, large files, tag usage, and
 frontmatter type drift. This access is local and read-only during scans.
-
-## Limitations
-
-- Read-only — does not modify, move, or delete vault files (except exported reports and optional batch-delete via trash).
-- Broken link detection relies on Obsidian's metadata cache; links inside code blocks or comments may be missed.
-- External link checks are opt-in and network-dependent; timeouts or blocked requests do not necessarily mean a URL is dead.
-- Orphan detection cannot account for references from CSS, Canvas, Dataview queries, or external tools.
-- Duplicate detection above the hash cap reports candidates only (no content verification).
 
 ## Development
 

@@ -1,15 +1,77 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FixAction, Issue } from "../scanner/Issue";
 import {
 	buildConfirmationPlan,
 	buildImpactRows,
+	confirmButtonLabel,
 	createSingleUseResolver,
-	describeEligibility,
+	describeActionConsequence,
 	groupByEligibility,
-	resolveEligibility,
 	shouldAskForKeep,
+	showConfirmModal,
 	summarizeFixActions,
 } from "../fix/confirm-modal";
+
+type Listener = () => void;
+type ElementOptions = { cls?: string; text?: string; attr?: Record<string, string> };
+
+class FakeElement {
+	children: FakeElement[] = [];
+	cls = "";
+	text: string | null = null;
+	attr: Record<string, string> = {};
+	open = false;
+	disabled = false;
+	checked = false;
+	name = "";
+	private listeners = new Map<string, Listener>();
+
+	constructor(readonly tag = "div", options: ElementOptions = {}) {
+		this.cls = options.cls ?? "";
+		this.text = options.text ?? null;
+		this.attr = options.attr ?? {};
+		this.open = this.attr.open !== undefined;
+	}
+
+	get textContent(): string {
+		return [this.text ?? "", ...this.children.map((child) => child.textContent)]
+			.join(" ")
+			.replace(/\s+/g, " ")
+			.trim();
+	}
+
+	empty() { this.children = []; }
+	addClass(cls: string) { this.cls = `${this.cls} ${cls}`.trim(); }
+	createEl(tag: string, options: ElementOptions = {}) {
+		const child = new FakeElement(tag, options);
+		this.children.push(child);
+		return child;
+	}
+	createDiv(options: ElementOptions = {}) { return this.createEl("div", options); }
+	createSpan(options: ElementOptions = {}) { return this.createEl("span", options); }
+	addEventListener(name: string, listener: Listener) { this.listeners.set(name, listener); }
+	dispatch(name: string) { this.listeners.get(name)?.(); }
+	click() { this.dispatch("click"); }
+}
+
+const { modalInstances } = vi.hoisted(() => ({ modalInstances: [] as any[] }));
+
+vi.mock("obsidian", () => ({
+	App: class {},
+	Modal: class {
+		contentEl = new FakeElement();
+		constructor(public app: unknown) { modalInstances.push(this); }
+		open() { this.onOpen(); }
+		close() { this.onClose(); }
+		onOpen() {}
+		onClose() {}
+	},
+	TFile: class {},
+}));
+import {
+	describeEligibility,
+	resolveEligibility,
+} from "../fix/fix-eligibility";
 import {
 	buildFixDecisionState,
 	resolveDecisionAction,
@@ -248,29 +310,29 @@ describe("fix impact preview policy", () => {
 		});
 
 		expect(describeEligibility(unverified)).toEqual({
-			status: "Blocked",
-			reason: "The finding is unverified, so its fix cannot run.",
+			status: "Fix unavailable",
+			reason: "The finding could not be verified, so its fix cannot run.",
 		});
 		expect(describeEligibility(incompleteCoverage)).toEqual({
-			status: "Blocked",
+			status: "Fix unavailable",
 			reason:
-				"Reference coverage is incomplete, so files cannot be moved to trash safely.",
+				"Some references could not be checked, so files cannot be moved to trash safely.",
 		});
 		expect(describeEligibility(reviewGroup)).toEqual({
-			status: "Review required",
+			status: "Review before fixing",
 			reason:
-				"Several copies are referenced, so an explicit keep choice is required.",
+				"Several copies are referenced. Choose which location to keep before continuing.",
 		});
 		expect(describeEligibility(candidate)).toEqual({
-			status: "Review required",
-			reason: "The finding needs review before its fix can run.",
+			status: "Review before fixing",
+			reason: "Review this finding before allowing its fix to run.",
 		});
 		expect(describeEligibility(missingReplacement)).toEqual({
-			status: "Review required",
-			reason: "The replacement text is not fully specified.",
+			status: "Review before fixing",
+			reason: "The replacement text is incomplete, so review is required.",
 		});
 		expect(describeEligibility(eligible)).toEqual({
-			status: "Eligible",
+			status: "Ready to fix",
 			reason: "The fix is confirmed and its evidence is complete.",
 		});
 	});
@@ -446,5 +508,204 @@ describe("fix impact preview policy", () => {
 				mtime: "Modified date unknown",
 			},
 		]);
+	});
+});
+
+const trashAction: FixAction = {
+	kind: "trash-file",
+	label: "Delete",
+	description: "Move the file to trash",
+	targetPaths: ["a.png"],
+};
+const linkAction: FixAction = {
+	kind: "remove-link-text",
+	label: "Remove link",
+	description: "Remove the link text",
+	targetPaths: ["notes/source.md"],
+};
+
+describe("confirmButtonLabel", () => {
+	it("labels a single action by its mutation", () => {
+		expect(confirmButtonLabel([trashAction])).toBe("Move to trash");
+		expect(confirmButtonLabel([linkAction])).toBe("Apply fix");
+	});
+
+	it("falls back to batch wording for zero or multiple actions", () => {
+		expect(confirmButtonLabel([])).toBe("Apply selected fixes");
+		expect(confirmButtonLabel([trashAction, linkAction]))
+			.toBe("Apply selected fixes");
+		expect(confirmButtonLabel([trashAction, linkAction, trashAction]))
+			.toBe("Apply selected fixes");
+	});
+});
+
+describe("describeActionConsequence", () => {
+	it("names the mutation each action kind performs", () => {
+		expect(describeActionConsequence(trashAction)).toBe("Move file to trash");
+		expect(describeActionConsequence(linkAction)).toBe("Modify note");
+	});
+});
+
+const eligibleTrashIssue: Issue = makeFixIssue({
+	classification: "confirmed",
+	eligibility: "eligible",
+	impact: {
+		filesChanged: 0,
+		filesTrashed: 1,
+		inboundReferences: 2,
+		coverageComplete: true,
+	},
+});
+
+const incompleteCoverageIssue: Issue = makeFixIssue({
+	classification: "confirmed",
+	eligibility: "blocked",
+	impact: {
+		filesChanged: 0,
+		filesTrashed: 1,
+		inboundReferences: 0,
+		coverageComplete: false,
+	},
+});
+
+const eligibleLinkIssue: Issue = makeFixIssue({
+	scannerId: "broken-links",
+	classification: "confirmed",
+	eligibility: "eligible",
+	primaryPath: "notes/source.md",
+	fingerprint: "link",
+	fixAction: {
+		kind: "remove-link-text",
+		label: "Remove link",
+		description: "Replace the link",
+		targetPaths: ["notes/source.md"],
+		original: "[[Missing]]",
+		replacement: "Missing",
+	},
+});
+
+const reviewWithImpactIssue: Issue = makeFixIssue({
+	eligibility: "review-required",
+	fingerprint: "review-impact",
+	impact: {
+		filesChanged: 0,
+		filesTrashed: 1,
+		inboundReferences: 1,
+		coverageComplete: true,
+	},
+});
+
+function renderConfirmation(issues: Issue[]): FakeElement {
+	modalInstances.length = 0;
+	showConfirmModal(
+		{ vault: { getAbstractFileByPath: () => null } } as any,
+		issues,
+		"automatic",
+	);
+	return modalInstances[0].contentEl as FakeElement;
+}
+
+function findDetails(root: FakeElement, summaryText: string): FakeElement | undefined {
+	const isMatch = root.tag === "details"
+		&& root.children.some(
+			(child) => child.tag === "summary" && child.text === summaryText,
+		);
+	if (isMatch) return root;
+	for (const child of root.children) {
+		const found = findDetails(child, summaryText);
+		if (found) return found;
+	}
+	return undefined;
+}
+
+function confirmButton(root: FakeElement): FakeElement | undefined {
+	if (root.tag === "button" && root.cls.includes("vi-confirm-destructive")) {
+		return root;
+	}
+	for (const child of root.children) {
+		const found = confirmButton(child);
+		if (found) return found;
+	}
+	return undefined;
+}
+
+function reviewCheckbox(root: FakeElement): FakeElement | undefined {
+	if (root.cls.includes("vi-review-checkbox")) {
+		return root.children.find((child) => child.tag === "input");
+	}
+	for (const child of root.children) {
+		const found = reviewCheckbox(child);
+		if (found) return found;
+	}
+	return undefined;
+}
+
+describe("fix confirmation layout", () => {
+	beforeEach(() => { modalInstances.length = 0; });
+
+	it("shows the user decision before reference mechanics", () => {
+		const modal = renderConfirmation([eligibleTrashIssue]);
+		expect(modal.textContent).toContain("Move 1 file to trash");
+		expect(modal.textContent).toContain("Reference details");
+		expect(findDetails(modal, "Reference details")?.open).toBe(false);
+	});
+
+	it("keeps an unsafe reference condition visible without opening details", () => {
+		const modal = renderConfirmation([incompleteCoverageIssue]);
+		expect(modal.textContent).toContain("Fix unavailable");
+		expect(modal.textContent).toContain("Some references could not be checked");
+	});
+
+	it("uses action-specific confirm labels", () => {
+		expect(confirmButton(renderConfirmation([eligibleTrashIssue]))?.textContent)
+			.toBe("Move to trash");
+		expect(confirmButton(renderConfirmation([eligibleLinkIssue]))?.textContent)
+			.toBe("Apply fix");
+		expect(confirmButton(renderConfirmation([eligibleTrashIssue, eligibleLinkIssue]))?.textContent)
+			.toBe("Apply selected fixes");
+	});
+
+	it("counts resolved actions in the title, not selected issues", () => {
+		const modal = renderConfirmation([
+			eligibleTrashIssue,
+			makeFixIssue({
+				fingerprint: "blocked-other",
+				classification: "unverified",
+				eligibility: "blocked",
+			}),
+			makeFixIssue({
+				fingerprint: "review-other",
+				eligibility: "review-required",
+			}),
+		]);
+		expect(modal.textContent).toContain("Confirm fix");
+		expect(modal.textContent).not.toContain("Confirm batch fix");
+		expect(modal.textContent).toContain("Move 1 file to trash");
+		expect(confirmButton(modal)?.textContent).toBe("Move to trash");
+	});
+
+	it("keeps the batch lead sentence for multiple actions", () => {
+		const modal = renderConfirmation([eligibleTrashIssue, eligibleLinkIssue]);
+		expect(modal.textContent)
+			.toContain("This will modify 1 note and move 1 file to trash.");
+	});
+
+	it("states each card's action consequence", () => {
+		const modal = renderConfirmation([eligibleTrashIssue, eligibleLinkIssue]);
+		expect(modal.textContent).toContain("Move file to trash");
+		expect(modal.textContent).toContain("Modify note");
+	});
+
+	it("preserves reference-details disclosure state across re-renders", () => {
+		const modal = renderConfirmation([reviewWithImpactIssue]);
+		const details = findDetails(modal, "Reference details")!;
+		details.open = true;
+		details.dispatch("toggle");
+
+		const checkbox = reviewCheckbox(modal)!;
+		checkbox.checked = true;
+		checkbox.dispatch("change");
+
+		expect(findDetails(modal, "Reference details")?.open).toBe(true);
 	});
 });
