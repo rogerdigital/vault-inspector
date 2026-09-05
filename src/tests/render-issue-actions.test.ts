@@ -289,9 +289,9 @@ describe("fix eligibility reporting and bulk gating", () => {
 			expect(label?.cls).toContain("vi-issue-target-label");
 			const token = findByText(
 				container,
-				eligibility === "eligible" ? "Eligible"
-					: eligibility === "review-required" ? "Review required"
-						: "Blocked",
+				eligibility === "eligible" ? "Ready to fix"
+					: eligibility === "review-required" ? "Review before fixing"
+						: "Fix unavailable",
 			);
 			expect(token?.cls.split(/\s+/)).toContain(
 				`vi-eligibility-${eligibility}`,
@@ -314,8 +314,8 @@ describe("fix eligibility reporting and bulk gating", () => {
 			onOpenIssue: vi.fn(),
 			onToggleSelect: vi.fn(),
 		});
-		expect(findByText(container, "Review required")).toBeDefined();
-		expect(findByText(container, "Blocked")).toBeUndefined();
+		expect(findByText(container, "Review before fixing")).toBeDefined();
+		expect(findByText(container, "Fix unavailable")).toBeUndefined();
 	});
 
 	it("renders no fix row for issues without a fix action", () => {
@@ -356,7 +356,7 @@ function describeReasonFor(
 		return "The fix is confirmed and its evidence is complete.";
 	}
 	if (eligibility === "blocked") {
-		return "The finding is unverified, so its fix cannot run.";
+		return "The finding could not be verified, so its fix cannot run.";
 	}
-	return "The finding needs review before its fix can run.";
+	return "Review this finding before allowing its fix to run.";
 }

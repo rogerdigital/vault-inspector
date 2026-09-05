@@ -1,7 +1,6 @@
 import { App, Modal, TFile } from "obsidian";
 import type {
 	FixAction,
-	FixEligibility,
 	Issue,
 	KeepOneSelection,
 } from "../scanner/Issue";
@@ -12,6 +11,10 @@ import {
 	type FixDecision,
 	resolveDecisionAction,
 } from "./fix-decisions";
+import {
+	describeEligibility,
+	resolveEligibility,
+} from "./fix-eligibility";
 
 export type FixActionSummary = {
 	title: string;
@@ -94,66 +97,6 @@ export function shouldAskForKeep(
 	selection: KeepOneSelection,
 ): boolean {
 	return mode === "always-ask" || selection.requiresReview === true;
-}
-
-/**
- * One eligibility view shared by the confirmation model, the modal
- * controls, the report rows, and the bulk-selection gate. A missing field
- * (hand-built issue) degrades to review-required: fixable only through an
- * explicit per-item decision, never silently.
- */
-export function resolveEligibility(issue: Issue): FixEligibility {
-	return issue.eligibility ?? "review-required";
-}
-
-export type EligibilityExplanation = { status: string; reason: string };
-
-/**
- * Sentence-case status and reason for the modal and the report row. The
- * status ALWAYS derives from `resolveEligibility` so the tier and its
- * explanation can never disagree; the reason picks the first matching
- * condition.
- */
-export function describeEligibility(
-	issue: Issue,
-): EligibilityExplanation {
-	const action = issue.fixAction;
-	if (!action) {
-		return { status: "No fix action", reason: "This finding has no fix action." };
-	}
-	const eligibility = resolveEligibility(issue);
-	const status = eligibility === "blocked"
-		? "Blocked"
-		: eligibility === "review-required"
-			? "Review required"
-			: "Eligible";
-	let reason: string;
-	if (issue.classification === "unverified") {
-		reason = "The finding is unverified, so its fix cannot run.";
-	} else if (
-		action.kind === "trash-file"
-		&& issue.impact?.coverageComplete === false
-	) {
-		reason =
-			"Reference coverage is incomplete, so files cannot be moved to trash safely.";
-	} else if (action.selection?.requiresReview === true) {
-		reason =
-			"Several copies are referenced, so an explicit keep choice is required.";
-	} else if (issue.classification !== "confirmed") {
-		reason = "The finding needs review before its fix can run.";
-	} else if (
-		action.kind === "remove-link-text"
-		&& (action.original === undefined || action.replacement === undefined)
-	) {
-		reason = "The replacement text is not fully specified.";
-	} else if (eligibility === "blocked") {
-		reason = "The finding cannot be fixed in this state.";
-	} else {
-		reason = eligibility === "review-required"
-			? "The finding needs review before its fix can run."
-			: "The fix is confirmed and its evidence is complete.";
-	}
-	return { status, reason };
 }
 
 export type EligibilityGroups = {

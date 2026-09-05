@@ -5,7 +5,7 @@ import { formatSize } from "../utils/format";
 import { renderFindingEvidence } from "./render-evidence";
 import { setTooltip } from "obsidian";
 import { getParentFolder } from "../utils/paths";
-import { describeEligibility, resolveEligibility } from "../fix/confirm-modal";
+import { describeEligibility, resolveEligibility } from "../fix/fix-eligibility";
 
 export type IssueListConfig = {
 	issues: Issue[];

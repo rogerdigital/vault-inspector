@@ -4,12 +4,14 @@ import {
 	buildConfirmationPlan,
 	buildImpactRows,
 	createSingleUseResolver,
-	describeEligibility,
 	groupByEligibility,
-	resolveEligibility,
 	shouldAskForKeep,
 	summarizeFixActions,
 } from "../fix/confirm-modal";
+import {
+	describeEligibility,
+	resolveEligibility,
+} from "../fix/fix-eligibility";
 import {
 	buildFixDecisionState,
 	resolveDecisionAction,
@@ -248,29 +250,29 @@ describe("fix impact preview policy", () => {
 		});
 
 		expect(describeEligibility(unverified)).toEqual({
-			status: "Blocked",
-			reason: "The finding is unverified, so its fix cannot run.",
+			status: "Fix unavailable",
+			reason: "The finding could not be verified, so its fix cannot run.",
 		});
 		expect(describeEligibility(incompleteCoverage)).toEqual({
-			status: "Blocked",
+			status: "Fix unavailable",
 			reason:
-				"Reference coverage is incomplete, so files cannot be moved to trash safely.",
+				"Some references could not be checked, so files cannot be moved to trash safely.",
 		});
 		expect(describeEligibility(reviewGroup)).toEqual({
-			status: "Review required",
+			status: "Review before fixing",
 			reason:
-				"Several copies are referenced, so an explicit keep choice is required.",
+				"Several copies are referenced. Choose which location to keep before continuing.",
 		});
 		expect(describeEligibility(candidate)).toEqual({
-			status: "Review required",
-			reason: "The finding needs review before its fix can run.",
+			status: "Review before fixing",
+			reason: "Review this finding before allowing its fix to run.",
 		});
 		expect(describeEligibility(missingReplacement)).toEqual({
-			status: "Review required",
-			reason: "The replacement text is not fully specified.",
+			status: "Review before fixing",
+			reason: "The replacement text is incomplete, so review is required.",
 		});
 		expect(describeEligibility(eligible)).toEqual({
-			status: "Eligible",
+			status: "Ready to fix",
 			reason: "The fix is confirmed and its evidence is complete.",
 		});
 	});
