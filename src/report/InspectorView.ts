@@ -249,13 +249,8 @@ export class InspectorView extends ItemView {
 		}
 
 		const filterView = this.getIssueFilterView();
-		this.renderControls(container, filterView);
 		renderSummary(container, this.model.result, {
 			comparison: this.model.comparison,
-			onFilterStatus: (status) => {
-				this.model.filterStatus = this.model.filterStatus === status ? null : status;
-				this.render();
-			},
 			onReviewNewFindings: () => {
 				if (
 					this.model.filterStatus === "new"
@@ -271,6 +266,7 @@ export class InspectorView extends ItemView {
 				this.render();
 			},
 		});
+		this.renderControls(container, filterView);
 		renderOperationOutcomes(
 			container,
 			this.model.operationOutcomes,

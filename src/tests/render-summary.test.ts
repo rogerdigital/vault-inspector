@@ -111,7 +111,7 @@ function activeIssue(
 	};
 }
 
-const result: ScanResult = {
+const resultWithLifecycle: ScanResult = {
 	startedAt: 0,
 	finishedAt: 1000,
 	issues: [
@@ -129,7 +129,7 @@ const result: ScanResult = {
 	scannersRun: ["broken-links", "empty-notes"],
 };
 
-function availableComparison(): LifecycleComparison {
+function compatibleComparison(): LifecycleComparison {
 	return {
 		available: true,
 		previousScanAt: 1_000,
@@ -147,88 +147,172 @@ function availableComparison(): LifecycleComparison {
 	};
 }
 
+function firstScanComparison(): LifecycleComparison {
+	return {
+		available: false,
+		reason: "first-scan",
+		statuses: new Map(),
+		resolvedIssues: [],
+	};
+}
+
+function settingsChangedComparison(previousScanAt?: number): LifecycleComparison {
+	return {
+		available: false,
+		reason: "settings-changed",
+		previousScanAt,
+		statuses: new Map(),
+		resolvedIssues: [],
+	};
+}
+
+function semanticsChangedComparison(previousScanAt?: number): LifecycleComparison {
+	return {
+		available: false,
+		reason: "semantics-changed",
+		previousScanAt,
+		statuses: new Map(),
+		resolvedIssues: [],
+	};
+}
+
 describe("renderSummary", () => {
-	it("leads with new confirmed errors and warnings before aggregate totals", () => {
+	it("shows new and resolved findings as the primary compatible-scan result", () => {
 		const container = new FakeElement();
-		const onFilterStatus = vi.fn();
 		const onReviewNewFindings = vi.fn();
 
-		renderSummary(container as unknown as HTMLElement, result, {
-			comparison: availableComparison(),
-			onFilterStatus,
+		renderSummary(container as unknown as HTMLElement, resultWithLifecycle, {
+			comparison: compatibleComparison(),
 			onReviewNewFindings,
 		});
 
 		const text = flatten(container);
-		expect(text).toContain("What changed");
-		expect(text).toContain("Compared with the scan from");
-		expect(text).toContain("New errors1New warnings1Persisting2Resolved1");
-		expect(text).toContain("Active5");
+		expect(text).toContain("2 new findings");
+		expect(text).toContain("1 resolved");
+		expect(text).toContain("Review new findings");
+		expect(text).toContain("2 previously found");
+		expect(text).toContain("5 active");
+		expect(text).toContain("compared with");
+		expect(text).not.toContain("PERSISTING");
 		expect(text).toContain("8 files scanned1.0s2 scannersIgnored 2");
-		expect(text.indexOf("New errors1")).toBeGreaterThan(0);
-		expect(text.indexOf("New errors1")).toBeLessThan(text.indexOf("Active5"));
+		expect(findByText(container, "2 new findings")?.cls).toContain("vi-changes-primary");
+		expect(findByText(container, "1 resolved")?.cls).toContain("vi-changes-resolved");
 	});
 
 	it("counts only confirmed new findings in the headline", () => {
 		const container = new FakeElement();
-		renderSummary(container as unknown as HTMLElement, result, {
-			comparison: availableComparison(),
+		renderSummary(container as unknown as HTMLElement, resultWithLifecycle, {
+			comparison: compatibleComparison(),
 		});
 
 		const text = flatten(container);
-		expect(text).toContain("New errors1");
-		expect(text).toContain("New warnings1");
-		expect(text).not.toContain("New errors2");
-		expect(text).not.toContain("New warnings2");
+		expect(text).toContain("2 new findings");
+		expect(text).not.toContain("3 new findings");
 	});
 
-	it("keeps persisting as the only summary status-filter button", () => {
+	it("uses the singular form for one new finding", () => {
+		const singleNew = { ...resultWithLifecycle, issues: [activeIssue("new-error")] };
 		const container = new FakeElement();
-		const onFilterStatus = vi.fn();
-		renderSummary(container as unknown as HTMLElement, result, {
-			comparison: availableComparison(),
-			onFilterStatus,
+		renderSummary(container as unknown as HTMLElement, singleNew, {
+			comparison: compatibleComparison(),
 		});
 
-		const newErrors = findByText(container, "New errors1");
-		const newWarnings = findByText(container, "New warnings1");
-		const persisting = findByText(container, "Persisting2");
-		const resolved = findByText(container, "Resolved1");
-		expect(newErrors?.tag).toBe("div");
-		expect(newWarnings?.tag).toBe("div");
-		expect(persisting?.tag).toBe("button");
-		expect(persisting?.attr).toEqual({ type: "button" });
-		expect(persisting?.cls).toContain("vi-stat-persisting");
-		expect(resolved?.tag).toBe("div");
-
-		persisting?.click();
-		expect(onFilterStatus.mock.calls).toEqual([["persisting"]]);
+		const text = flatten(container);
+		expect(text).toContain("1 new finding");
+		expect(text).not.toContain("1 new findings");
 	});
 
-	it("offers a review control reporting the new confirmed count", () => {
+	it("uses the singular form for one active finding on a first scan", () => {
+		const singleActive = { ...resultWithLifecycle, issues: [activeIssue("only-issue")] };
+		const container = new FakeElement();
+		renderSummary(container as unknown as HTMLElement, singleActive, {
+			comparison: firstScanComparison(),
+		});
+
+		const text = flatten(container);
+		expect(text).toContain("1 active finding");
+		expect(text).not.toContain("1 active findings");
+		expect(text).toContain("Future scans will highlight what changed");
+	});
+
+	it("uses a scan-complete result when there is no compatible baseline", () => {
+		const container = new FakeElement();
+		renderSummary(container as unknown as HTMLElement, resultWithLifecycle, {
+			comparison: firstScanComparison(),
+		});
+
+		const text = flatten(container);
+		expect(text).toContain("Scan complete");
+		expect(text).toContain("5 active findings");
+		expect(text).toContain("Future scans will highlight what changed");
+		expect(text).not.toContain("previous successful scan:");
+		expect(text).not.toContain("new findings");
+		expect(text).not.toContain("previously found");
+		expect(text).not.toContain("resolved");
+	});
+
+	it("explains a restarted comparison without presenting false lifecycle counts", () => {
+		const container = new FakeElement();
+		renderSummary(container as unknown as HTMLElement, resultWithLifecycle, {
+			comparison: settingsChangedComparison(),
+		});
+
+		const text = flatten(container);
+		expect(text).toContain("Comparison restarted");
+		expect(text).toContain("Scan settings changed");
+		expect(text).not.toContain("new findings");
+		expect(text).not.toContain("previously found");
+		expect(text).not.toContain("resolved");
+	});
+
+	it("cites the previous successful scan when settings restart the comparison", () => {
+		const container = new FakeElement();
+		renderSummary(container as unknown as HTMLElement, resultWithLifecycle, {
+			comparison: settingsChangedComparison(1_000),
+		});
+
+		const text = flatten(container);
+		expect(text).toContain("Scan settings changed; this scan is the new baseline.");
+		expect(text).toContain("previous successful scan:");
+	});
+
+	it("explains a scanner-behavior restart like a settings restart", () => {
+		const container = new FakeElement();
+		renderSummary(container as unknown as HTMLElement, resultWithLifecycle, {
+			comparison: semanticsChangedComparison(1_000),
+		});
+
+		const text = flatten(container);
+		expect(text).toContain("Comparison restarted");
+		expect(text).toContain("Scanner behavior changed; this scan is the new baseline.");
+		expect(text).toContain("previous successful scan:");
+	});
+
+	it("offers a review control when there are new confirmed findings", () => {
 		const container = new FakeElement();
 		const onReviewNewFindings = vi.fn();
-		renderSummary(container as unknown as HTMLElement, result, {
-			comparison: availableComparison(),
+		renderSummary(container as unknown as HTMLElement, resultWithLifecycle, {
+			comparison: compatibleComparison(),
 			onReviewNewFindings,
 		});
 
-		const button = findByText(container, "Review new findings (2)");
+		const button = findByText(container, "Review new findings");
 		expect(button?.tag).toBe("button");
 		expect(button?.attr).toEqual({ type: "button" });
 		expect(button?.cls).toContain("vi-review-new-btn");
+		expect(button?.cls).toContain("mod-cta");
 
 		button?.click();
 		expect(onReviewNewFindings).toHaveBeenCalledTimes(1);
 	});
 
 	it("omits the review control without new confirmed findings or a callback", () => {
-		const persistingOnly = { ...result, issues: [activeIssue("persisting-a")] };
+		const persistingOnly = { ...resultWithLifecycle, issues: [activeIssue("persisting-a")] };
 
 		const noNewConfirmed = new FakeElement();
 		renderSummary(noNewConfirmed as unknown as HTMLElement, persistingOnly, {
 			comparison: {
-				...availableComparison(),
+				...compatibleComparison(),
 				statuses: new Map([["persisting-a", "persisting"]]),
 			},
 			onReviewNewFindings: vi.fn(),
@@ -236,60 +320,9 @@ describe("renderSummary", () => {
 		expect(flatten(noNewConfirmed)).not.toContain("Review new findings");
 
 		const noCallback = new FakeElement();
-		renderSummary(noCallback as unknown as HTMLElement, result, {
-			comparison: availableComparison(),
+		renderSummary(noCallback as unknown as HTMLElement, resultWithLifecycle, {
+			comparison: compatibleComparison(),
 		});
 		expect(flatten(noCallback)).not.toContain("Review new findings");
-	});
-
-	it("shows the previous scan time next to each unavailable reason", () => {
-		for (const reason of [
-			"first-scan",
-			"settings-changed",
-			"semantics-changed",
-		] as const) {
-			const container = new FakeElement();
-			renderSummary(container as unknown as HTMLElement, result, {
-				comparison: {
-					available: false,
-					reason,
-					previousScanAt: 1_000,
-					statuses: new Map(),
-					resolvedIssues: [],
-				},
-			});
-
-			const text = flatten(container);
-			expect(text).toContain("previous successful scan:");
-			if (reason === "settings-changed") {
-				expect(text).toContain("Scan settings changed; this scan starts a new comparison baseline");
-			} else if (reason === "semantics-changed") {
-				expect(text).toContain("Scanner behavior changed; this scan starts a new comparison baseline");
-			} else {
-				expect(text).toContain("No previous successful scan for these settings");
-			}
-		}
-	});
-
-	it("renders no time and no lifecycle stats for a first scan", () => {
-		const container = new FakeElement();
-		renderSummary(container as unknown as HTMLElement, result, {
-			comparison: {
-				available: false,
-				reason: "first-scan",
-				statuses: new Map(),
-				resolvedIssues: [],
-			},
-		});
-
-		const text = flatten(container);
-		expect(text).toContain("No previous successful scan for these settings");
-		expect(text).not.toContain("previous successful scan:");
-		expect(text).not.toContain("New errors");
-		expect(text).not.toContain("New warnings");
-		expect(text).not.toContain("Persisting");
-		expect(text).not.toContain("Resolved");
-		expect(text).not.toContain("Compared with the scan from");
-		expect(text).toContain("Active5");
 	});
 });

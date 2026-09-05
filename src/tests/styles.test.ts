@@ -73,12 +73,35 @@ describe("styles.css", () => {
 		expect(css).not.toMatch(/background(?:-color)?\s*:\s*#(?:fff|ffffff|f[0-9a-f]{5})\b/i);
 	});
 
-	it("keeps stats and long explanation values usable below 500px", async () => {
+	it("styles the changes-first summary with a single primary hierarchy", async () => {
+		const css = await readFile("styles.css", "utf8");
+
+		for (const className of [
+			"vi-changes-headline",
+			"vi-changes-primary",
+			"vi-changes-resolved",
+			"vi-changes-secondary",
+		]) {
+			expect(css, `missing .${className}`).toContain(`.${className}`);
+		}
+		expect(css).toMatch(/\.vi-changes-headline\s*\{[^}]*display:\s*flex;/);
+		expect(css).toMatch(/\.vi-changes-primary\s*\{[^}]*font-weight:\s*700;/);
+		expect(css).toMatch(/\.vi-changes-resolved\s*\{[^}]*color:\s*var\(--text-success\);/);
+		expect(css).toMatch(/\.vi-changes-secondary\s*\{[^}]*color:\s*var\(--text-muted\);/);
+
+		expect(css).not.toMatch(/\.vi-stats?\s*[{,.]/);
+		expect(css).not.toContain(".vi-changes-stats");
+		expect(css).not.toContain(".vi-changes-title");
+		expect(css).not.toContain(".vi-changes-meta");
+	});
+
+	it("keeps the changes summary and long explanation values usable below 500px", async () => {
 		const css = await readFile("styles.css", "utf8");
 		const mobile = css.match(/@media\s*\(max-width:\s*500px\)\s*\{([\s\S]*?)\n\}/)?.[1];
 
 		expect(mobile).toBeDefined();
-		expect(mobile).toContain(".vi-stats");
+		expect(mobile).toContain(".vi-changes-headline");
+		expect(mobile).toMatch(/\.vi-changes-secondary\s*\{[^}]*overflow-wrap:\s*anywhere;/);
 		expect(mobile).toContain(".vi-explanation-value");
 		expect(mobile).toMatch(/\.vi-explanation-value\s*\{[^}]*overflow-wrap:\s*anywhere;/);
 		expect(mobile).toMatch(/\.vi-explanation-value\s*\{[^}]*min-width:\s*0;/);

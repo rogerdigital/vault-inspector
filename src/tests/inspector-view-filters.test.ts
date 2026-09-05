@@ -11,12 +11,14 @@ import type { SnapshotIssue } from "../snapshot/scan-snapshot";
 
 const {
 	renderIssueListMock,
+	renderReportControlsMock,
 	renderResolvedChangesMock,
 	renderSummaryMock,
 	showFolderExclusionModalMock,
 	inspectorNoticeMessages,
 } = vi.hoisted(() => ({
 	renderIssueListMock: vi.fn(),
+	renderReportControlsMock: vi.fn(),
 	renderResolvedChangesMock: vi.fn(),
 	renderSummaryMock: vi.fn(),
 	showFolderExclusionModalMock: vi.fn(),
@@ -41,6 +43,18 @@ vi.mock("../report/render-issues", async (importOriginal) => {
 vi.mock("../report/render-summary", () => ({
 	renderSummary: renderSummaryMock,
 }));
+
+vi.mock("../report/render-controls", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../report/render-controls")>();
+	// Pass through to the real renderer so the disclosure stays interactive,
+	// while recording calls for render-order assertions.
+	return {
+		...actual,
+		renderReportControls: renderReportControlsMock.mockImplementation(
+			actual.renderReportControls,
+		),
+	};
+});
 
 vi.mock("../report/render-changes", () => ({
 	renderResolvedChanges: renderResolvedChangesMock,
@@ -223,6 +237,7 @@ function snapshotIssue(
 describe("InspectorView report filter wiring", () => {
 	beforeEach(() => {
 		renderIssueListMock.mockClear();
+		renderReportControlsMock.mockClear();
 		renderResolvedChangesMock.mockClear();
 		renderSummaryMock.mockClear();
 		showFolderExclusionModalMock.mockReset();
@@ -248,10 +263,10 @@ describe("InspectorView report filter wiring", () => {
 		const summaryOptions = renderSummaryMock.mock.lastCall?.[2];
 		expect.soft(summaryOptions).toEqual({
 			comparison: (view as any).model.comparison,
-			onFilterStatus: expect.any(Function),
 			onReviewNewFindings: expect.any(Function),
 		});
 		expect.soft(summaryOptions).not.toHaveProperty("issues");
+		expect.soft(summaryOptions).not.toHaveProperty("onFilterStatus");
 		expect.soft(renderIssueListMock).toHaveBeenLastCalledWith(
 			expect.any(FakeElement),
 			expect.objectContaining({ issues: [] }),
@@ -633,33 +648,18 @@ describe("InspectorView report filter wiring", () => {
 		expect(recollapsed.open).toBe(false);
 	});
 
-	it("toggles lifecycle filtering from the summary headline", () => {
+	it("renders the summary before the report controls disclosure", () => {
 		const container = new FakeElement();
 		const view = new InspectorView(new WorkspaceLeaf());
 		(view as any).containerEl.children[1] = container;
 		(view as any).model.result = result;
-		(view as any).model.comparison = comparable([
-			["broken-error", "new"],
-			["duplicate-warning", "persisting"],
-			["duplicate-info", "persisting"],
-		]);
 
 		(view as any).render();
-		const onFilterStatus = renderSummaryMock.mock.lastCall?.[2].onFilterStatus;
-		onFilterStatus("new");
 
-		expect(renderIssueListMock).toHaveBeenLastCalledWith(
-			expect.any(FakeElement),
-			expect.objectContaining({ issues: [result.issues[0]] }),
-		);
-
-		const nextCallback = renderSummaryMock.mock.lastCall?.[2].onFilterStatus;
-		nextCallback("new");
-		expect(renderIssueListMock.mock.lastCall?.[1].issues).toEqual([
-			result.issues[0],
-			duplicateInfo,
-			duplicateWarning,
-		]);
+		const summaryOrder = renderSummaryMock.mock.invocationCallOrder.at(-1) ?? -1;
+		const controlsOrder = renderReportControlsMock.mock.invocationCallOrder.at(-1) ?? -1;
+		expect(summaryOrder).toBeGreaterThan(0);
+		expect(controlsOrder).toBeGreaterThan(summaryOrder);
 	});
 
 	it("applies and releases the review-new preset without hiding other results", () => {
