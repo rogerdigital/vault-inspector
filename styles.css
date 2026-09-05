@@ -40,14 +40,22 @@ button.vi-stat-clickable:focus-visible { outline: 2px solid var(--interactive-ac
 .vi-meta > * { margin-right: 16px; }
 .vi-meta > *:last-child { margin-right: 0; }
 
-/* Toolbar */
-.vi-toolbar { display: flex; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
-.vi-toolbar > * { margin: 0 6px 6px 0; }
+/* Report controls disclosure */
+.vi-controls-disclosure { margin-bottom: 12px; }
+.vi-controls-disclosure > summary { min-height: 32px; padding: 4px 8px; border-radius: 4px; color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer; }
+.vi-controls-disclosure > summary:hover { color: var(--text-normal); }
+.vi-controls-disclosure > summary:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
+.vi-controls-body { margin-bottom: 4px; }
+.vi-controls-body .vi-filter-group + .vi-filter-group { margin-top: 4px; }
+.vi-controls-actions { display: flex; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.vi-controls-actions > * { margin: 0 6px 6px 0; }
+.vi-controls-actions > *:last-child { margin-right: 0; }
 .vi-filter-group { display: flex; flex-wrap: wrap; }
 .vi-filter-group > * { margin: 0 6px 6px 0; }
 .vi-filter-btn { font-size: 12px; padding: 6px 12px; border-radius: 4px; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-muted); cursor: pointer; white-space: nowrap; flex: 1 1 auto; text-align: center; }
 .vi-filter-btn.vi-active { background: var(--interactive-accent); color: var(--text-on-accent); border-color: var(--interactive-accent); }
 .vi-filter-btn:hover, .vi-filter-btn:active { opacity: 0.85; }
+.vi-filter-btn:focus-visible { outline: 2px solid var(--interactive-accent); outline-offset: 2px; }
 .vi-select-btn { display: inline-flex; align-items: center; }
 .vi-select-btn > * + * { margin-left: 4px; }
 

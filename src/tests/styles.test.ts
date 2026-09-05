@@ -8,6 +8,30 @@ describe("styles.css", () => {
 		expect(css).not.toMatch(/\b(?:row-|column-)?gap\s*:/);
 	});
 
+	it("styles the report controls disclosure with reachable click targets", async () => {
+		const css = await readFile("styles.css", "utf8");
+
+		for (const className of [
+			"vi-controls-disclosure",
+			"vi-controls-body",
+			"vi-controls-actions",
+		]) {
+			expect(css, `missing .${className}`).toContain(`.${className}`);
+		}
+		expect(css).not.toContain(".vi-toolbar");
+		expect(css).toMatch(/\.vi-controls-disclosure\s*>\s*summary\s*\{[^}]*min-height:\s*32px;/);
+		expect(css).toMatch(/\.vi-controls-disclosure\s*>\s*summary:focus-visible\s*\{/);
+		expect(css).toMatch(/\.vi-filter-btn:focus-visible\s*\{/);
+		const disclosureStart = css.indexOf("/* Report controls disclosure */");
+		const disclosureEnd = css.indexOf("/* Scanner sections */");
+		expect(disclosureStart, "missing disclosure styles marker").not.toBe(-1);
+		expect(disclosureEnd, "missing styles section after the disclosure").not.toBe(-1);
+		const disclosureStyles = css.slice(disclosureStart, disclosureEnd);
+		const margins = [...disclosureStyles.matchAll(/margin(?:-top|-right|-left|-bottom)?:\s*([^;]+);/g)]
+			.map((match) => match[1].trim());
+		expect(margins.length).toBeGreaterThan(0);
+	});
+
 	it("styles finding interpretation, lifecycle, and resolved report elements", async () => {
 		const css = await readFile("styles.css", "utf8");
 		const requiredClasses = [

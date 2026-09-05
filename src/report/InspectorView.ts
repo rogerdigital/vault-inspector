@@ -4,12 +4,14 @@ import { SCANNER_LABELS } from "../scanner/Issue";
 import {
 	buildIssueFilterView,
 	type IssueFilterView,
+	type IssueFilters,
 	type ReportModel,
 } from "./report-model";
 import { renderSummary } from "./render-summary";
 import { renderIssueList, selectBulkFixable } from "./render-issues";
 import { renderResolvedChanges } from "./render-changes";
 import { renderOperationOutcomes } from "./render-outcomes";
+import { activeFilterCount, renderReportControls } from "./render-controls";
 import { setIcon } from "obsidian";
 import { formatDuration } from "../utils/format";
 import { describeFixActions } from "../fix/confirm-modal";
@@ -76,6 +78,7 @@ export class InspectorView extends ItemView {
 		enableFixActions: true,
 		selectionMode: false,
 		selectedFingerprints: new Set(),
+		controlsExpanded: false,
 		ignoredExpanded: false,
 		resolvedExpanded: false,
 		ignoredSelectionMode: false,
@@ -174,6 +177,7 @@ export class InspectorView extends ItemView {
 		this.stopScanTimer();
 		this.model.selectionMode = false;
 		this.model.selectedFingerprints = new Set();
+		this.model.controlsExpanded = activeFilterCount(this.currentFilters()) > 0;
 		this.model.ignoredSelectionMode = false;
 		this.model.ignoredSelectedFingerprints = new Set();
 		this.model.resolvedExpanded = false;
@@ -245,7 +249,7 @@ export class InspectorView extends ItemView {
 		}
 
 		const filterView = this.getIssueFilterView();
-		this.renderToolbar(container, filterView);
+		this.renderControls(container, filterView);
 		renderSummary(container, this.model.result, {
 			comparison: this.model.comparison,
 			onFilterStatus: (status) => {
@@ -377,93 +381,35 @@ export class InspectorView extends ItemView {
 		this.scanTimer = null;
 	}
 
-	// ─── Toolbar ─────────────────────────────────────────────
+	// ─── Controls ────────────────────────────────────────────
 
-	private renderToolbar(container: HTMLElement, filterView: IssueFilterView) {
-		const toolbar = container.createDiv({ cls: "vi-toolbar" });
-		this.renderScannerFilter(toolbar, filterView);
-		this.renderSeverityFilter(toolbar, filterView);
-		if (this.model.comparison.available) {
-			this.renderLifecycleFilter(toolbar, filterView);
-		}
-		if ((this.model.result?.issues.length ?? 0) > 0) {
-			this.renderClassificationFilter(toolbar, filterView);
-		}
-
-		if (filterView.visibleIssues.length > 0) {
-			const selectBtn = toolbar.createEl("button", {
-				cls: `vi-filter-btn vi-select-btn ${this.model.selectionMode ? "vi-active" : ""}`,
-				text: this.model.selectionMode ? "Done" : "Select",
-			});
-			setTooltip(selectBtn, this.model.selectionMode ? "Exit selection mode" : "Enter selection mode");
-			selectBtn.addEventListener("click", () => {
-				this.model.selectionMode = !this.model.selectionMode;
-				if (!this.model.selectionMode) this.model.selectedFingerprints = new Set();
-				this.render();
-			});
-		}
-	}
-
-	private renderScannerFilter(toolbar: HTMLElement, filterView: IssueFilterView) {
+	private renderControls(container: HTMLElement, filterView: IssueFilterView) {
 		if (!this.model.result) return;
-		const group = toolbar.createDiv({ cls: "vi-filter-group" });
-		group.createEl("button", {
-			cls: `vi-filter-btn ${this.model.filterScanner === null ? "vi-active" : ""}`,
-			text: "All",
-		}).addEventListener("click", () => { this.model.filterScanner = null; this.render(); });
-
-		for (const scannerId of this.model.result.scannersRun) {
-			const count = filterView.scannerCounts.get(scannerId) ?? 0;
-			group.createEl("button", {
-				cls: `vi-filter-btn ${this.model.filterScanner === scannerId ? "vi-active" : ""}`,
-				text: `${SCANNER_LABELS[scannerId]} (${count})`,
-			}).addEventListener("click", () => {
-				this.model.filterScanner = this.model.filterScanner === scannerId ? null : scannerId;
+		renderReportControls(container, {
+			result: this.model.result,
+			filterView,
+			filters: this.currentFilters(),
+			comparisonAvailable: this.model.comparison.available,
+			expanded: this.model.controlsExpanded,
+			selectionMode: this.model.selectionMode,
+			onExpandedChange: (expanded) => {
+				// Must not re-render: the programmatic auto-open during render queues a toggle event, so rendering here would loop.
+				this.model.controlsExpanded = expanded;
+			},
+			onFiltersChange: (filters) => {
+				this.model.filterScanner = filters.scanner;
+				this.model.filterSeverity = filters.severity;
+				this.model.filterStatus = filters.status;
+				this.model.filterClassification = filters.classification;
 				this.render();
-			});
-		}
-	}
-
-	private renderSeverityFilter(toolbar: HTMLElement, filterView: IssueFilterView) {
-		if (!this.model.result) return;
-		const group = toolbar.createDiv({ cls: "vi-filter-group" });
-		for (const { severity, count } of filterView.severityFacets) {
-			group.createEl("button", {
-				cls: `vi-filter-btn vi-severity-${severity} ${this.model.filterSeverity === severity ? "vi-active" : ""}`,
-				text: `${severity} (${count})`,
-			}).addEventListener("click", () => {
-				this.model.filterSeverity = this.model.filterSeverity === severity ? null : severity;
+			},
+			onSelectionModeChange: (selectionMode) => {
+				this.model.selectionMode = selectionMode;
+				this.model.controlsExpanded = selectionMode || this.model.controlsExpanded;
+				if (!selectionMode) this.model.selectedFingerprints = new Set();
 				this.render();
-			});
-		}
-	}
-
-	private renderLifecycleFilter(toolbar: HTMLElement, filterView: IssueFilterView) {
-		const group = toolbar.createDiv({ cls: "vi-filter-group vi-lifecycle-filter" });
-		for (const { status, count } of filterView.statusFacets) {
-			group.createEl("button", {
-				cls: `vi-filter-btn ${this.model.filterStatus === status ? "vi-active" : ""}`,
-				text: `${status} (${count})`,
-			}).addEventListener("click", () => {
-				this.model.filterStatus = this.model.filterStatus === status ? null : status;
-				this.render();
-			});
-		}
-	}
-
-	private renderClassificationFilter(toolbar: HTMLElement, filterView: IssueFilterView) {
-		const group = toolbar.createDiv({ cls: "vi-filter-group vi-classification-filter" });
-		for (const { classification, count } of filterView.classificationFacets) {
-			group.createEl("button", {
-				cls: `vi-filter-btn ${this.model.filterClassification === classification ? "vi-active" : ""}`,
-				text: `${classification} (${count})`,
-			}).addEventListener("click", () => {
-				this.model.filterClassification = this.model.filterClassification === classification
-					? null
-					: classification;
-				this.render();
-			});
-		}
+			},
+		});
 	}
 
 	// ─── Main Action Bar ─────────────────────────────────────
@@ -704,12 +650,20 @@ export class InspectorView extends ItemView {
 	}
 
 	private getIssueFilterView(): IssueFilterView {
-		return buildIssueFilterView(this.model.result?.issues ?? [], {
+		return buildIssueFilterView(
+			this.model.result?.issues ?? [],
+			this.currentFilters(),
+			this.model.comparison.statuses,
+		);
+	}
+
+	private currentFilters(): IssueFilters {
+		return {
 			scanner: this.model.filterScanner,
 			severity: this.model.filterSeverity,
 			status: this.model.filterStatus,
 			classification: this.model.filterClassification,
-		}, this.model.comparison.statuses);
+		};
 	}
 
 	private async handleExcludeFolder(issue: Issue): Promise<void> {

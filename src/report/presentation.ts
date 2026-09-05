@@ -1,6 +1,7 @@
 import type {
 	FindingClassification,
 	Issue,
+	IssueSeverity,
 } from "../scanner/Issue";
 import type { CurrentFindingStatus } from "../scanner/result-diff";
 import {
@@ -38,6 +39,16 @@ const CLASSIFICATIONS: Record<FindingClassification, PresentationToken> = {
 		className: "vi-classification-unverified",
 	},
 };
+
+const SEVERITY_LABELS: Record<IssueSeverity, string> = {
+	error: "Errors",
+	warning: "Warnings",
+	info: "Info",
+};
+
+export function presentSeverity(severity: IssueSeverity): string {
+	return SEVERITY_LABELS[severity];
+}
 
 export function presentClassification(
 	classification: FindingClassification,

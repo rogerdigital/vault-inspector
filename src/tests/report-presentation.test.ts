@@ -4,6 +4,7 @@ import {
 	presentClassification,
 	presentFix,
 	presentLifecycle,
+	presentSeverity,
 } from "../report/presentation";
 
 const issue = (eligibility: Issue["eligibility"]): Issue => ({
@@ -31,6 +32,12 @@ describe("report presentation", () => {
 		expect(presentClassification("confirmed").label).toBe("Confirmed");
 		expect(presentClassification("candidate").label).toBe("Needs review");
 		expect(presentClassification("unverified").label).toBe("Could not verify");
+	});
+
+	it("uses plural plain-language severity labels", () => {
+		expect(presentSeverity("error")).toBe("Errors");
+		expect(presentSeverity("warning")).toBe("Warnings");
+		expect(presentSeverity("info")).toBe("Info");
 	});
 
 	it("shows only new lifecycle state on collapsed cards", () => {

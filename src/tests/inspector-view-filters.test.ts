@@ -68,6 +68,7 @@ class FakeElement {
 	attr: Record<string, string>;
 	style = { display: "" };
 	scrollTop = 0;
+	private openState = false;
 	private listeners = new Map<string, Listener>();
 
 	constructor(
@@ -77,6 +78,23 @@ class FakeElement {
 		this.cls = options.cls ?? "";
 		this.text = options.text ?? null;
 		this.attr = options.attr ?? {};
+	}
+
+	/**
+	 * Mirrors the HTML spec: assigning open queues a toggle event as a task,
+	 * so listeners observe the change asynchronously — including listeners
+	 * attached after the assignment, like the renderer's own toggle handler.
+	 */
+	get open(): boolean {
+		return this.openState;
+	}
+
+	set open(value: boolean) {
+		if (this.openState === value) return;
+		this.openState = value;
+		queueMicrotask(() => {
+			this.listeners.get("toggle")?.();
+		});
 	}
 
 	createDiv(options: ElementOptions = {}): FakeElement {
@@ -103,6 +121,10 @@ class FakeElement {
 
 	addClass(cls: string): void {
 		this.cls = `${this.cls} ${cls}`.trim();
+	}
+
+	setAttr(name: string, value: string): void {
+		this.attr[name] = value;
 	}
 
 	addEventListener(event: string, listener: Listener): void {
@@ -235,12 +257,15 @@ describe("InspectorView report filter wiring", () => {
 			expect.objectContaining({ issues: [] }),
 		);
 
-		const toolbar = container.children[0];
-		const scannerButtons = toolbar.children[0].children;
-		const severityButtons = toolbar.children[1].children;
+		const controls = container.children[0];
+		expect(controls.tag).toBe("details");
+		expect(controls.open).toBe(true);
+		const controlsBody = findByClass(controls, "vi-controls-body")[0];
+		const scannerButtons = controlsBody.children[0].children;
+		const severityButtons = controlsBody.children[1].children;
 		expect.soft(scannerButtons.map((button) => button.text)).toContain("Duplicate Files (0)");
 
-		const activeError = severityButtons.find((button) => button.text === "error (0)");
+		const activeError = severityButtons.find((button) => button.text === "Errors (0)");
 		expect.soft(activeError?.cls ?? "").toContain("vi-active");
 
 		severityButtons.find((button) => button.cls.includes("vi-active"))?.click();
@@ -260,9 +285,9 @@ describe("InspectorView report filter wiring", () => {
 
 		(view as any).render();
 
-		expect(findByText(container, "new (0)")).toBeUndefined();
-		expect(findByText(container, "persisting (0)")).toBeUndefined();
-		expect(findByText(container, "confirmed (3)")).toBeDefined();
+		expect(findByText(container, "New (0)")).toBeUndefined();
+		expect(findByText(container, "Previously found (0)")).toBeUndefined();
+		expect(findByText(container, "Confirmed (3)")).toBeDefined();
 	});
 
 	it("passes the same lifecycle statuses to active and ignored issue lists", () => {
@@ -527,19 +552,85 @@ describe("InspectorView report filter wiring", () => {
 		]);
 
 		(view as any).render();
-		findByText(container, "new (2)")?.click();
+		findByText(container, "New (2)")?.click();
 
 		expect(renderIssueListMock).toHaveBeenLastCalledWith(
 			expect.any(FakeElement),
 			expect.objectContaining({ issues: [confirmedNew, candidateNew] }),
 		);
 
-		findByText(container, "candidate (1)")?.click();
+		findByText(container, "Needs review (1)")?.click();
 
 		expect(renderIssueListMock).toHaveBeenLastCalledWith(
 			expect.any(FakeElement),
 			expect.objectContaining({ issues: [candidateNew] }),
 		);
+	});
+
+	it("enters and exits selection mode through the controls disclosure", () => {
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.result = result;
+
+		(view as any).render();
+		expect(container.children[0].open).toBe(false);
+		findByText(container, "Select findings")?.click();
+
+		expect((view as any).model.selectionMode).toBe(true);
+		expect((view as any).model.controlsExpanded).toBe(true);
+		expect(container.children[0].open).toBe(true);
+
+		(view as any).model.selectedFingerprints = new Set(["broken-error"]);
+		findByText(container, "Done selecting")?.click();
+
+		expect((view as any).model.selectionMode).toBe(false);
+		expect((view as any).model.selectedFingerprints).toEqual(new Set());
+		expect((view as any).model.controlsExpanded).toBe(true);
+	});
+
+	it("keeps the disclosure open across re-renders after the user expands it", async () => {
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.result = result;
+
+		(view as any).render();
+		expect(container.children[0].open).toBe(false);
+
+		container.children[0].open = true;
+		await Promise.resolve();
+		expect((view as any).model.controlsExpanded).toBe(true);
+
+		findByText(container, "Broken Links (1)")?.click();
+		expect((view as any).model.filterScanner).toBe("broken-links");
+
+		const reopened = container.children[0];
+		expect(reopened.tag).toBe("details");
+		expect(reopened.open).toBe(true);
+	});
+
+	it("keeps the disclosure collapsed across a no-op filter re-render", async () => {
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.result = result;
+
+		(view as any).render();
+
+		const disclosure = container.children[0];
+		disclosure.open = true;
+		await Promise.resolve();
+		disclosure.open = false;
+		await Promise.resolve();
+		expect((view as any).model.controlsExpanded).toBe(false);
+
+		findByText(container, "All scanners")?.click();
+
+		expect((view as any).model.filterScanner).toBeNull();
+		const recollapsed = container.children[0];
+		expect(recollapsed.tag).toBe("details");
+		expect(recollapsed.open).toBe(false);
 	});
 
 	it("toggles lifecycle filtering from the summary headline", () => {
@@ -665,7 +756,25 @@ describe("InspectorView report filter wiring", () => {
 
 		expect((view as any).model.filterStatus).toBeNull();
 		expect((view as any).model.filterClassification).toBeNull();
+		expect((view as any).model.controlsExpanded).toBe(false);
 		expect((view as any).model.resolvedExpanded).toBe(false);
+	});
+
+	it("collapses the controls disclosure when an accepted result leaves no filter", () => {
+		const container = new FakeElement();
+		const view = new InspectorView(new WorkspaceLeaf());
+		(view as any).containerEl.children[1] = container;
+		(view as any).model.controlsExpanded = true;
+		(view as any).model.filterStatus = "new";
+
+		view.setResult(result, comparable([
+			["broken-error", "persisting"],
+			["duplicate-warning", "persisting"],
+			["duplicate-info", "persisting"],
+		]));
+
+		expect((view as any).model.filterStatus).toBeNull();
+		expect((view as any).model.controlsExpanded).toBe(false);
 	});
 
 	it("expands and collapses an accessible read-only resolved section before ignored items", () => {
