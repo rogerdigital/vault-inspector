@@ -61,6 +61,23 @@ export function summarizeFixActions(actions: FixAction[]): FixActionSummary {
 	};
 }
 
+/**
+ * The confirm button names the mutation for a single action so the final
+ * click restates the decision; batches fall back to neutral wording.
+ */
+export function confirmButtonLabel(actions: FixAction[]): string {
+	if (actions.length !== 1) return "Apply selected fixes";
+	return actions[0].kind === "trash-file" ? "Move to trash" : "Apply fix";
+}
+
+/**
+ * Short card line naming what the action does to the vault, independent
+ * of eligibility — the visible consequence of confirming this card.
+ */
+export function describeActionConsequence(action: FixAction): string {
+	return action.kind === "trash-file" ? "Move file to trash" : "Modify note";
+}
+
 function pluralize(noun: string, count: number): string {
 	return count === 1 ? noun : `${noun}s`;
 }
@@ -203,6 +220,7 @@ class ConfirmFixModal extends Modal {
 	private mode: DuplicateKeepMode;
 	private selectedKeeps = new Map<string, string>();
 	private approvedReviews = new Set<string>();
+	private referenceDetailsOpen = false;
 	private settle: (result: FixDecision[] | null) => boolean;
 
 	constructor(
@@ -267,15 +285,14 @@ class ConfirmFixModal extends Modal {
 			return action ? [action] : [];
 		});
 		const summary = summarizeFixActions(actions);
+		const decisionSentence = actions.length === 1
+			? describeFixActions(actions)
+			: summary.description;
 
-		contentEl.createEl("h3", {
-			text: this.issues.length > 1
-				? `Confirm batch fix (${this.issues.length} actions)`
-				: "Confirm fix",
-		});
+		contentEl.createEl("h3", { text: summary.title });
 		contentEl.createEl("p", {
 			text: plan.complete
-				? summary.description
+				? decisionSentence
 				: "Approve at least one fix and choose one file to keep in every duplicate group.",
 		});
 
@@ -294,7 +311,7 @@ class ConfirmFixModal extends Modal {
 			.addEventListener("click", () => this.finish(null));
 		const confirmBtn = btnRow.createEl("button", {
 			cls: "vi-confirm-destructive",
-			text: "Confirm",
+			text: confirmButtonLabel(actions),
 		});
 		confirmBtn.disabled = !plan.complete;
 		confirmBtn.addEventListener("click", () => {
@@ -331,6 +348,10 @@ class ConfirmFixModal extends Modal {
 			text: explanation.status,
 		});
 		card.createDiv({ cls: "vi-impact-reason", text: explanation.reason });
+		card.createDiv({
+			cls: "vi-impact-consequence",
+			text: describeActionConsequence(action),
+		});
 
 		const rows = card.createDiv({ cls: "vi-impact-rows" });
 		for (const row of buildImpactRows(action.targetPaths, stats)) {
@@ -346,9 +367,19 @@ class ConfirmFixModal extends Modal {
 		}
 
 		if (issue.impact) {
-			card.createDiv({
-				cls: "vi-impact-coverage",
-				text: `Inbound references: ${issue.impact.inboundReferences} · Reference coverage: ${issue.impact.coverageComplete ? "complete" : "incomplete"}`,
+			const referenceDetails = card.createEl("details", {
+				cls: "vi-impact-reference-details",
+			});
+			referenceDetails.open = this.referenceDetailsOpen;
+			referenceDetails.addEventListener("toggle", () => {
+				this.referenceDetailsOpen = referenceDetails.open;
+			});
+			referenceDetails.createEl("summary", { text: "Reference details" });
+			referenceDetails.createDiv({
+				text: `Inbound references: ${issue.impact.inboundReferences}`,
+			});
+			referenceDetails.createDiv({
+				text: `Coverage: ${issue.impact.coverageComplete ? "Complete" : "Incomplete"}`,
 			});
 		}
 

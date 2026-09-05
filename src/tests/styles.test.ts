@@ -138,7 +138,8 @@ describe("styles.css", () => {
 			"vi-impact-row",
 			"vi-impact-row-path",
 			"vi-impact-row-meta",
-			"vi-impact-coverage",
+			"vi-impact-consequence",
+			"vi-impact-reference-details",
 			"vi-impact-keep",
 			"vi-review-checkbox",
 			"vi-bulk-excluded-note",
@@ -146,6 +147,7 @@ describe("styles.css", () => {
 			expect(css, `missing .${className}`).toContain(`.${className}`);
 		}
 		expect(css).not.toContain(".vi-issue-fix-reason");
+		expect(css).not.toContain(".vi-impact-coverage");
 
 		const impactStyles = css.slice(css.indexOf("/* Fix impact preview */"));
 		expect(impactStyles.length).toBeGreaterThan(0);
@@ -155,6 +157,9 @@ describe("styles.css", () => {
 		expect(backgrounds.every((value) => value.startsWith("var(--"))).toBe(true);
 		expect(impactStyles).toMatch(/\.vi-impact-row\s*\{[^}]*flex-wrap:\s*wrap;/);
 		expect(impactStyles).toMatch(/\.vi-impact-row-path\s*\{[^}]*overflow-wrap:\s*anywhere;/);
+		expect(impactStyles).toMatch(/\.vi-impact-reference-details\s*>\s*summary\s*\{[^}]*min-height:\s*32px;/);
+		expect(impactStyles).toMatch(/\.vi-impact-reference-details\s*>\s*summary:focus-visible\s*\{/);
+		expect(impactStyles).toMatch(/\.vi-impact-reference-details\s*>\s*div\s*\{[^}]*overflow-wrap:\s*anywhere;/);
 
 		const mobile = css.match(/@media\s*\(max-width:\s*500px\)\s*\{([\s\S]*?)\n\}/)?.[1];
 		expect(mobile).toBeDefined();
