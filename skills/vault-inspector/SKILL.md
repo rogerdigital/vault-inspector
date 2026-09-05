@@ -66,6 +66,8 @@ Show progress without corrupting stdout:
 vinspect . --format json --progress
 ```
 
+For the full flag, configuration, JSON protocol, baseline compatibility, and exit-code contract, read [`docs/cli.md`](../../docs/cli.md) from the repository checkout.
+
 ## Baseline Workflow
 
 Create a baseline:
