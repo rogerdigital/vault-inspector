@@ -98,6 +98,12 @@
 .vi-evidence-disclosure > summary { width: max-content; color: var(--text-faint); cursor: pointer; font-weight: 600; }
 .vi-evidence-disclosure[open] > summary { color: var(--text-muted); }
 .vi-evidence-disclosure > .vi-explanation-row { margin-top: 4px; padding-left: 8px; }
+.vi-fix-state { display: flex; flex-wrap: wrap; align-items: baseline; min-width: 0; }
+.vi-fix-state > * + * { margin-left: 8px; }
+.vi-fix-state-label { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
+.vi-fix-state-reason { min-width: 0; color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.vi-fix-review .vi-fix-state-label { color: var(--text-warning); }
+.vi-fix-unavailable .vi-fix-state-label { color: var(--text-error); }
 .vi-comparison-note { margin-bottom: 12px; padding: 8px 10px; border-left: 2px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
 
 /* Operation outcomes */
@@ -232,7 +238,6 @@ button.vi-resolved-header:focus-visible { outline: 2px solid var(--interactive-a
 .vi-impact-keep { margin-top: 4px; color: var(--text-normal); font-size: 12px; overflow-wrap: anywhere; }
 .vi-review-checkbox { display: flex; align-items: flex-start; margin-top: 6px; }
 .vi-review-checkbox input { margin: 2px 8px 0 0; }
-.vi-issue-fix-reason { color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; }
 .vi-bulk-excluded-note { color: var(--text-faint); font-size: 12px; }
 
 /* Changes-first summary */

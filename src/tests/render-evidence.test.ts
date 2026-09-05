@@ -136,20 +136,20 @@ describe("renderFindingEvidence", () => {
 		renderFindingEvidence(container as unknown as HTMLElement, issue);
 
 		const text = flattenText(container);
-		expect(text).toContain("CANDIDATE");
+		expect(text).toContain("Needs review");
 		expect(text).toContain("WhyNo note reference was found.");
-		expect(text).toContain("CaveatExternal references may exist.");
-		expect(text).toContain("NextReview before deleting.");
-		expect(text).toContain("Evidence");
+		expect(text).toContain("Keep in mindExternal references may exist.");
+		expect(text).toContain("Recommended next stepReview before deleting.");
+		expect(text).toContain("Technical evidence");
 		expect(text).toContain("lastModified");
 
 		const badge = findByClass(container, "vi-classification-badge")[0];
 		expect(badge.cls).toBe("vi-classification-badge vi-classification-candidate");
-		expect(badge.text).toBe("CANDIDATE");
+		expect(badge.text).toBe("Needs review");
 
 		const disclosure = findByClass(container, "vi-evidence-disclosure")[0];
 		expect(disclosure.tag).toBe("details");
-		expect(disclosure.children[0]).toMatchObject({ tag: "summary", text: "Evidence" });
+		expect(disclosure.children[0]).toMatchObject({ tag: "summary", text: "Technical evidence" });
 		const evidenceLabels = disclosure.children.slice(1).map((row) => row.children[0].text);
 		expect(evidenceLabels).toEqual(["lastModified", "target", "verified"]);
 		expect(disclosure.children.slice(1).map((row) => row.children[1].text)).toEqual([
@@ -173,9 +173,24 @@ describe("renderFindingEvidence", () => {
 
 			renderFindingEvidence(container as unknown as HTMLElement, issue);
 
-			expect(flattenText(container)).toContain("CONFIRMED");
-			expect(flattenText(container)).not.toContain("Caveat");
+			expect(flattenText(container)).toContain("Confirmed");
+			expect(flattenText(container)).not.toContain("Keep in mind");
 		}
+	});
+
+	it.each([
+		["confirmed", "Confirmed", "vi-classification-confirmed"],
+		["candidate", "Needs review", "vi-classification-candidate"],
+		["unverified", "Could not verify", "vi-classification-unverified"],
+	] as const)("labels %s findings as %s", (classification, label, className) => {
+		const container = new FakeElement();
+		const issue = makeIssue({ classification });
+
+		renderFindingEvidence(container as unknown as HTMLElement, issue);
+
+		const badge = findByClass(container, "vi-classification-badge")[0];
+		expect(badge.cls).toBe(`vi-classification-badge ${className}`);
+		expect(badge.text).toBe(label);
 	});
 
 	it("renders evidence values as text without interpreting markup", () => {
@@ -205,24 +220,28 @@ describe("renderIssueList finding metadata", () => {
 		return container;
 	}
 
-	it.each([
-		["new", "NEW"],
-		["persisting", "PERSISTING"],
-	] as const)("renders the %s lifecycle badge after severity", (status, label) => {
-		const container = render(new Map([["broken-link-fingerprint", status]]));
-		const issueCard = findByClass(container, "vi-issue")[0];
+	it("shows a New chip but hides the previously-found chip on collapsed cards", () => {
+		const newlyRendered = render(new Map([["broken-link-fingerprint", "new"]]));
+		const newCard = findByClass(newlyRendered, "vi-issue")[0];
 
-		expect(issueCard.children[0]).toMatchObject({
+		expect(newCard.children[0]).toMatchObject({
 			cls: "vi-severity-badge vi-severity-warning",
 			text: "WARNING",
 		});
-		expect(issueCard.children[1]).toMatchObject({
-			cls: `vi-status-badge vi-status-${status}`,
-			text: label,
+		expect(newCard.children[1]).toMatchObject({
+			cls: "vi-status-badge vi-status-new",
+			text: "New",
 		});
-		expect(findByClass(issueCard, "vi-classification-candidate")).toHaveLength(1);
-		expect(flattenText(issueCard)).toContain("WhyNo note reference was found.");
-		expect(flattenText(issueCard)).toContain("lastModified1700000000000");
+		expect(findByClass(newCard, "vi-classification-candidate")).toHaveLength(1);
+		expect(flattenText(newCard)).toContain("WhyNo note reference was found.");
+		expect(flattenText(newCard)).toContain("lastModified1700000000000");
+
+		const persistingRendered = render(new Map([["broken-link-fingerprint", "persisting"]]));
+		const persistingCard = findByClass(persistingRendered, "vi-issue")[0];
+
+		expect(findByClass(persistingCard, "vi-status-badge")).toHaveLength(0);
+		expect(findByClass(persistingCard, "vi-status-persisting")).toHaveLength(0);
+		expect(flattenText(persistingCard)).not.toContain("Previously found");
 	});
 
 	it("does not render a lifecycle badge when status is unavailable", () => {

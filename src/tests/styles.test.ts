@@ -48,6 +48,11 @@ describe("styles.css", () => {
 			"vi-explanation-label",
 			"vi-explanation-value",
 			"vi-evidence-disclosure",
+			"vi-fix-state",
+			"vi-fix-state-label",
+			"vi-fix-state-reason",
+			"vi-fix-review",
+			"vi-fix-unavailable",
 			"vi-comparison-note",
 			"vi-resolved-section",
 			"vi-resolved-header",
@@ -136,11 +141,11 @@ describe("styles.css", () => {
 			"vi-impact-coverage",
 			"vi-impact-keep",
 			"vi-review-checkbox",
-			"vi-issue-fix-reason",
 			"vi-bulk-excluded-note",
 		]) {
 			expect(css, `missing .${className}`).toContain(`.${className}`);
 		}
+		expect(css).not.toContain(".vi-issue-fix-reason");
 
 		const impactStyles = css.slice(css.indexOf("/* Fix impact preview */"));
 		expect(impactStyles.length).toBeGreaterThan(0);
