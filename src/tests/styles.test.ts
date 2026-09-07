@@ -167,7 +167,7 @@ describe("styles.css", () => {
 		expect(mobile).toMatch(/\.vi-bulk-excluded-note\s*\{[^}]*overflow-wrap:\s*anywhere;/);
 	});
 
-	it("keeps confirmed and eligible statuses compact and contrast-safe", async () => {
+	it("keeps confirmed, eligible, and resolved statuses compact and contrast-safe", async () => {
 		const css = await readFile("styles.css", "utf8");
 
 		expect(css).toMatch(
@@ -176,6 +176,7 @@ describe("styles.css", () => {
 		for (const className of [
 			"vi-classification-confirmed",
 			"vi-eligibility-eligible",
+			"vi-status-resolved",
 		]) {
 			const rule = css.match(new RegExp(`\\.${className}\\s*\\{([^}]*)\\}`))?.[1];
 			expect(rule, `missing .${className}`).toBeDefined();
