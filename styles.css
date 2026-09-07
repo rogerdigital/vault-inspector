@@ -86,7 +86,7 @@
 .vi-classification-unverified { background: var(--background-secondary); color: var(--text-muted); }
 .vi-status-new { background: var(--interactive-accent); color: var(--text-on-accent); }
 .vi-status-persisting { background: var(--background-secondary); color: var(--text-muted); }
-.vi-status-resolved { background: var(--background-modifier-success); color: var(--text-success); }
+.vi-status-resolved { background: var(--background-secondary); color: var(--text-success); border: 1px solid var(--text-success); }
 
 .vi-explanation { min-width: 0; margin-top: 4px; padding: 8px 10px; border-left: 2px solid var(--background-modifier-border); background: var(--background-secondary); }
 .vi-explanation-row { display: grid; grid-template-columns: max-content minmax(0, 1fr); min-width: 0; align-items: baseline; }
