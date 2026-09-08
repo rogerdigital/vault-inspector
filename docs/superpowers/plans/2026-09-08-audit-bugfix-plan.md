@@ -12,7 +12,7 @@
 
 ## 1. 完整问题清单与提交映射
 
-编号沿用审查的逻辑顺序。10 类问题展开为 11 个修复提交；实际 Node 18 验收新增 C12a 兼容性修复，集成审查新增 C12b frontmatter 边界修复，最后是 C12 文档提交，共 14 个执行提交。计划文档自身使用独立的 `docs: add audit bugfix implementation plan`，不计入执行提交。
+编号沿用审查的逻辑顺序。10 类问题展开为 11 个修复提交；实际 Node 18 验收新增 C12a 兼容性修复，集成审查新增 C12b frontmatter 边界修复，最后是 C12 文档提交，共 14 个执行提交。计划文档自身使用独立的 `docs: add audit bugfix implementation plan`，不计入执行提交。锁屏解除后的环境恢复记录另用一个文档提交，总计 16 个本地提交。
 
 | 问题 | 优先级 | 明确覆盖的根因/场景 | 提交 |
 |---|---|---|---|
@@ -498,7 +498,7 @@ Integration follow-ups: explicitly assert cross-note block reference kinds and d
 | C11 | complete — `c465480` | 4 real CLI→UI/Markdown RED regressions fixed; full gate 895 tests, 8 package files. Comma/space/Chinese-comma paths, clicks, metadata identity, and duplicate inbound impact directly verified. |
 | C12a | complete — `11eb75c` | Actual absent-crypto subprocess RED reproduced; full gate 897 tests; actual Node 18.20.8 package-audit 7 checks pass, existing crypto retained. Independent review approved. |
 | C12b | complete — `9827ff9` | Four RED cases fixed with shared first-closing-delimiter boundaries. Full gate and final coverage pass: 914 tests / 60 files. Independent review reproduced LF/BOM/CRLF and body horizontal-rule cases against the actual CLI and approved. |
-| C12 | code/package validation complete; desktop cleanup blocked | Documentation updated; full lint/warning-lint/build/test/package gate passes (914 tests). Installed package passes seven scenario checks on Node 18.20.8 and Node 24.16.0. Desktop results and remaining boundaries below. |
+| C12 | code/package validation and desktop cleanup complete | Documentation updated; full lint/warning-lint/build/test/package gate passes (914 tests). Installed package passes seven scenario checks on Node 18.20.8 and Node 24.16.0. Desktop results and remaining boundaries below. |
 
 ## 19. Additional runtime regression found during package validation
 
@@ -536,4 +536,4 @@ A real Node 18.20.8 runtime, within the declared supported range, starts the com
 - The immediate verification scan after a successful source edit displayed Still present 1 once; a later manual scan correctly marked it resolved. Disk content was correct. This indicates a native metadata-refresh timing boundary and is recorded for follow-up; do not claim immediate desktop verification is always synchronized.
 - Native Obsidian normalizes an unresolved Markdown `.md` destination in its unresolved-link map; the original `.md` fixture was reported without an automatic fix action. An extensionless equivalent exposed the fix action and was used for source-preservation acceptance. This pre-existing conservative fallback was not expanded by this plan.
 - Desktop export and manual preflight-race/batch-exclusion walkthroughs are not claimed complete; their persistent integration tests pass. No PR or release has been created in this execution.
-- Test environment restoration: pending manual unlock after the host automatically locked during restoration. Original assets/preferences backup is `/private/tmp/vi-audit-ui-backup`; isolated fixture directory is `99-Vault Inspector Audit 2026-09-08`.
+- Test environment restoration completed after manual unlock: default Dark theme restored, original plugin preferences and saved snapshot restored byte-for-byte, isolated fixture directory removed, and plugin re-enabled. The test vault retains the verified repair build; original assets/preferences remain backed up at `/private/tmp/vi-audit-ui-backup`. Existing test note checked for absence of accidental command text. Desktop export and manual race walkthrough boundaries above remain unchanged.
