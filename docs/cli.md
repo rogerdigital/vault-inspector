@@ -6,6 +6,19 @@ as the Obsidian plugin in a separate runtime: the plugin uses Obsidian
 metadata and UI actions, while the CLI uses a local filesystem adapter for
 terminal, CI, and automation workflows.
 
+Frontmatter is parsed as YAML using core scalar types; dates remain strings.
+The top level must be a mapping (empty or null headers become empty mappings).
+Invalid YAML, duplicate keys, unsupported tags, or a non-mapping header abort
+setup with exit code `2`, even with `--fail-on none`. No report is written to
+stdout. Errors identify the vault-relative note and line/column without
+printing property values. Correct the indicated header and rerun the scan.
+
+Markdown links support balanced or escaped parentheses and percent-encoded
+file paths and fragments, such as `[note](My%20Note.md#Some%20heading)`.
+Decoding occurs once; Wiki links retain literal percent sequences in filenames.
+Heading and block references, including `[[#Section]]` and `[[#^block-id]]`,
+are checked against the appropriate note.
+
 ## Installation
 
 Run it without a global install:
@@ -206,6 +219,12 @@ CLI baseline comparison is separate from the Obsidian plugin lifecycle. CLI
 output does not include plugin scan snapshots or the plugin's
 resolved-history view.
 
+The corrected reference, link, and YAML handling uses comparison semantics
+version `3`; the JSON schema remains version `1`. Regenerate older profile
+baselines with the current command and the same detection settings, without
+passing `--baseline` to that regeneration run. `--fail-on none` does not bypass
+an incompatible baseline error.
+
 ## Exit codes
 
 - `0` — scan completed and did not match the configured `--fail-on` threshold.
@@ -214,6 +233,7 @@ resolved-history view.
   not comparable (`settings-changed` / `semantics-changed`).
 
 `--fail-on` accepts `any` (default), `warning`, `error`, `new`, and `none`.
+An explicit flag, including `--fail-on any`, overrides the configuration file.
 
 ## Network access
 
@@ -222,8 +242,8 @@ enabled. That scanner is disabled by default because it makes network
 requests and depends on external sites, DNS, and rate limits. When enabled
 with `--scanner external-links`, it checks URLs you explicitly have in your
 notes — Markdown links, frontmatter links, images/embeds, and bare
-HTTP/HTTPS URLs in note bodies — using HTTP HEAD requests through the
-runtime `fetch` API.
+HTTP/HTTPS URLs in note bodies — using Node's HTTP/HTTPS transport. It starts
+with HEAD and retries with a one-byte Range GET when HEAD returns 405 or 501.
 
 External link checks are opt-in and network-dependent; timeouts or blocked
 requests do not necessarily mean a URL is dead. `warning` is reported for

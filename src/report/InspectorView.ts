@@ -252,17 +252,10 @@ export class InspectorView extends ItemView {
 		renderSummary(container, this.model.result, {
 			comparison: this.model.comparison,
 			onReviewNewFindings: () => {
-				if (
-					this.model.filterStatus === "new"
-					&& this.model.filterClassification === "confirmed"
-				) {
-					this.model.filterStatus = null;
-					this.model.filterClassification = null;
-				} else {
-					this.model.filterStatus = "new";
-					this.model.filterClassification = "confirmed";
-					this.model.filterSeverity = null;
-				}
+				this.model.filterStatus = "new";
+				this.model.filterScanner = null;
+				this.model.filterSeverity = null;
+				this.model.filterClassification = null;
 				this.render();
 			},
 		});

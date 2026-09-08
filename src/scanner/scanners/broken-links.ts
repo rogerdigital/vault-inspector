@@ -1,3 +1,4 @@
+import type { LinkDestination, LinkReference as MetadataLinkReference } from "../link-reference";
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { describeFinding } from "../finding-presentation";
@@ -17,6 +18,7 @@ type LinkFix = {
 };
 
 type LinkCandidate = {
+	destination?: LinkDestination;
 	linkText: string;
 	fixLinkText?: string;
 	fix?: LinkFix;
@@ -26,10 +28,7 @@ type LinkCandidate = {
 };
 
 type LinkReference = {
-	reference: {
-		link: string;
-		original?: string;
-	};
+	reference: MetadataLinkReference;
 	isEmbed: boolean;
 };
 
@@ -62,13 +61,18 @@ export const brokenLinksScanner = {
 			];
 			const linkCandidates = new Map<string, LinkCandidate>();
 			const addCandidate = (candidate: LinkCandidate) => {
-				const existing = linkCandidates.get(candidate.linkText);
+				const destination = candidate.destination;
+				const key = destination
+					? JSON.stringify([candidate.linkText, destination.path, destination.fragment, destination.resolvedPath])
+					: candidate.linkText;
+				const existing = linkCandidates.get(key);
 				if (!existing) {
-					linkCandidates.set(candidate.linkText, candidate);
+					linkCandidates.set(key, candidate);
 					return;
 				}
-				linkCandidates.set(candidate.linkText, {
+				linkCandidates.set(key, {
 					linkText: candidate.linkText,
+					destination: candidate.destination,
 					fixLinkText: existing.fixLinkText ?? candidate.fixLinkText,
 					// A fix targets one exact source range. When merged references
 					// disagree on the original syntax (plain vs aliased, wiki vs
@@ -126,13 +130,19 @@ function resolveLinkIssues(
 	const issues: Issue[] = [];
 	const linkText = candidate.linkText;
 
-	const rawTarget = getLinkTarget(linkText);
+	const destination = candidate.destination;
+	const rawTarget = destination ? destination.path : getLinkTarget(linkText);
+	const linkDestination = linkText.split("|")[0];
+	const headingPart = destination ? destination.fragment : linkDestination.includes("#")
+		? linkDestination.split("#").slice(1).join("#")
+		: null;
+	const sameNote = rawTarget === "" && Boolean(headingPart);
 
-	if (!rawTarget || hasUriScheme(rawTarget)) return issues;
+	if ((!rawTarget && !sameNote) || hasUriScheme(rawTarget)) return issues;
 
 	// Attachment link (has a known non-md extension)
 	if (isAttachmentLink(rawTarget)) {
-		if (!findResolvedPath(ctx, rawTarget, sourcePath)) {
+		if (!(destination ? destination.resolvedPath : findResolvedPath(ctx, rawTarget, sourcePath))) {
 			issues.push(
 				makeIssue(
 					sourcePath,
@@ -148,12 +158,9 @@ function resolveLinkIssues(
 	}
 
 	// Markdown or heading link
-	const linkDestination = linkText.split("|")[0];
-	const headingPart = linkDestination.includes("#")
-		? linkDestination.split("#").slice(1).join("#")
-		: null;
-
-	const resolvedPath = findMarkdownPath(ctx, rawTarget, sourcePath);
+	const resolvedPath = destination
+		? destination.resolvedPath?.endsWith(".md") ? destination.resolvedPath : null
+		: sameNote ? sourcePath : findMarkdownPath(ctx, rawTarget, sourcePath);
 
 	if (!resolvedPath) {
 		if (ctx.ignoreUnresolvedNoteLinks && candidate.ignorableUnresolvedNote) {
@@ -177,14 +184,17 @@ function resolveLinkIssues(
 	}
 
 	if (headingPart) {
-		const headingCache = ctx.metadataCache.getFileCache(
+		const targetCache = ctx.metadataCache.getFileCache(
 			ctx.markdownFiles.find((file) => file.path === resolvedPath)!,
 		);
-		const headings = headingCache?.headings ?? [];
-		const headingSlug = slugifyHeading(headingPart);
-		const found = headings.some(
-			(heading) => slugifyHeading(heading.heading) === headingSlug,
-		);
+		const isBlock = headingPart.startsWith("^");
+		const found = isBlock
+			? Object.keys(targetCache?.blocks ?? {}).some(
+				(id) => id.toLowerCase() === headingPart.slice(1).toLowerCase(),
+			)
+			: (targetCache?.headings ?? []).some(
+				(heading) => slugifyHeading(heading.heading) === slugifyHeading(headingPart),
+			);
 		if (!found) {
 			issues.push(
 				makeIssue(
@@ -192,12 +202,13 @@ function resolveLinkIssues(
 					candidate,
 					resolvedPath,
 					"warning",
-					`Heading "#${headingPart}" not found in ${resolvedPath}`,
+					`${isBlock ? "Block" : "Heading"} "#${headingPart}" not found in ${resolvedPath}`,
 					candidate.isEmbed
 						? "embed"
 						: candidate.isMarkdown
 							? "markdown-link"
 							: "heading",
+					isBlock ? "block" : "heading",
 				),
 			);
 		}
@@ -215,6 +226,7 @@ function getLinkCandidate({ reference, isEmbed }: LinkReference): LinkCandidate 
 			// Obsidian's LinkCache.link already strips the alias, so the candidate
 			// key must use it — the full inner text survives only as fix text.
 			linkText: reference.link,
+			destination: reference.destination,
 			fixLinkText: inner,
 			fix: {
 				original,
@@ -231,6 +243,7 @@ function getLinkCandidate({ reference, isEmbed }: LinkReference): LinkCandidate 
 	if (markdownMatch) {
 		return {
 			linkText: reference.link,
+			destination: reference.destination,
 			fix: {
 				original,
 				replacement: markdownMatch[1] ? "" : markdownMatch[2],
@@ -242,6 +255,7 @@ function getLinkCandidate({ reference, isEmbed }: LinkReference): LinkCandidate 
 	}
 	return {
 		linkText: reference.link,
+		destination: reference.destination,
 		isEmbed,
 		isMarkdown: !isEmbed && original.startsWith("["),
 		ignorableUnresolvedNote: false,
@@ -304,7 +318,15 @@ function makeIssue(
 	severity: "error" | "warning" | "info",
 	message: string,
 	linkKind: "note-link" | "markdown-link" | "attachment" | "heading" | "embed",
+	referenceKind: "block" | "heading" = "heading",
 ): Issue {
+	const fragmentAt = candidate.linkText.indexOf("#");
+	const rawFragment = fragmentAt === -1 ? null : candidate.linkText.slice(fragmentAt + 1);
+	const resolvedFragment = candidate.destination?.fragment;
+	// Preserve native/raw identities, distinguishing only fragments decoded by the adapter.
+	const fragmentIdentity: Record<string, string> = resolvedFragment != null && resolvedFragment !== rawFragment
+		? { resolvedFragment }
+		: {};
 	const issue: Issue = {
 		scannerId: "broken-links",
 		severity,
@@ -317,14 +339,15 @@ function makeIssue(
 			"confirmed",
 			severity === "error"
 				? "The link target could not be resolved in the vault."
-				: "The target note exists, but the referenced heading was not found.",
+				: `The target note exists, but the referenced ${referenceKind} was not found.`,
 			severity === "error"
 				? "Correct the target or remove the link from the source note."
-				: "Correct the heading reference or remove it from the source note.",
+				: `Correct the ${referenceKind} reference or remove it from the source note.`,
 		),
 		fingerprint: generateFingerprint("broken-links", sourcePath, {
 			link: candidate.linkText,
 			target: targetPath,
+			...fragmentIdentity,
 		}),
 	};
 	if (candidate.fix) {

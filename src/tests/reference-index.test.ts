@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ScanContext } from "../scanner/ScanContext";
 import {
 	buildReferenceIndex,
@@ -8,6 +8,10 @@ import {
 } from "../scanner/reference-index";
 import { makeScanContext, makeTestFile } from "./helpers/scan-context";
 import { loadFixtureVaultContext } from "./helpers/fixture-vault";
+
+import { orphanAttachmentsScanner } from "../scanner/scanners/orphan-attachments";
+import { duplicateFilesScanner } from "../scanner/scanners/duplicate-files";
+import { emptyNotesScanner } from "../scanner/scanners/empty-notes";
 
 function mdLink(link: string) {
 	return { link, original: "", position: {} as any };
@@ -340,5 +344,88 @@ describe("makeEmptyReferenceIndex", () => {
 		expect(index.inboundByPath.size).toBe(0);
 		expect(index.coverageComplete).toBe(true);
 		expect(isReferenced(index, "anything.png")).toBe(false);
+	});
+});
+
+// Obsidian resolves link paths, not full links with heading/block fragments.
+function nativeReferenceContext(links: string[], embeds: string[] = [], frontmatter: string[] = []) {
+	const ctx = makeScanContext({
+		files: [
+			makeTestFile({ path: "source.md", size: 10 }),
+			makeTestFile({ path: "manual.pdf", size: 3 }),
+			makeTestFile({ path: "copy.pdf", size: 3 }),
+			makeTestFile({ path: "stub.md", size: 0 }),
+		],
+		metadataByPath: {
+			"source.md": {
+				links: links.map(mdLink),
+				embeds: embeds.map(mdLink),
+				frontmatterLinks: frontmatter.map((link) => ({ key: "ref", ...mdLink(link) })),
+			},
+		},
+		overrides: {
+			vault: {
+				cachedRead: async () => "",
+				readBinary: async () => new Uint8Array([1, 2, 3]).buffer,
+			} as any,
+		},
+	});
+	ctx.metadataCache.getFirstLinkpathDest = vi.fn((link: string) => {
+		if (link.includes("#")) return null;
+		return ctx.allFiles.find((file) => file.path === link) ?? null;
+	});
+	return ctx;
+}
+
+describe("native reference resolution", () => {
+	it.each(["links", "embeds", "frontmatter"])("protects fragment-only PDF references from %s", async (kind) => {
+		const targets = ["manual.pdf#page=2"];
+		const ctx = nativeReferenceContext(
+			kind === "links" ? targets : [],
+			kind === "embeds" ? targets : [],
+			kind === "frontmatter" ? targets : [],
+		);
+		ctx.referenceIndex = await buildReferenceIndex(ctx);
+		expect((await orphanAttachmentsScanner.scan(ctx)).some((issue) => issue.primaryPath === "manual.pdf")).toBe(false);
+		expect(getInboundReference(ctx.referenceIndex, "manual.pdf")?.count).toBe(1);
+		expect(ctx.metadataCache.getFirstLinkpathDest).toHaveBeenCalledWith("manual.pdf", "source.md");
+	});
+
+	it("combines ordinary and fragment counts and protects the referenced duplicate", async () => {
+		const ctx = nativeReferenceContext(["copy.pdf", "manual.pdf#page=2", "manual.pdf#page=3"]);
+		ctx.referenceIndex = await buildReferenceIndex(ctx);
+		expect(getInboundReference(ctx.referenceIndex, "manual.pdf")?.count).toBe(2);
+		expect(getInboundReference(ctx.referenceIndex, "copy.pdf")?.count).toBe(1);
+		const issues = await duplicateFilesScanner.scan(ctx);
+		expect(issues[0].fixAction).toMatchObject({ selection: { automaticKeepPath: "manual.pdf" } });
+	});
+
+	it("protects referenced stubs and resolves same-note heading and block fragments", async () => {
+		const ctx = nativeReferenceContext(["stub.md#Heading", "#Heading", "#^block"]);
+		ctx.referenceIndex = await buildReferenceIndex(ctx);
+		expect(getInboundReference(ctx.referenceIndex, "source.md")?.count).toBe(2);
+		const issues = await emptyNotesScanner.scan(ctx);
+		expect(issues.find((issue) => issue.primaryPath === "stub.md")?.fixAction).toBeUndefined();
+		expect(getInboundReference(ctx.referenceIndex, "stub.md")?.count).toBe(1);
+	});
+
+	it("preserves URI exclusion and does not guess after a native resolver miss", async () => {
+		const ctx = nativeReferenceContext(["https://example.com/manual.pdf#page=2", "manual.pdf#page=2"]);
+		ctx.metadataCache.getFirstLinkpathDest = vi.fn(() => null);
+		const index = await buildReferenceIndex(ctx);
+		expect(index.inboundByPath.size).toBe(0);
+		expect(ctx.metadataCache.getFirstLinkpathDest).toHaveBeenCalledTimes(1);
+		expect(ctx.metadataCache.getFirstLinkpathDest).toHaveBeenCalledWith("manual.pdf", "source.md");
+	});
+
+	it.each(["missing-cache", "malformed-canvas"])("keeps orphan deletion fail-closed for %s", async (failure) => {
+		const ctx = nativeReferenceContext(["manual.pdf#page=2"]);
+		if (failure === "missing-cache") ctx.metadataCache.getFileCache = () => null;
+		else ctx.allFiles.push(makeTestFile("bad.canvas"));
+		ctx.referenceIndex = await buildReferenceIndex(ctx);
+		expect(ctx.referenceIndex.coverageComplete).toBe(false);
+		const issues = await orphanAttachmentsScanner.scan(ctx);
+		expect(issues.length).toBeGreaterThan(0);
+		expect(issues.every((issue) => issue.fixAction === undefined)).toBe(true);
 	});
 });

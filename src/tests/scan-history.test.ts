@@ -116,7 +116,7 @@ describe("createScanHistoryEntry", () => {
 			createdAt: 1_725_000_000_000,
 			toolVersion: "0.7.0",
 			scanProfile: "profile-abc",
-			comparisonVersion: 2,
+			comparisonVersion: 3,
 			trigger: "manual",
 			filesScanned: 3,
 			scannersRun: ["broken-links", "empty-notes"],

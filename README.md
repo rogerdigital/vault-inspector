@@ -8,7 +8,7 @@ Use it before publishing, exporting, migrating, or cleaning up a long-lived vaul
 
 ## What it checks
 
-- **Broken Links** — Detect wiki links, markdown links, and embeds pointing to non-existent notes or headings.
+- **Broken Links** — Detect wiki links, markdown links, and embeds pointing to non-existent notes, headings, or blocks.
 - **Orphan Attachments** — Find images, PDFs, audio/video, and archives not referenced by any note.
 - **Empty Notes** — Flag notes with no meaningful content beyond frontmatter and title.
 - **External Links** — Optionally check external URLs for availability (HTTP status).
@@ -19,12 +19,12 @@ Use it before publishing, exporting, migrating, or cleaning up a long-lived vaul
 
 ### Broken Links
 
-Supports wiki links (`[[Note]]`), aliased links (`[[Note|Display]]`), heading links (`[[Note#Section]]`), markdown links, and embeds (`![[image.png]]`).
+Supports wiki links (`[[Note]]`), aliased links (`[[Note|Display]]`), heading links (`[[Note#Section]]`), block links (`[[Note#^block-id]]`), markdown links, and embeds (`![[image.png]]`). Same-note references such as `[[#Section]]` and `[[#^block-id]]` are checked against the current note.
 
 - `error` — unresolved link target
-- `warning` — missing heading in existing note
+- `warning` — missing heading or block in an existing note
 
-Broken link detection relies on Obsidian's metadata cache; links inside code blocks or comments may be missed.
+Detection uses Obsidian's metadata cache. Automatic link removal only edits parsed source ranges, preserving code blocks, comments, and escaped examples. Syntax that cannot be safely identified is left unchanged.
 
 ### Orphan Attachments
 
@@ -108,7 +108,7 @@ The core workflow is: run a scan, review new findings, then fix or ignore each o
 
 1. Open the command palette and run **Vault Inspector: Run scan**.
 2. The Inspector view opens in the right sidebar and shows scan progress while the scanners run.
-3. The summary highlights how many findings are new since the last comparable scan. Click **Review new findings** to focus the list on confirmed new findings.
+3. The summary highlights how many findings are new since the last comparable scan. Click **Review new findings** to focus the list on all new findings, clearing other filters. Use **Clear filters** to return to all findings.
 4. Filter results by scanner, severity, lifecycle, or classification. Expand **Technical evidence** to inspect the raw scanner evidence behind the explanation.
 5. Click paths, URLs, targets, properties, or tags to jump to the relevant location.
 6. Open a finding's **Actions** menu to ignore it, choose **Exclude parent folder**, or open its scanner settings. Parent-folder exclusions apply only to that scanner and can be removed from **Scanner-specific ignored folders** in settings.
@@ -211,7 +211,7 @@ codes, read the [CLI reference](docs/cli.md).
 
 ## Privacy and network access
 
-Vault Inspector does not make network requests unless the External Links scanner is enabled. That scanner checks URLs you explicitly have in your notes. In Obsidian this uses Obsidian's `requestUrl`; in the CLI it uses HTTP HEAD requests through the runtime `fetch` API. No vault content leaves your device beyond those link-check requests.
+Vault Inspector does not make network requests unless the External Links scanner is enabled. That scanner checks URLs you explicitly have in your notes. In Obsidian this uses Obsidian's `requestUrl`; the CLI uses Node's HTTP/HTTPS transport, starting with HEAD and retrying with a one-byte Range GET when the server rejects HEAD with 405 or 501. No vault content leaves your device beyond those link-check requests.
 
 Vault Inspector enumerates vault files and Markdown metadata so scanners can detect
 broken links, orphan attachments, duplicate files, large files, tag usage, and

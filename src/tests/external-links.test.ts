@@ -4,6 +4,7 @@ import {
 	EXTERNAL_LINK_SCAN_BUDGET_MS,
 	EXTERNAL_LINK_TIMEOUT_MS,
 	externalLinksScanner,
+	extractBareUrls,
 } from "../scanner/scanners/external-links";
 import type { ScanContext } from "../scanner/ScanContext";
 
@@ -52,6 +53,38 @@ function makeFileCtx(
 }
 
 describe("externalLinksScanner", () => {
+	it.each([
+		["https://en.wikipedia.org/wiki/Function_(mathematics)", "https://en.wikipedia.org/wiki/Function_(mathematics)"],
+		["(https://example.com/a)", "https://example.com/a"],
+		["https://example.com/a_(b)).", "https://example.com/a_(b)"],
+		["https://example.com/a_(b_(c))", "https://example.com/a_(b_(c))"],
+		["https://example.com/a_(b_(c)))).,;:!?", "https://example.com/a_(b_(c))"],
+		["https://example.com/a_%28b%29", "https://example.com/a_%28b%29"],
+		["https://example.com/a_%28b)", "https://example.com/a_%28b"],
+		["https://example.com/a_(b%29)", "https://example.com/a_(b%29)"],
+	])("preserves URL parentheses while trimming prose boundaries: %s", (body, expected) => {
+		expect(extractBareUrls(body)).toEqual([expected]);
+	});
+
+	it("checks the complete URL once when metadata and body contain balanced parentheses", async () => {
+		const url = "https://en.wikipedia.org/wiki/Function_(mathematics)";
+		const request = vi.fn(async (_url: string, method: "HEAD" | "GET") => ({ status: 404, method }));
+		const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
+		const ctx = makeCtx({
+			requestUrl: request,
+			markdownFiles: [file],
+			vault: { cachedRead: async () => `See (${url}).` } as any,
+			metadataCache: { getFileCache: () => ({ links: [{ link: url }] }) } as any,
+		});
+
+		const issues = await externalLinksScanner.scan(ctx);
+
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(request.mock.calls[0]?.slice(0, 2)).toEqual([url, "HEAD"]);
+		expect(issues).toHaveLength(1);
+		expect(issues[0]?.evidence.url).toBe(url);
+	});
+
 	it("reports dead external links (HTTP 404)", async () => {
 		vi.mocked(requestUrl).mockResolvedValue({ status: 404 } as any);
 		// Routed through the mocked Obsidian requestUrl, like the plugin adapter.

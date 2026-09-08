@@ -31,6 +31,49 @@ describe("createLocalApp adapter semantics", () => {
 	const buildApp = async () =>
 		(await createLocalApp(vaultDir)) as unknown as LocalApp;
 
+	it("parses YAML core values and preserves the original note text", async () => {
+		const content = ["\uFEFF---", "flag: true # comment", "count: 2.5", "nothing: null",
+			"date: 2026-09-08", 'quoted: "text # literal"', 'items: ["a,b", c]',
+			"tags:", "- alpha", "- beta", "indented:", "  - one", "  - two",
+			"nested:", "  enabled: false", "literal: |", "  first", "  second",
+			"folded: >", "  first", "  second", "---", "# Body", ""].join("\r\n");
+		await writeFile(join(vaultDir, "Note.md"), content);
+		const app = await createLocalApp(vaultDir);
+		const file = app.vault.getMarkdownFiles()[0];
+		expect(app.metadataCache.getFileCache(file)?.frontmatter).toEqual({
+			flag: true, count: 2.5, nothing: null, date: "2026-09-08",
+			quoted: "text # literal", items: ["a,b", "c"], tags: ["alpha", "beta"],
+			indented: ["one", "two"], nested: { enabled: false },
+			literal: "first\nsecond\n", folded: "first second\n",
+		});
+		expect(await app.vault.cachedRead(file)).toBe(content);
+	});
+
+	it.each(["", "  \n", "null\n", "# comment\n"])("treats empty/null YAML %j as an empty mapping", async (yaml) => {
+		await writeFile(join(vaultDir, "Note.md"), `---\n${yaml}---\nBody`);
+		const app = await createLocalApp(vaultDir);
+		expect(app.metadataCache.getFileCache(app.vault.getMarkdownFiles()[0])?.frontmatter).toEqual({});
+	});
+
+	it.each(["Body", "---\nkey: value\nBody"])("keeps absent or unclosed frontmatter absent: %j", async (content) => {
+		await writeFile(join(vaultDir, "Note.md"), content);
+		const app = await createLocalApp(vaultDir);
+		expect(app.metadataCache.getFileCache(app.vault.getMarkdownFiles()[0])?.frontmatter).toBeUndefined();
+	});
+
+	it("indexes only real body block markers without fabricated positions", async () => {
+		await writeFile(join(vaultDir, "Target.md"), [
+			"---", "property: text ^metadata", "---", "Body ^Known-id", "",
+			"^standalone", "", "    code ^indent", "", "```", "code ^fenced", "```",
+			"<!-- comment ^comment -->", "`code ^inline`", "# same-name", "",
+		].join("\n"));
+		const app = await createLocalApp(vaultDir);
+		const target = app.vault.getMarkdownFiles()[0];
+		expect(app.metadataCache.getFileCache(target)?.blocks).toEqual({
+			"Known-id": { id: "Known-id" }, standalone: { id: "standalone" },
+		});
+	});
+
 	it("never collects dot-prefixed files or directories as vault files", async () => {
 		await writeFile(join(vaultDir, "Target.md"), "# Target\n");
 		await writeFile(join(vaultDir, ".hidden.cfg"), "config");

@@ -1,3 +1,4 @@
+import type { LinkReference } from "./link-reference";
 import type { ScanContext } from "./ScanContext";
 import { hasUriScheme, resolveVaultLinkTargets } from "../utils/vault-links";
 
@@ -103,11 +104,17 @@ export async function buildReferenceIndex(
 		// Guard the getFirstLinkpathDest branch; the fallback path re-checks
 		// internally via hasUriScheme.
 		if (!link || hasUriScheme(link)) return null;
+		const linkPath = link.split("#", 1)[0];
+		// Same-note headings and blocks refer to the source file itself.
+		if (!linkPath) return sourcePath;
 		if (typeof ctx.metadataCache.getFirstLinkpathDest === "function") {
-			return ctx.metadataCache.getFirstLinkpathDest(link, sourcePath)?.path ?? null;
+			return ctx.metadataCache.getFirstLinkpathDest(linkPath, sourcePath)?.path ?? null;
 		}
 		return resolveVaultLinkTargets(ctx, link, sourcePath)[0] ?? null;
 	};
+
+	const resolveReference = (reference: LinkReference, sourcePath: string): string | null =>
+		reference.destination ? reference.destination.resolvedPath : resolveTarget(reference.link, sourcePath);
 
 	for (const file of ctx.markdownFiles) {
 		const cache = ctx.metadataCache.getFileCache(file);
@@ -119,15 +126,15 @@ export async function buildReferenceIndex(
 			continue;
 		}
 		for (const link of cache.links ?? []) {
-			const resolved = resolveTarget(link.link, file.path);
+			const resolved = resolveReference(link, file.path);
 			if (resolved) addReference(resolved, file.path, "note-link");
 		}
 		for (const embed of cache.embeds ?? []) {
-			const resolved = resolveTarget(embed.link, file.path);
+			const resolved = resolveReference(embed, file.path);
 			if (resolved) addReference(resolved, file.path, "embed");
 		}
 		for (const link of cache.frontmatterLinks ?? []) {
-			const resolved = resolveTarget(link.link, file.path);
+			const resolved = resolveReference(link, file.path);
 			if (resolved) addReference(resolved, file.path, "frontmatter");
 		}
 	}

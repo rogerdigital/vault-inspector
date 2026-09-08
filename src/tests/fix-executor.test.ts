@@ -83,8 +83,7 @@ describe("executeFixAction", () => {
 				"missing",
 				"[[Target#Other heading|other]]",
 				"[[Target|plain]]",
-				// The embed occurrence is NOT consumed: the literal pattern is
-				// anchored with a negative lookbehind for "!".
+				// A complete embed range cannot match a non-embed original.
 				"![[Target#Missing heading|missing]]",
 			].join("\n"),
 		);
@@ -198,4 +197,50 @@ describe("executeFixAction", () => {
 			].join("\n"),
 		);
 	});
+});
+
+
+describe("parsed source safety", () => {
+	it.each(["[Missing](missing.md)", "[[Missing]]", "[[Missing|Alias]]", "![[Missing]]", "![Missing](missing.md)"])("only replaces valid occurrences of %s", async (original) => {
+		const protectedText = [
+			`    ${original}`, `\t${original}`,
+			`- item\n\n      ${original}`, `>     ${original}`,
+			`\\${original}`, `\\\\\\${original}`,
+			`\`${original}\``, `~~~md\n${original}\n~~~`, `<!-- ${original} -->`,
+		].join("\n\n");
+		const prefix = `\uFEFF---\r\nref: '${original}'\r\n---\r\n`;
+		const content = prefix + original + "\n\n" + protectedText + "\n\n" + original;
+		const { app, file, modify } = makeApp(content);
+		expect(await executeFixAction(app as any, {
+			kind: "remove-link-text", label: "Remove", description: "", targetPaths: ["Source.md"], original, replacement: "Shown",
+		})).toBe(1);
+		expect(modify).toHaveBeenCalledWith(file, prefix + "Shown\n\n" + protectedText + "\n\nShown");
+	});
+
+	it("restricts legacy wiki removal to parsed ranges", async () => {
+		const content = "[[Missing]]\n\n    [[Missing]]\n\n\\[[Missing]]";
+		const { app, file, modify } = makeApp(content);
+		expect(await executeFixAction(app as any, {
+			kind: "remove-link-text", label: "Remove", description: "", targetPaths: ["Source.md"], linkText: "Missing",
+		})).toBe(1);
+		expect(modify).toHaveBeenCalledWith(file, "\n\n    [[Missing]]\n\n\\[[Missing]]");
+	});
+});
+
+
+it.each(["[Missing](missing.md)", "[[Missing]]"])("replaces links after even backslashes: %s", async (original) => {
+	const content = "\\\\" + original + "\r\n";
+	const { app, file, modify } = makeApp(content);
+	expect(await executeFixAction(app as any, {
+		kind: "remove-link-text", label: "Remove", description: "", targetPaths: ["Source.md"], original, replacement: "Shown",
+	})).toBe(1);
+	expect(modify).toHaveBeenCalledWith(file, "\\\\Shown\r\n");
+});
+
+it.each(["[[Missing|**bold**]]", "plain text", "    [[Missing]]"])("fails closed for unsupported or non-link source: %s", async (content) => {
+	const { app, modify } = makeApp(content);
+	expect(await executeFixAction(app as any, {
+		kind: "remove-link-text", label: "Remove", description: "", targetPaths: ["Source.md"], original: content.trim(), replacement: "Shown",
+	})).toBe(0);
+	expect(modify).not.toHaveBeenCalled();
 });

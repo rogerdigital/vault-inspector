@@ -290,7 +290,7 @@ function getIssueDetailRows(issue: Issue): IssueDetailRow[] {
 	if (issue.scannerId === "duplicate-files") {
 		const count = getNumber(issue.evidence.count);
 		if (count !== null) rows.push({ label: "Count", value: String(count) });
-		const paths = getEvidencePaths(issue);
+		const paths = issue.relatedPaths;
 		if (paths.length > 0) {
 			rows.push({
 				label: "Files",
@@ -416,12 +416,6 @@ function getTargetLabel(issue: Issue): string {
 	if (issue.scannerId === "external-links") return "URL";
 	if (issue.scannerId === "broken-links") return "Target";
 	return "Target";
-}
-
-function getEvidencePaths(issue: Issue): string[] {
-	const paths = issue.evidence.paths;
-	if (typeof paths !== "string") return issue.relatedPaths;
-	return paths.split(",").map((path) => path.trim()).filter(Boolean);
 }
 
 function getNumber(value: unknown): number | null {

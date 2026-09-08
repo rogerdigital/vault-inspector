@@ -1,3 +1,4 @@
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
@@ -26,6 +27,128 @@ async function withVault(
 describe("runCli", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
+	});
+
+	it.each([
+		["absent", "delete globalThis.crypto;\n"],
+		["already available", "Object.defineProperty(globalThis, 'crypto', { value: require('node:crypto').webcrypto, configurable: false });\n"],
+	])("hashes scan profiles and duplicate files when global Web Crypto is %s", async (_state, preload) => {
+		await withVault({ "A.md": "Same content", "B.md": "Same content" }, async (vaultPath) => {
+			const preloadDir = await mkdtemp(join(tmpdir(), "vault-inspector-preload-"));
+			try {
+				const preloadPath = join(preloadDir, "preload.cjs");
+				await writeFile(preloadPath, preload, "utf8");
+				const result = spawnSync(process.execPath, [
+					"--require", preloadPath, join(process.cwd(), "cli.js"), vaultPath,
+					"--format", "json", "--scanner", "duplicate-files", "--fail-on", "none",
+				], { encoding: "utf8" });
+				expect(result.stderr).toBe("");
+				expect(result.status).toBe(0);
+				const payload = JSON.parse(result.stdout);
+				expect(payload.comparison.scanProfile).toMatch(/^[a-f0-9]{64}$/);
+				expect(payload.issues).toEqual([
+					expect.objectContaining({
+						scannerId: "duplicate-files",
+						severity: "warning",
+						relatedPaths: ["A.md", "B.md"],
+						evidence: expect.objectContaining({ hashState: "hash-confirmed" }),
+					}),
+				]);
+			} finally {
+				await rm(preloadDir, { recursive: true, force: true });
+			}
+		});
+	});
+
+	it("treats equivalent YAML syntax equally through the actual CLI bundle", async () => {
+		await withVault({
+			"A.md": "---\nflag: true # comment\ntags:\n- alpha\n- beta\n---\nBody",
+			"B.md": "---\nflag: true\ntags: [alpha, beta]\n---\nBody",
+		}, async (vaultPath) => {
+			const result = spawnSync(process.execPath, [join(process.cwd(), "cli.js"), vaultPath,
+				"--format", "json", "--scanner", "frontmatter-types"], { encoding: "utf8" });
+			expect(result.status).toBe(0);
+			expect(result.stderr).toBe("");
+			expect(JSON.parse(result.stdout).issues).toEqual([]);
+		});
+	});
+
+	it.each(["---\n---\n", "\uFEFF---\r\n---\r\n", "---\nkey: value\n---\n"])("preserves body references after the first frontmatter closing delimiter: %j", async (header) => {
+		const content = header + "\n[missing](missing.md)\n\n![image](image.png)\n\nBody ^known\n\n---\n\nTail";
+		await withVault({ "Note.md": content, "Source.md": "[[Note#^known]]", "image.png": "image" }, async (vaultPath) => {
+			const args = [vaultPath, "--format", "json", "--scanner", "broken-links,orphan-attachments", "--fail-on", "none"];
+			const result = await runCli(args);
+			expect(result.stderr).toBe("");
+			expect(result.exitCode).toBe(0);
+			const issues = JSON.parse(result.stdout).issues;
+			expect(issues).toHaveLength(1);
+			expect(issues[0].fixAction).toMatchObject({ kind: "remove-link-text", original: "[missing](missing.md)", replacement: "missing" });
+			const actual = spawnSync(process.execPath, [join(process.cwd(), "cli.js"), ...args], { encoding: "utf8" });
+			expect(actual.stderr).toBe("");
+			expect(actual.status).toBe(0);
+			expect(JSON.parse(actual.stdout).issues).toEqual(issues);
+		});
+	});
+
+	it.each([
+		"key: [SENSITIVE_SENTINEL", "key: first\nkey: SENSITIVE_SENTINEL",
+		"key: !SENSITIVE_SENTINEL value", "- SENSITIVE_SENTINEL", "SENSITIVE_SENTINEL",
+	])("rejects invalid/non-mapping YAML without leaking note content: %j", async (yaml) => {
+		await withVault({ "Note.md": `---\n${yaml}\n---\nBody` }, async (vaultPath) => {
+			const args = [vaultPath, "--format", "json", "--scanner", "frontmatter-types", "--fail-on", "none"];
+			const result = await runCli(args);
+			expect(result.exitCode).toBe(2);
+			expect(result.stdout).toBe("");
+			expect(result.stderr).toMatch(/Note\.md:\d+:\d+: Invalid frontmatter/);
+			expect(result.stderr).not.toContain("SENSITIVE_SENTINEL");
+			if (yaml.startsWith("key: first")) expect(result.stderr).toContain("Note.md:3:1:");
+			const actual = spawnSync(process.execPath, [join(process.cwd(), "cli.js"), ...args], { encoding: "utf8" });
+			expect(actual.status).toBe(2);
+			expect(actual.stdout).toBe("");
+			expect(actual.stderr).toBe(result.stderr);
+		});
+	});
+
+	it("preserves valid block links in the actual CLI bundle", async () => {
+		await withVault({
+			"Source.md": "[[Target#^KNOWN-ID|Alias]]\n![[Target#^Known-id]]\n[[Target#^missing]]\n",
+			"Target.md": "Body ^Known-id\n\n# missing\n",
+		}, async (vaultPath) => {
+			const stdout = execFileSync(process.execPath, [
+				join(process.cwd(), "cli.js"), vaultPath, "--format", "json",
+				"--scanner", "broken-links", "--fail-on", "none",
+			], { encoding: "utf8" });
+			const payload = JSON.parse(stdout);
+			expect(payload.issues).toHaveLength(1);
+			expect(payload.issues[0].message).toBe('Block "#^missing" not found in Target.md');
+			expect(payload.issues[0].evidence.link).toBe("Target#^missing");
+		});
+	});
+
+	it("validates same-note headings and blocks through the CLI", async () => {
+		await withVault({
+			"nested/Source.md": [
+				"# Existing", "Body ^valid-block", "[[#Existing]]", "[valid](#Existing)",
+				"[[#^valid-block]]", "[[#]]", "[external](https://example.com/#Missing)",
+				"[[#Missing|Alias]]", "[jump](#MissingMarkdown)", "![[#MissingEmbed]]",
+				"[[#^missing-block]]",
+			].join("\n\n"),
+		}, async (vaultPath) => {
+			const result = await runCli([
+				vaultPath, "--format", "json", "--scanner", "broken-links",
+				"--ignore-unresolved-note-links",
+			]);
+			expect(result.exitCode).toBe(1);
+			expect(result.stderr).toBe("");
+			const payload = JSON.parse(result.stdout);
+			expect(payload.issues).toHaveLength(4);
+			expect(payload.issues.map((issue: { message: string }) => issue.message).sort()).toEqual([
+				'Heading "#Missing" not found in nested/Source.md',
+				'Heading "#MissingMarkdown" not found in nested/Source.md',
+				'Heading "#MissingEmbed" not found in nested/Source.md',
+				'Block "#^missing-block" not found in nested/Source.md',
+			].sort());
+		});
 	});
 
 	it("shows the short command alias in usage output", async () => {
@@ -92,7 +215,7 @@ describe("runCli", () => {
 				persistingIssues: 0,
 				resolvedIssues: 0,
 				scanProfile: expect.any(String),
-				comparisonVersion: 2,
+				comparisonVersion: 3,
 				fingerprints: expect.any(Array),
 			});
 			// The identity set is the complete unfiltered set, not just the
@@ -451,7 +574,7 @@ describe("runCli", () => {
 					persistingIssues: 0,
 					resolvedIssues: 0,
 					scanProfile: expect.any(String),
-					comparisonVersion: 2,
+					comparisonVersion: 3,
 					fingerprints: expect.any(Array),
 				});
 			});
@@ -498,6 +621,38 @@ describe("runCli", () => {
 				);
 			});
 		});
+
+	it.each([
+		{ configured: "none", explicit: "any", scanner: "broken-links", content: "[[missing]]", severity: "errors", exitCode: 1 },
+		{ configured: "error", explicit: "any", scanner: "empty-notes", content: "", severity: "warnings", exitCode: 1 },
+		{ configured: "none", explicit: undefined, scanner: "broken-links", content: "[[missing]]", severity: "errors", exitCode: 0 },
+		{ configured: "error", explicit: undefined, scanner: "empty-notes", content: "", severity: "warnings", exitCode: 0 },
+		{ configured: undefined, explicit: undefined, scanner: "empty-notes", content: "", severity: "warnings", exitCode: 1 },
+		{ configured: "any", explicit: "none", scanner: "broken-links", content: "[[missing]]", severity: "errors", exitCode: 0 },
+	])("resolves fail-on config $configured and explicit $explicit for $severity", async ({
+		configured, explicit, scanner, content, severity, exitCode,
+	}) => {
+		await withVault({ "note.md": content }, async (vaultPath) => {
+			const args = [vaultPath, "--scanner", scanner];
+			if (configured !== undefined) {
+				const configPath = join(vaultPath, "config.json");
+				await writeFile(configPath, JSON.stringify({ failOn: configured }), "utf8");
+				args.push("--config", configPath);
+			}
+			if (explicit !== undefined) args.push("--fail-on", explicit);
+
+			const result = await runCli(args);
+			expect(result.stderr).toBe("");
+			expect(JSON.parse(result.stdout).summary[severity]).toBe(1);
+			expect(result.exitCode).toBe(exitCode);
+			expect(result.stdout).not.toContain("failOnExplicit");
+
+			const defaultResult = await runCli([vaultPath, "--scanner", scanner]);
+			expect(JSON.parse(result.stdout).comparison.scanProfile).toBe(
+				JSON.parse(defaultResult.stdout).comparison.scanProfile,
+			);
+		});
+	});
 
 	it("uses fail-on to control exit status", async () => {
 		await withVault({ "empty.md": "" }, async (vaultPath) => {
@@ -1206,7 +1361,7 @@ describe("runCli", () => {
 				persistingIssues: 1,
 				resolvedIssues: 0,
 				scanProfile: expect.any(String),
-				comparisonVersion: 2,
+				comparisonVersion: 3,
 				fingerprints: expect.any(Array),
 			});
 			// The identity set is the complete unfiltered set.
@@ -1253,7 +1408,7 @@ describe("runCli", () => {
 				persistingIssues: 1,
 				resolvedIssues: 1,
 				scanProfile: expect.any(String),
-				comparisonVersion: 2,
+				comparisonVersion: 3,
 				fingerprints: expect.any(Array),
 			});
 			// The identity set is the complete unfiltered set: sorted and unique.
@@ -1313,7 +1468,7 @@ describe("runCli", () => {
 				persistingIssues: 1,
 				resolvedIssues: 1,
 				scanProfile: expect.any(String),
-				comparisonVersion: 2,
+				comparisonVersion: 3,
 				fingerprints: expect.any(Array),
 			});
 			expect(payload.issues.find(
@@ -1426,7 +1581,7 @@ describe("runCli", () => {
 				persistingIssues: 0,
 				resolvedIssues: 0,
 				scanProfile: expect.any(String),
-				comparisonVersion: 2,
+				comparisonVersion: 3,
 				fingerprints: expect.any(Array),
 			});
 			// No lifecycle annotations are fabricated from an incompatible baseline.
@@ -1447,7 +1602,7 @@ describe("runCli", () => {
 				"none",
 			]);
 			const baseline = JSON.parse(first.stdout);
-			baseline.comparison.comparisonVersion = 3;
+			baseline.comparison.comparisonVersion = 2;
 			const baselinePath = join(vaultPath, "baseline.json");
 			await writeFile(baselinePath, JSON.stringify(baseline), "utf8");
 
@@ -1473,7 +1628,7 @@ describe("runCli", () => {
 				persistingIssues: 0,
 				resolvedIssues: 0,
 				scanProfile: expect.any(String),
-				comparisonVersion: 2,
+				comparisonVersion: 3,
 				fingerprints: expect.any(Array),
 			});
 			expect(payload.issues.every(
@@ -1514,4 +1669,3 @@ describe("runCli", () => {
 		});
 	});
 });
-

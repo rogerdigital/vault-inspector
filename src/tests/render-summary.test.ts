@@ -187,7 +187,7 @@ describe("renderSummary", () => {
 		});
 
 		const text = flatten(container);
-		expect(text).toContain("2 new findings");
+		expect(text).toContain("3 new findings");
 		expect(text).toContain("1 resolved");
 		expect(text).toContain("Review new findings");
 		expect(text).toContain("2 previously found");
@@ -195,20 +195,41 @@ describe("renderSummary", () => {
 		expect(text).toContain("compared with");
 		expect(text).not.toContain("PERSISTING");
 		expect(text).toContain("8 files scanned1.0s2 scannersIgnored 2");
-		expect(findByText(container, "2 new findings")?.cls).toContain("vi-changes-primary");
+		expect(findByText(container, "3 new findings")?.cls).toContain("vi-changes-primary");
 		expect(findByText(container, "1 resolved")?.cls).toContain("vi-changes-resolved");
 	});
 
-	it("counts only confirmed new findings in the headline", () => {
+	it("counts all new classifications and severities while excluding ignored findings", () => {
+		const issues = (["confirmed", "candidate", "unverified"] as const).flatMap(
+			(classification) => (["error", "warning", "info"] as const).map(
+				(severity) => activeIssue(`${classification}-${severity}`, severity, classification),
+			),
+		);
+		const comparison = compatibleComparison();
+		comparison.statuses = new Map([...issues, ...resultWithLifecycle.ignoredIssues]
+			.map((issue) => [issue.fingerprint, "new"]));
 		const container = new FakeElement();
-		renderSummary(container as unknown as HTMLElement, resultWithLifecycle, {
-			comparison: compatibleComparison(),
-		});
-
-		const text = flatten(container);
-		expect(text).toContain("2 new findings");
-		expect(text).not.toContain("3 new findings");
+		renderSummary(container as unknown as HTMLElement, {
+			...resultWithLifecycle, issues,
+		}, { comparison });
+		expect(flatten(container)).toContain("9 new findings");
 	});
+
+	it.each(["confirmed", "candidate", "unverified"] as const)(
+		"offers review for a single %s info finding",
+		(classification) => {
+			const container = new FakeElement();
+			const onReviewNewFindings = vi.fn();
+			renderSummary(container as unknown as HTMLElement, {
+				...resultWithLifecycle, issues: [activeIssue("new-error", "info", classification)],
+			}, { comparison: compatibleComparison(), onReviewNewFindings });
+			expect(flatten(container)).toContain("1 new finding");
+			const button = findByText(container, "Review new findings");
+			expect(button).toBeDefined();
+			button?.click();
+			expect(onReviewNewFindings).toHaveBeenCalledOnce();
+		},
+	);
 
 	it("uses the singular form for one new finding", () => {
 		const singleNew = { ...resultWithLifecycle, issues: [activeIssue("new-error")] };
@@ -227,6 +248,7 @@ describe("renderSummary", () => {
 		const container = new FakeElement();
 		renderSummary(container as unknown as HTMLElement, singleActive, {
 			comparison: firstScanComparison(),
+			onReviewNewFindings: vi.fn(),
 		});
 
 		const text = flatten(container);
@@ -239,6 +261,7 @@ describe("renderSummary", () => {
 		const container = new FakeElement();
 		renderSummary(container as unknown as HTMLElement, resultWithLifecycle, {
 			comparison: firstScanComparison(),
+			onReviewNewFindings: vi.fn(),
 		});
 
 		const text = flatten(container);
@@ -255,6 +278,7 @@ describe("renderSummary", () => {
 		const container = new FakeElement();
 		renderSummary(container as unknown as HTMLElement, resultWithLifecycle, {
 			comparison: settingsChangedComparison(),
+			onReviewNewFindings: vi.fn(),
 		});
 
 		const text = flatten(container);
@@ -288,7 +312,7 @@ describe("renderSummary", () => {
 		expect(text).toContain("previous successful scan:");
 	});
 
-	it("offers a review control when there are new confirmed findings", () => {
+	it("offers a review control when there are new findings", () => {
 		const container = new FakeElement();
 		const onReviewNewFindings = vi.fn();
 		renderSummary(container as unknown as HTMLElement, resultWithLifecycle, {
@@ -306,18 +330,19 @@ describe("renderSummary", () => {
 		expect(onReviewNewFindings).toHaveBeenCalledTimes(1);
 	});
 
-	it("omits the review control without new confirmed findings or a callback", () => {
+	it("omits the review control without new findings or a callback", () => {
 		const persistingOnly = { ...resultWithLifecycle, issues: [activeIssue("persisting-a")] };
 
-		const noNewConfirmed = new FakeElement();
-		renderSummary(noNewConfirmed as unknown as HTMLElement, persistingOnly, {
+		const noNew = new FakeElement();
+		renderSummary(noNew as unknown as HTMLElement, persistingOnly, {
 			comparison: {
 				...compatibleComparison(),
 				statuses: new Map([["persisting-a", "persisting"]]),
 			},
 			onReviewNewFindings: vi.fn(),
 		});
-		expect(flatten(noNewConfirmed)).not.toContain("Review new findings");
+		expect(flatten(noNew)).toContain("0 new findings");
+		expect(flatten(noNew)).not.toContain("Review new findings");
 
 		const noCallback = new FakeElement();
 		renderSummary(noCallback as unknown as HTMLElement, resultWithLifecycle, {

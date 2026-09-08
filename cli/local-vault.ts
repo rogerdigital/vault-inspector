@@ -1,7 +1,11 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, extname, join, posix, relative, sep } from "node:path";
+import { CORE_SCHEMA, load, YAMLException } from "js-yaml";
 import type { App, MetadataCache, TFile, Vault } from "obsidian";
 import { extractBareUrls } from "../src/scanner/scanners/external-links";
+import type { LinkReference } from "../src/scanner/link-reference";
+import { parseMarkdownSource } from "../src/utils/markdown-source";
+import { splitFrontmatter } from "../src/utils/frontmatter-section";
 
 type LocalFile = TFile & {
 	path: string;
@@ -12,11 +16,7 @@ type LocalFile = TFile & {
 	};
 };
 
-type LinkCacheEntry = {
-	link: string;
-	original?: string;
-	sourceRelative?: boolean;
-};
+type LinkCacheEntry = LinkReference & { sourceRelative?: boolean };
 type HeadingCacheEntry = { heading: string };
 type TagCacheEntry = { tag: string };
 
@@ -25,6 +25,7 @@ type LocalMetadata = {
 	embeds?: LinkCacheEntry[];
 	frontmatterLinks?: LinkCacheEntry[];
 	headings?: HeadingCacheEntry[];
+	blocks?: Record<string, { id: string }>;
 	tags?: TagCacheEntry[];
 	frontmatter?: Record<string, unknown>;
 };
@@ -47,18 +48,28 @@ export async function createLocalApp(vaultPath: string): Promise<App> {
 	const filesByPath = new Map(files.map((file) => [file.path, file]));
 	const metadataByPath = new Map<string, LocalMetadata>();
 	const resolvedLinks: Record<string, Record<string, number>> = {};
-	const resolvedDestinations: Record<string, Record<string, string>> = {};
 	const unresolvedLinks: Record<string, Record<string, number>> = {};
 
 	for (const file of files.filter((item) => item.path.endsWith(".md"))) {
 		const content = await readFile(join(vaultPath, file.path), "utf8");
-		const metadata = parseMarkdownMetadata(content);
+		const metadata = parseMarkdownMetadata(content, file.path);
 		metadataByPath.set(file.path, metadata);
 
-		for (const link of [...metadata.links ?? [], ...metadata.embeds ?? []]) {
+		for (const link of [...metadata.links ?? [], ...metadata.embeds ?? [], ...metadata.frontmatterLinks ?? []]) {
 			if (hasUriScheme(link.link)) continue;
-			const target = normalizeLinkTarget(link.link);
-			if (!target) continue;
+			const fragmentAt = link.link.indexOf("#");
+			const path = fragmentAt === -1 ? link.link : link.link.slice(0, fragmentAt);
+			const fragment = fragmentAt === -1 ? null : link.link.slice(fragmentAt + 1);
+			const target = link.sourceRelative ? decodeDestination(path) : path.trim();
+			link.destination = {
+				path: target,
+				fragment: fragment !== null && link.sourceRelative ? decodeDestination(fragment) : fragment,
+				resolvedPath: null,
+			};
+			if (!target) {
+				if (fragment !== null) link.destination.resolvedPath = file.path;
+				continue;
+			}
 
 			const resolved = resolveVaultPath(
 				target,
@@ -66,15 +77,11 @@ export async function createLocalApp(vaultPath: string): Promise<App> {
 				file.path,
 				link.sourceRelative ?? false,
 			);
+			link.destination.resolvedPath = resolved;
 			if (resolved) {
 				resolvedLinks[file.path] = {
 					...resolvedLinks[file.path],
 					[resolved]: (resolvedLinks[file.path]?.[resolved] ?? 0) + 1,
-				};
-				resolvedDestinations[file.path] = {
-					...resolvedDestinations[file.path],
-					[link.link]: resolved,
-					[target]: resolved,
 				};
 			} else {
 				unresolvedLinks[file.path] = {
@@ -100,17 +107,10 @@ export async function createLocalApp(vaultPath: string): Promise<App> {
 		unresolvedLinks,
 		getFileCache: (file: TFile) => metadataByPath.get(file.path) ?? null,
 		getFirstLinkpathDest: (linkPath: string, sourcePath: string) => {
-			const target = normalizeLinkTarget(linkPath);
-			if (!target || hasUriScheme(target)) return null;
-			const resolved =
-				resolvedDestinations[sourcePath]?.[linkPath] ??
-				resolvedDestinations[sourcePath]?.[target] ??
-				resolveVaultPath(
-					target,
-					filePathIndex,
-					sourcePath,
-					/^\.{1,2}\//.test(target),
-				);
+			if (!linkPath || hasUriScheme(linkPath)) return null;
+			const resolved = resolveVaultPath(
+				linkPath, filePathIndex, sourcePath, /^\.{1,2}\//.test(linkPath),
+			);
 			return resolved ? filesByPath.get(resolved) ?? null : null;
 		},
 	} as LocalMetadataCache;
@@ -153,8 +153,9 @@ async function collectFiles(vaultPath: string): Promise<LocalFile[]> {
 	}
 }
 
-function parseMarkdownMetadata(content: string): LocalMetadata {
-	const frontmatter = parseFrontmatter(content);
+function parseMarkdownMetadata(content: string, filePath: string): LocalMetadata {
+	const frontmatter = parseFrontmatter(content, filePath);
+	const source = parseMarkdownSource(content);
 	const body = stripIgnoredMarkdownRegions(stripFrontmatter(content));
 	const links: LinkCacheEntry[] = [];
 	const embeds: LinkCacheEntry[] = [];
@@ -168,15 +169,13 @@ function parseMarkdownMetadata(content: string): LocalMetadata {
 		else links.push(entry);
 	}
 
-	for (const match of body.matchAll(/(!?)\[[^\]]*]\(\s*(?:<([^>]+)>|([^)]+))\)/g)) {
-		const target = match[2] ?? parseMarkdownDestination(match[3]);
-		if (!target) continue;
+	for (const link of source.links) {
 		const entry = {
-			link: target,
-			original: match[0],
+			link: link.destination,
+			original: link.original,
 			sourceRelative: true,
 		};
-		if (match[1] === "!") embeds.push(entry);
+		if (link.kind === "image") embeds.push(entry);
 		else links.push(entry);
 	}
 
@@ -198,6 +197,7 @@ function parseMarkdownMetadata(content: string): LocalMetadata {
 		embeds,
 		frontmatterLinks,
 		headings,
+		blocks: Object.fromEntries(source.blockIds.map((id) => [id, { id }])),
 		tags,
 		frontmatter,
 	};
@@ -207,69 +207,43 @@ function extractFrontmatterWikiLinks(content: string): LinkCacheEntry[] {
 	const section = splitFrontmatter(content);
 	if (!section.frontmatter) return [];
 
-	// Aliases are stripped here for symmetry with the body parser; frontmatterLinks
-	// are not consumed by link resolution today.
+	// Wiki aliases are display text, including in frontmatter.
 	return [...section.frontmatter.matchAll(/\[\[([^\]]+)\]\]/g)].map((match) => ({
 		link: match[1].split("|")[0],
 	}));
 }
 
-function parseFrontmatter(content: string): Record<string, unknown> | undefined {
+function parseFrontmatter(content: string, filePath: string): Record<string, unknown> | undefined {
 	const section = splitFrontmatter(content);
 	if (section.frontmatter === undefined) return undefined;
 
-	const parsed: Record<string, unknown> = {};
-	const lines = section.frontmatter.split(/\r?\n/);
-	for (let index = 0; index < lines.length; index++) {
-		const line = lines[index];
-		const separator = line.indexOf(":");
-		if (separator <= 0) continue;
-		const key = line.slice(0, separator).trim();
-		const value = line.slice(separator + 1).trim();
-		if (value === "") {
-			const items: unknown[] = [];
-			while (index + 1 < lines.length) {
-				const itemMatch = /^\s+-\s+(.+?)\s*$/.exec(lines[index + 1]);
-				if (!itemMatch) break;
-				items.push(parseFrontmatterValue(itemMatch[1]));
-				index++;
-			}
-			parsed[key] = items.length > 0 ? items : "";
-			continue;
-		}
-		parsed[key] = parseFrontmatterValue(value);
+	let value: unknown;
+	try {
+		value = load(section.frontmatter, { schema: CORE_SCHEMA });
+	} catch (error) {
+		// Parser messages/reasons/snippets can contain private property values.
+		// YAML marks are zero-based; frontmatter starts on the note's second line.
+		const mark = error instanceof YAMLException ? error.mark : undefined;
+		throw new Error(`${filePath}:${(mark?.line ?? 0) + 2}:${(mark?.column ?? 0) + 1}: Invalid frontmatter YAML`);
 	}
-	return parsed;
-}
-
-function parseFrontmatterValue(value: string): unknown {
-	if (value === "") return "";
-	if (value === "true") return true;
-	if (value === "false") return false;
-	if (value === "null") return null;
-	if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value);
-	if (value.startsWith("[") && value.endsWith("]")) {
-		return value
-			.slice(1, -1)
-			.split(",")
-			.map((item) => stripQuotes(item.trim()))
-			.filter(Boolean);
+	if (value === undefined || value === null) return {};
+	if (typeof value !== "object" || Array.isArray(value)) {
+		throw new Error(`${filePath}:2:1: Invalid frontmatter: expected a mapping`);
 	}
-	return stripQuotes(value);
-}
-
-function stripQuotes(value: string): string {
-	return value.replace(/^["']|["']$/g, "");
+	return value as Record<string, unknown>;
 }
 
 function stripFrontmatter(content: string): string {
 	return splitFrontmatter(content).body;
 }
 
-function normalizeLinkTarget(link: string): string {
-	// The alias strip is defensive for non-adapter callers; the adapter already
-	// strips aliases at parse time.
-	return link.split("|")[0].split("#")[0].trim();
+function decodeDestination(value: string): string {
+	try {
+		return decodeURIComponent(value);
+	} catch {
+		// Invalid percent escapes remain literal filenames instead of aborting scans.
+		return value;
+	}
 }
 
 function resolveVaultPath(
@@ -317,26 +291,6 @@ function resolveVaultPath(
 
 function hasUriScheme(text: string): boolean {
 	return /^[a-z][a-z\d+.-]*:/i.test(text);
-}
-
-function parseMarkdownDestination(rawDestination: string | undefined): string | null {
-	if (!rawDestination) return null;
-	const match = /^(\S+?)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*$/.exec(
-		rawDestination,
-	);
-	return match?.[1] ?? null;
-}
-
-function splitFrontmatter(content: string): {
-	frontmatter?: string;
-	body: string;
-} {
-	const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(content);
-	if (!match) return { body: content };
-	return {
-		frontmatter: match[1],
-		body: content.slice(match[0].length),
-	};
 }
 
 function stripIgnoredMarkdownRegions(content: string): string {

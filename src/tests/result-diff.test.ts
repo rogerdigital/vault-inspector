@@ -76,7 +76,7 @@ describe("compareScanResult", () => {
 	it("rejects changed comparison semantics before checking settings", () => {
 		const snapshot = {
 			...makeSnapshot([makeIssue("previous")], [], "old-profile"),
-			comparisonVersion: 3,
+			comparisonVersion: 2,
 		} as unknown as ScanSnapshot;
 
 		expect(isScanSnapshot(snapshot)).toBe(true);
@@ -186,23 +186,23 @@ describe("compareScanResult", () => {
 
 describe("resolveBaselineCompatibility", () => {
 	it("accepts a matching comparison version and scan profile", () => {
-		expect(resolveBaselineCompatibility(2, "profile", "profile")).toBeNull();
+		expect(resolveBaselineCompatibility(COMPARISON_VERSION, "profile", "profile")).toBeNull();
 	});
 
 	it("rejects a changed comparison version before checking settings", () => {
-		expect(resolveBaselineCompatibility(3, "profile", "profile")).toBe(
+		expect(resolveBaselineCompatibility(2, "profile", "profile")).toBe(
 			"semantics-changed",
 		);
 	});
 
 	it("prefers semantics-changed when both version and profile differ", () => {
-		expect(resolveBaselineCompatibility(3, "old-profile", "new-profile")).toBe(
+		expect(resolveBaselineCompatibility(2, "old-profile", "new-profile")).toBe(
 			"semantics-changed",
 		);
 	});
 
 	it("rejects a changed scan profile", () => {
-		expect(resolveBaselineCompatibility(2, "old-profile", "new-profile")).toBe(
+		expect(resolveBaselineCompatibility(COMPARISON_VERSION, "old-profile", "new-profile")).toBe(
 			"settings-changed",
 		);
 	});

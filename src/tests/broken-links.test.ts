@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { brokenLinksScanner } from "../scanner/scanners/broken-links";
 import type { ScanContext } from "../scanner/ScanContext";
 import { makeScanContext } from "./helpers/scan-context";
@@ -824,5 +824,100 @@ describe("brokenLinksScanner", () => {
 		expect(issues).toHaveLength(1);
 		expect(issues[0].message).toBe("Attachment not found: missing.png");
 		expect(issues[0].severity).toBe("error");
+	});
+});
+
+
+describe("same-note fragments", () => {
+	it.each([
+		["[[#Missing]]", "#Missing", "#Missing", "heading"],
+		["[[#Missing|Alias]]", "#Missing", "Alias", "heading"],
+		["[jump](#Missing)", "#Missing", "jump", "markdown-link"],
+		["![[#Missing]]", "#Missing", "", "embed"],
+		["[[#^missing|Block alias]]", "#^missing", "Block alias", "heading"],
+		["![block](#^missing)", "#^missing", "", "embed"],
+	])("reports %s against the source note with exact fix metadata", async (original, link, replacement, linkKind) => {
+		const ctx = makeScanContext({
+			files: [{ path: "nested/Source.md" }],
+			metadataByPath: {
+				"nested/Source.md": {
+					[original.startsWith("!") ? "embeds" : "links"]: [{ original, link }],
+				} as any,
+			},
+			overrides: { ignoreUnresolvedNoteLinks: true },
+		});
+		const resolver = vi.fn(() => null);
+		ctx.metadataCache.getFirstLinkpathDest = resolver;
+		const issues = await brokenLinksScanner.scan(ctx);
+		expect(issues).toHaveLength(1);
+		expect(issues[0]).toMatchObject({
+			severity: "warning",
+			message: `${link.startsWith("#^") ? "Block" : "Heading"} "${link}" not found in nested/Source.md`,
+			primaryPath: "nested/Source.md",
+			relatedPaths: ["nested/Source.md"],
+			evidence: { link, target: "nested/Source.md", linkKind },
+			fixAction: { original, replacement, targetPaths: ["nested/Source.md"] },
+		});
+		expect(resolver).not.toHaveBeenCalled();
+	});
+
+	it.each(["#Existing", "#^VALID-block", "#", "", "https://example.com/#Missing", "obsidian://open#Missing"])("leaves valid or excluded target %s alone", async (link) => {
+		const ctx = makeScanContext({
+			files: [{ path: "nested/Source.md" }],
+			metadataByPath: {
+				"nested/Source.md": {
+					links: [{ link, original: `[[${link}]]` }],
+					headings: [{ heading: "Existing" }],
+					blocks: { "valid-block": { id: "valid-block" } },
+				} as any,
+			},
+			unresolvedLinks: { "nested/Source.md": { [link]: 1 } },
+		});
+		const resolver = vi.fn(() => null);
+		ctx.metadataCache.getFirstLinkpathDest = resolver;
+		expect(await brokenLinksScanner.scan(ctx)).toEqual([]);
+		expect(resolver).not.toHaveBeenCalled();
+	});
+});
+
+describe("block references", () => {
+	it.each([
+		["[[Target#^Known-id]]", "Target#^Known-id", false],
+		["[[Target#^KNOWN-ID|Alias]]", "Target#^KNOWN-ID", false],
+		["![[Target#^known-ID]]", "Target#^known-ID", true],
+		["[Block](Target.md#^Known-id)", "Target.md#^Known-id", false],
+	])("keeps valid block reference %s without a removal action", async (original, link, embed) => {
+		const ctx = makeScanContext({
+			files: [{ path: "Source.md" }, { path: "Target.md" }],
+			metadataByPath: {
+				"Source.md": { [embed ? "embeds" : "links"]: [{ link, original }] } as any,
+				"Target.md": { blocks: { "Known-id": { id: "Known-id" } } } as any,
+			},
+		});
+		expect(await brokenLinksScanner.scan(ctx)).toEqual([]);
+	});
+
+	it.each(["missing", "same-name", "Known_id"])("reports missing block %s without heading normalization", async (id) => {
+		const ctx = makeScanContext({
+			files: [{ path: "Source.md" }, { path: "Target.md" }],
+			metadataByPath: {
+				"Source.md": { links: [{ link: `Target#^${id}`, original: `[[Target#^${id}|Alias]]` }] } as any,
+				"Target.md": {
+					headings: [{ heading: "same-name" }],
+					blocks: { "Known-id": { id: "Known-id" } },
+				} as any,
+			},
+		});
+		const issues = await brokenLinksScanner.scan(ctx);
+		expect(issues).toHaveLength(1);
+		expect(issues[0]).toMatchObject({
+			severity: "warning",
+			message: `Block "#^${id}" not found in Target.md`,
+			explanation: {
+				why: "The target note exists, but the referenced block was not found.",
+				nextStep: "Correct the block reference or remove it from the source note.",
+			},
+			fixAction: { replacement: "Alias" },
+		});
 	});
 });

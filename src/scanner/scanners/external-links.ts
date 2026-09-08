@@ -140,6 +140,11 @@ function stripIgnoredMarkdownRegions(content: string): string {
 function trimUrlBoundary(url: string): string {
 	let trimmed = url;
 	while (/[),.;:!?]$/.test(trimmed)) {
+		if (trimmed.endsWith(")")) {
+			const opens = (trimmed.match(/\(/g) ?? []).length;
+			const closes = (trimmed.match(/\)/g) ?? []).length;
+			if (closes <= opens) break;
+		}
 		trimmed = trimmed.slice(0, -1);
 	}
 	return trimmed;

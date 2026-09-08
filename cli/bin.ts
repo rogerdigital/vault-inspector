@@ -1,4 +1,9 @@
+import { webcrypto } from "node:crypto";
 import { runCli } from "./cli";
+
+if (typeof globalThis.crypto === "undefined") {
+	Object.defineProperty(globalThis, "crypto", { value: webcrypto, configurable: true });
+}
 
 runCli(process.argv.slice(2), {
 	writeStderr: (text) => process.stderr.write(text),
