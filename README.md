@@ -108,7 +108,7 @@ The core workflow is: run a scan, review new findings, then fix or ignore each o
 
 1. Open the command palette and run **Vault Inspector: Run scan**.
 2. The Inspector view opens in the right sidebar and shows scan progress while the scanners run.
-3. The summary highlights how many findings are new since the last comparable scan. Click **Review new findings** to focus the list on confirmed new findings.
+3. The summary highlights how many findings are new since the last comparable scan. Click **Review new findings** to focus the list on all new findings, clearing other filters. Use **Clear filters** to return to all findings.
 4. Filter results by scanner, severity, lifecycle, or classification. Expand **Technical evidence** to inspect the raw scanner evidence behind the explanation.
 5. Click paths, URLs, targets, properties, or tags to jump to the relevant location.
 6. Open a finding's **Actions** menu to ignore it, choose **Exclude parent folder**, or open its scanner settings. Parent-folder exclusions apply only to that scanner and can be removed from **Scanner-specific ignored folders** in settings.

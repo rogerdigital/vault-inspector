@@ -4,7 +4,6 @@ import type {
 	CurrentFindingStatus,
 	LifecycleComparison,
 } from "../scanner/result-diff";
-import { countNewConfirmedFindings } from "./report-model";
 import { formatDuration } from "../utils/format";
 
 export type SummaryOptions = {
@@ -40,8 +39,7 @@ function renderChanges(
 		return;
 	}
 
-	const newConfirmed = countNewConfirmedFindings(result.issues, comparison.statuses);
-	const newCount = newConfirmed.errors + newConfirmed.warnings;
+	const newCount = countStatus(result, comparison, "new");
 	const persistingCount = countStatus(result, comparison, "persisting");
 	const resolvedCount = comparison.resolvedIssues.filter((issue) => !issue.ignored).length;
 

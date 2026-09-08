@@ -239,7 +239,7 @@ describe("InspectorView report filter wiring", () => {
 		renderIssueListMock.mockClear();
 		renderReportControlsMock.mockClear();
 		renderResolvedChangesMock.mockClear();
-		renderSummaryMock.mockClear();
+		renderSummaryMock.mockReset();
 		showFolderExclusionModalMock.mockReset();
 		inspectorNoticeMessages.length = 0;
 		vi.mocked(setTooltip).mockClear();
@@ -662,42 +662,56 @@ describe("InspectorView report filter wiring", () => {
 		expect(controlsOrder).toBeGreaterThan(summaryOrder);
 	});
 
-	it("applies and releases the review-new preset without hiding other results", () => {
+	it("reviews all new findings idempotently and exits through Clear filters", async () => {
+		const { renderSummary } = await vi.importActual<typeof import("../report/render-summary")>(
+			"../report/render-summary",
+		);
+		renderSummaryMock.mockImplementation(renderSummary);
 		const container = new FakeElement();
 		const view = new InspectorView(new WorkspaceLeaf());
 		(view as any).containerEl.children[1] = container;
 		const newError = makeIssue("broken-links", "error", "new-confirmed");
-		const newCandidate = makeIssue("broken-links", "error", "new-candidate", "candidate");
+		const newCandidate = makeIssue("duplicate-files", "warning", "new-candidate", "candidate");
+		const newUnverified = makeIssue("external-links", "info", "new-unverified", "unverified");
 		const persisting = makeIssue("duplicate-files", "warning", "persisting-confirmed");
 		(view as any).model.result = {
 			...result,
-			issues: [newError, newCandidate, persisting],
+			issues: [newError, newCandidate, newUnverified, persisting],
 		};
 		(view as any).model.comparison = comparable([
 			["new-confirmed", "new"],
 			["new-candidate", "new"],
+			["new-unverified", "new"],
 			["persisting-confirmed", "persisting"],
 		]);
+		(view as any).model.filterScanner = "duplicate-files";
 		(view as any).model.filterSeverity = "warning";
-
+		(view as any).model.filterClassification = "confirmed";
+		(view as any).model.filterStatus = "persisting";
 		(view as any).render();
-		renderSummaryMock.mock.lastCall?.[2].onReviewNewFindings();
 
-		expect((view as any).model.filterStatus).toBe("new");
-		expect((view as any).model.filterClassification).toBe("confirmed");
-		expect((view as any).model.filterSeverity).toBeNull();
-		expect(renderIssueListMock).toHaveBeenLastCalledWith(
-			expect.any(FakeElement),
-			expect.objectContaining({ issues: [newError] }),
-		);
+		for (let click = 0; click < 2; click++) {
+			expect(findByText(container, "3 new findings")).toBeDefined();
+			const button = findByText(container, "Review new findings");
+			expect(button).toBeDefined();
+			button?.click();
+			expect((view as any).model.filterStatus).toBe("new");
+			expect((view as any).model.filterScanner).toBeNull();
+			expect((view as any).model.filterSeverity).toBeNull();
+			expect((view as any).model.filterClassification).toBeNull();
+			expect(renderIssueListMock).toHaveBeenLastCalledWith(
+				expect.any(FakeElement),
+				expect.objectContaining({ issues: [newError, newCandidate, newUnverified] }),
+			);
+		}
 
-		renderSummaryMock.mock.lastCall?.[2].onReviewNewFindings();
-
+		const clear = findByText(container, "Clear filters");
+		expect(clear).toBeDefined();
+		clear?.click();
 		expect((view as any).model.filterStatus).toBeNull();
-		expect((view as any).model.filterClassification).toBeNull();
 		expect(renderIssueListMock).toHaveBeenLastCalledWith(
 			expect.any(FakeElement),
-			expect.objectContaining({ issues: [newError, persisting, newCandidate] }),
+			expect.objectContaining({ issues: [newError, persisting, newCandidate, newUnverified] }),
 		);
 	});
 
