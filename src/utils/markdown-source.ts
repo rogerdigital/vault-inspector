@@ -43,8 +43,11 @@ function escaped(content: string, start: number): boolean {
 	return slashes % 2 === 1;
 }
 
-export function markdownLinks(content: string): MarkdownSourceLink[] {
+/** Parse once for consumers that need multiple source-derived metadata fields. */
+export function parseMarkdownSource(content: string) {
 	const links: MarkdownSourceLink[] = [];
+	const ranges: SourceRange[] = [];
+	const ids: string[] = [];
 	visit(parseBody(content), (node) => {
 		if (node.type !== "link" && node.type !== "image") return;
 		const range = rangeOf(node);
@@ -53,26 +56,13 @@ export function markdownLinks(content: string): MarkdownSourceLink[] {
 		// Autolinks and reference syntax are not supported fix kinds.
 		if (!original.startsWith(node.type === "image" ? "![" : "[") || !original.endsWith(")")) return;
 		links.push({ ...range, kind: node.type, original, destination: node.url });
-	}, () => {});
-	return links;
-}
-
-export function wikiLinkRanges(content: string): SourceRange[] {
-	const ranges: SourceRange[] = [];
-	visit(parseBody(content), () => {}, (range) => {
+	}, (range) => {
 		const text = content.slice(range.start, range.end);
 		for (const match of text.matchAll(/!?\[\[[^[\]\r\n]+\]\]/g)) {
 			const start = range.start + match.index;
 			if (escaped(content, start) || content[start - 1] === "!") continue;
 			ranges.push({ start, end: start + match[0].length });
 		}
-	});
-	return ranges;
-}
-
-export function blockIds(content: string): string[] {
-	const ids: string[] = [];
-	visit(parseBody(content), () => {}, (range) => {
 		for (const match of content.slice(range.start, range.end).matchAll(/\^([A-Za-z0-9-]+)/g)) {
 			const start = range.start + match.index;
 			if (escaped(content, start)) continue;
@@ -85,5 +75,17 @@ export function blockIds(content: string): string[] {
 			ids.push(match[1]);
 		}
 	});
-	return ids;
+	return { links, wikiRanges: ranges, blockIds: ids };
+}
+
+export function markdownLinks(content: string): MarkdownSourceLink[] {
+	return parseMarkdownSource(content).links;
+}
+
+export function wikiLinkRanges(content: string): SourceRange[] {
+	return parseMarkdownSource(content).wikiRanges;
+}
+
+export function blockIds(content: string): string[] {
+	return parseMarkdownSource(content).blockIds;
 }

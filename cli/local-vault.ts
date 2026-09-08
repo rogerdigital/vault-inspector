@@ -3,7 +3,7 @@ import { basename, extname, join, posix, relative, sep } from "node:path";
 import type { App, MetadataCache, TFile, Vault } from "obsidian";
 import { extractBareUrls } from "../src/scanner/scanners/external-links";
 import type { LinkReference } from "../src/scanner/link-reference";
-import { blockIds } from "../src/utils/markdown-source";
+import { parseMarkdownSource } from "../src/utils/markdown-source";
 
 type LocalFile = TFile & {
 	path: string;
@@ -153,6 +153,7 @@ async function collectFiles(vaultPath: string): Promise<LocalFile[]> {
 
 function parseMarkdownMetadata(content: string): LocalMetadata {
 	const frontmatter = parseFrontmatter(content);
+	const source = parseMarkdownSource(content);
 	const body = stripIgnoredMarkdownRegions(stripFrontmatter(content));
 	const links: LinkCacheEntry[] = [];
 	const embeds: LinkCacheEntry[] = [];
@@ -166,15 +167,13 @@ function parseMarkdownMetadata(content: string): LocalMetadata {
 		else links.push(entry);
 	}
 
-	for (const match of body.matchAll(/(!?)\[[^\]]*]\(\s*(?:<([^>]+)>|([^)]+))\)/g)) {
-		const target = match[2] ?? parseMarkdownDestination(match[3]);
-		if (!target) continue;
+	for (const link of source.links) {
 		const entry = {
-			link: target,
-			original: match[0],
+			link: link.destination,
+			original: link.original,
 			sourceRelative: true,
 		};
-		if (match[1] === "!") embeds.push(entry);
+		if (link.kind === "image") embeds.push(entry);
 		else links.push(entry);
 	}
 
@@ -196,7 +195,7 @@ function parseMarkdownMetadata(content: string): LocalMetadata {
 		embeds,
 		frontmatterLinks,
 		headings,
-		blocks: Object.fromEntries(blockIds(content).map((id) => [id, { id }])),
+		blocks: Object.fromEntries(source.blockIds.map((id) => [id, { id }])),
 		tags,
 		frontmatter,
 	};
@@ -318,14 +317,6 @@ function resolveVaultPath(
 
 function hasUriScheme(text: string): boolean {
 	return /^[a-z][a-z\d+.-]*:/i.test(text);
-}
-
-function parseMarkdownDestination(rawDestination: string | undefined): string | null {
-	if (!rawDestination) return null;
-	const match = /^(\S+?)(?:\s+(?:"[^"]*"|'[^']*'|\([^)]*\)))?\s*$/.exec(
-		rawDestination,
-	);
-	return match?.[1] ?? null;
 }
 
 function splitFrontmatter(content: string): {
