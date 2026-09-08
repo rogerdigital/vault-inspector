@@ -8,11 +8,11 @@
 
 **Baseline:** `main` at `f1fa6502b9d50c2e848ebd6aed0230910497daa7`。PR #166 已合并；当前产品版本 0.8.0。基线完整门禁通过：56 个测试文件、780 项测试、8 个 npm 打包文件。
 
-**Status:** 仅计划；下列执行项均未实施。本计划不授权自动发布版本或操作真实库中的内容。
+**Status:** 实施中，进度与验证见第 18 节。本轮不自动发布版本；桌面验证仅使用隔离测试内容。
 
 ## 1. 完整问题清单与提交映射
 
-编号沿用审查的逻辑顺序。10 类问题展开为 11 个修复提交；最后 1 个文档与整体验收提交，总计 12 个实现提交。计划文档自身如需提交，单独使用 `docs: add audit bugfix implementation plan`，不计入实现提交。
+编号沿用审查的逻辑顺序。10 类问题展开为 11 个修复提交；实际 Node 18 验收新增 C12a 兼容性修复，集成审查新增 C12b frontmatter 边界修复，最后是 C12 文档提交，共 14 个执行提交。计划文档自身使用独立的 `docs: add audit bugfix implementation plan`，不计入执行提交。
 
 | 问题 | 优先级 | 明确覆盖的根因/场景 | 提交 |
 |---|---|---|---|
@@ -31,12 +31,12 @@
 
 ## 2. 修复顺序与边界
 
-按 C01 → C02 → C03 → C04 → C05 → C06 → C07 → C08 → C09 → C10 → C11 → C12 顺序集成。
+按 C01 → C02 → C03 → C04 → C05 → C06 → C07 → C08 → C09 → C10 → C11 → C12a → C12b → C12 顺序集成。
 
 - 第一阶段 C01–C04：文件操作安全与插件链接正确性。C02 新建解析模块，C03 的 CLI 块提取、C07 的 Markdown 提取可复用它。
 - 第二阶段 C05–C09：CLI 退出码、路径和 YAML；外链仍保持独立 scanner commit。
 - 第三阶段 C10–C11：摘要和路径展示。两个展示提交不掺入 scanner 修改。
-- 第四阶段 C12：全问题复现、包验证、真实 Obsidian 验收及文档收尾。
+- 第四阶段 C12a/C12b/C12：补齐实际发现的 Node 18 兼容性问题，完成全问题复现、包验证、真实 Obsidian 验收及文档收尾。
 - 测试设计可以并行，但修改 `cli/local-vault.ts` 的 C03/C06/C07/C09 必须串行集成，禁止多人同时重写该文件。
 - 不做大规模架构重构，不增加扫描器、设置模式、修复命令或网络默认开关。
 - 不更改公开 `Issue` / CLI JSON 字段类型；尤其不把 `evidence.paths` 从字符串改为数组。
@@ -73,7 +73,7 @@ npm run lint && npm run lint:obsidian-warnings && npm run build && npm test && n
 
 预期全部退出 0；`npm pack --dry-run` 仍为既定 8 个文件。测试数量会增加，不能以“仍为 780”作为验收标准。缓存不可写时可用独立临时 npm cache；loopback 测试因权限失败时须在允许本地监听的环境重跑，不得删测试或禁用规则。
 
-所有提交 conventional commits，英文、描述实际修改。不得 `eslint-disable obsidianmd/*`。工作分支建议 `fix/audit-correctness`；当前请求只产生计划，不创建实现分支。
+所有提交 conventional commits，英文、描述实际修改。不得 `eslint-disable obsidianmd/*`。实现分支为 `fix/audit-correctness`。
 
 ## 4. C01 — 修复引用索引并建立新的比较基线
 
@@ -258,7 +258,7 @@ function decodeDestinationPart(value: string): string {
 }
 ```
 
-在 adapter 内用源文件 + 原始 destination 保存解析结果，路径 lookup 使用解码后的 path，片段校验使用解码后的 fragment；不要把已解码包含 `#` 的文件名重新拼回字符串再 `split('#')`。如当前 scanner API 需要通过字符串传递，增加内部结构化解析/lookup helper，使 path/subpath 只拆一次，不修改公开 JSON schema。
+在每条 metadata reference 上保存独立的 `{ path, fragment, resolvedPath }`，不能只用源文件 + 原始字符串作共享 lookup：同一源文件的 Markdown 与 Wiki 可以具有相同原始文本但不同语义。路径 lookup 使用解码后的 path，片段校验使用解码后的 fragment；不要把已解码包含 `#` 的文件名重新拼回字符串再 `split('#')`。scanner 和引用索引优先使用内部结果（包括权威 null），native metadata 没有内部字段时保持原有解析分支。仅当片段解码改变语义时给 fingerprint 增加内部判别信息，保留公开 evidence/original 和其它输入的既有身份。
 
 **回归：** `My%20Note.md`、百分号编码中文路径、`./`/`../`、路径内 `%23`/`%25`、编码标题、angle destination；合法 Wiki `[[My%20Note]]` 应仍能指向字面 `%20` 文件名；坏 `%` 序列不抛异常、不崩溃，按现有未解析链接处理。JSON evidence/original 的兼容性有明确断言。
 
@@ -414,12 +414,12 @@ npm test -- src/tests/render-issue-actions.test.ts src/tests/markdown-export.tes
 
 **Files:** `README.md`、`docs/cli.md`、本计划；集成测试若有缺口必须归回对应修复提交，不将多扫描器代码混进文档提交。
 
-- [ ] README/CLI reference 准确说明块/同页链接、新增发现 CTA、旧 baseline 需要重新生成、YAML 错误退出 2。
-- [ ] 修正文档中 CLI HTTP transport 的失真说明：以 `cli/public-http.ts` 的实际 HEAD、405/501 Range GET fallback 为准；不声称 CLI 使用 runtime fetch。此为审查附带的低优先级文档问题，也在本轮收尾覆盖。
-- [ ] 运行完整门禁以及 `npm run test:coverage`，阈值不降低。
-- [ ] 将 `npm pack` 生成的包安装到临时目录，以包内命令测试 C05/C06/C07/C09 的 fixture；不只运行 TS 测试。确认 cli.js 不要求额外未打包依赖、Node 18 可启动。
-- [ ] 检查 `main.js` 的外部依赖仍在既定 Obsidian/Electron 边界；两种 parser 均不以运行时网络下载方式加载。
-- [ ] 记录最终构建大小和性能。至少用一份普通笔记、一份大量链接笔记确认不会对每次命中重复整篇解析；只读扫描 benchmark 对比 baseline，不用单次噪声宣称提升。
+- [x] README/CLI reference 准确说明块/同页链接、新增发现 CTA、旧 baseline 需要重新生成、YAML 错误退出 2。
+- [x] 修正文档中 CLI HTTP transport 的失真说明：以 `cli/public-http.ts` 的实际 HEAD、405/501 Range GET fallback 为准；不声称 CLI 使用 runtime fetch。此为审查附带的低优先级文档问题，也在本轮收尾覆盖。
+- [x] 运行完整门禁以及 `npm run test:coverage`，阈值不降低。
+- [x] 将 `npm pack` 生成的包安装到临时目录，以包内命令测试 C05/C06/C07/C09 的 fixture；不只运行 TS 测试。确认 cli.js 不要求额外未打包依赖、Node 18 可启动。
+- [x] 检查 `main.js` 的外部依赖仍在既定 Obsidian/Electron 边界；两种 parser 均不以运行时网络下载方式加载。
+- [x] 记录最终构建大小和性能。至少用一份普通笔记、一份大量链接笔记确认不会对每次命中重复整篇解析；只读扫描 benchmark 对比 baseline，不用单次噪声宣称提升。
 - [ ] 使用 `/Users/Roger/my-vault` 下隔离测试目录进行以下验收；仅修改明确创建的 fixture，真实用户笔记不执行修复。必要文件操作遵守宿主权限。
 
 ### Obsidian 手工验收表
@@ -437,12 +437,12 @@ npm test -- src/tests/render-issue-actions.test.ts src/tests/markdown-export.tes
 
 ### 完成标准
 
-- [ ] B01–B10 全部有持久回归测试；B07a/B07b、B08a/B08b 均单独覆盖。
-- [ ] 两个 P1 有执行链验证，而不仅是函数返回值测试。
-- [ ] CLI 与 desktop 的 resolver 差异有契约测试，测试替身不再自动剥片段掩盖问题。
-- [ ] 修复后 12 个提交各自范围清晰，所有 scanner 修改独立于报告 UI commit。
-- [ ] 工作区干净；PR 的确切 head 已验证；CI verify 通过。
-- [ ] 未完成的手工验收明确标为未完成，不把单元测试通过当作完整上线验收。
+- [x] B01–B10 全部有持久回归测试；B07a/B07b、B08a/B08b 均单独覆盖。
+- [x] 两个 P1 有执行链验证，而不仅是函数返回值测试。
+- [x] CLI 与 desktop 的 resolver 差异有契约测试，测试替身不再自动剥片段掩盖问题。
+- [x] 14 个执行提交各自范围清晰，所有 scanner 修改独立于报告 UI commit。
+- [x] 本地执行提交完成；提交后核对工作区干净。远端 PR/CI 不属于本轮授权范围，推送后另行验证 exact head。
+- [x] 未完成的手工验收明确标为未完成，不把单元测试通过当作完整上线验收。
 
 ## 16. 提交一览
 
@@ -459,9 +459,11 @@ npm test -- src/tests/render-issue-actions.test.ts src/tests/markdown-export.tes
 | C09 | `fix: parse CLI frontmatter with YAML semantics` | B08a + B08b |
 | C10 | `fix: align new finding summaries and review filters` | B09 |
 | C11 | `fix: preserve comma-containing paths in duplicate reports` | B10 |
+| C12a | `fix: provide Web Crypto for Node 18 CLI scans` | 实际最低版本运行时验收发现的兼容性问题 |
+| C12b | `fix: honor the first frontmatter closing delimiter` | CLI YAML splitting and shared source masking use the same first closing delimiter |
 | C12 | `docs: document corrected scan and CLI behavior` | 文档、覆盖清单、验收记录 |
 
-默认一个修复分支、12 个可独立审查的实现提交，CI 全绿后开 PR。若需要优先交付安全修复，可在 C04 后先开第一组 PR；剩余工作仍须完成 C05–C12，不得因为首组发布而缩减范围。实际提交/推送/PR/发布按后续明确执行请求处理。
+一个修复分支承载 14 个可独立审查的执行提交。本轮完成本地实现、提交与验证；推送、PR 和发布单独处理。不得因为先完成安全修复而缩减后续问题范围。
 
 ## 17. 解析依赖依据
 
@@ -476,19 +478,62 @@ Clarifications before implementation:
 
 - C02 source-range parsing must prove preservation with executable fixtures before replacing the executor's existing protection logic. Unsupported syntax must fail closed, never fall back to global replacement.
 - C06 keeps raw link identity and original source intact. Decoding belongs to the CLI adapter; decoded file paths containing `#` must not be reparsed as fragments. Internal destination metadata may be added without changing public report fields.
+- C06 implementation detail: store `{ path, fragment, resolvedPath }` per metadata reference, with authoritative null for unresolved targets. Split literal fragment before decoding Markdown components once; never decode Wiki paths. Consumers must distinguish references with identical raw text but different destinations. Remove the ambiguous shared raw-string destination lookup, preserving native metadata fallback.
 - C09 invalid YAML is a setup failure with exit 2 and a sanitized filename/position message. This behavior must be explicitly tested and documented.
+
+Integration follow-ups: explicitly assert cross-note block reference kinds and duplicate impact counts (C01 reviewer suggested stronger direct coverage); rerun the 400-note/150-attachment benchmark against the recorded baseline in `/private/tmp/vi-audit-baseline-benchmark.json`. Desktop acceptance uses the authorized my-vault with an isolated fixture directory; original plugin assets and preferences were backed up before testing.
 
 | Task | State | Verification |
 |---|---|---|
-| C01 | pending | |
-| C02 | pending | |
-| C03 | pending | |
-| C04 | pending | |
-| C05 | pending | |
-| C06 | pending | |
-| C07 | pending | |
-| C08 | pending | |
-| C09 | pending | |
-| C10 | pending | |
-| C11 | pending | |
-| C12 | pending | |
+| C01 | complete — `79945fd` | RED reproduced; full gate passed, 788 tests, 8 package files; independent review passed. Desktop verification remains part of C12. |
+| C02 | complete — `4096055` | RED reproduced; full gate passed, 806 tests, 8 package files; independent review and 37 focused tests passed. main.js +136,579 bytes, only external runtime import obsidian; 273k-character parsing median 208ms. |
+| C03 | complete — `7a03fa0` | 9 regressions RED/GREEN; full gate 815 tests, 8 package files. 400-note benchmark: load 122ms, scan 67ms, same 246 issues; C07 subsequently shared AST parsing. |
+| C04 | complete — `5bd8a3b` | 7 initial failures reproduced, 13 focused cases green; full gate 828 tests, 8 package files. |
+| C05 | complete — `f818f90` | Explicit-any RED failures fixed; six-case priority matrix plus incompatible baseline test passed; full gate 834 tests, package boundary unchanged. |
+| C06 | complete — `bd444d9` | 23 regressions; raw destination collisions, extensionless-file cache access, and decoded-fragment fingerprint collision reproduced and fixed. Full gate 857 tests, 8 package files. Independent review approved after verifying baseline new=1/persisting=1 and unchanged identities for unaffected inputs. |
+| C07 | complete — `344b36f` | 8 RED failures fixed; full gate 866 tests, 8 package files. Shared parser, CLI linked-image/orphan integration passed. 400-note benchmark: load 111ms, scan 53ms, same 246 issues. |
+| C08 | complete — `5f1c7ed` | 6 RED regressions fixed; full gate 875 tests, 8 package files; all network behavior mocked. |
+| C09 | complete — `5c1035` | 8 RED regressions fixed; full gate 888 tests, 8 package files. js-yaml lock remains 4.2.0; actual Node 24 CLI package-audit script passes all 7 checks, including sanitized YAML setup failure. |
+| C10 | complete — `59d6d55` | 6 RED failures fixed; full gate 891 tests. Canonical active collection excludes ignoredIssues; real button wiring verifies repeat/clear behavior. Automatic notification helper unchanged. |
+| C11 | complete — `c465480` | 4 real CLI→UI/Markdown RED regressions fixed; full gate 895 tests, 8 package files. Comma/space/Chinese-comma paths, clicks, metadata identity, and duplicate inbound impact directly verified. |
+| C12a | complete — `11eb75c` | Actual absent-crypto subprocess RED reproduced; full gate 897 tests; actual Node 18.20.8 package-audit 7 checks pass, existing crypto retained. Independent review approved. |
+| C12b | complete — `9827ff9` | Four RED cases fixed with shared first-closing-delimiter boundaries. Full gate and final coverage pass: 914 tests / 60 files. Independent review reproduced LF/BOM/CRLF and body horizontal-rule cases against the actual CLI and approved. |
+| C12 | code/package validation complete; desktop cleanup blocked | Documentation updated; full lint/warning-lint/build/test/package gate passes (914 tests). Installed package passes seven scenario checks on Node 18.20.8 and Node 24.16.0. Desktop results and remaining boundaries below. |
+
+## 19. Additional runtime regression found during package validation
+
+**C12a — `fix: provide Web Crypto for Node 18 CLI scans`**
+
+A real Node 18.20.8 runtime, within the declared supported range, starts the command but actual scans fail with `crypto is not defined`. The baseline CLI entrypoint also lacks initialization, while shared browser-safe hashing uses `crypto.subtle` for scan profiles and duplicate checks.
+
+- Initialize missing global Web Crypto from `node:crypto` at the dedicated CLI entrypoint before calling `runCli`; preserve an existing implementation.
+- Keep Node imports out of plugin sources and preserve shared hashing behavior.
+- Add a real CLI subprocess regression with Web Crypto absent, then rerun the complete commit gate.
+- Verify the packed and installed CLI on actual Node 18.20.8, without experimental flags.
+- Commit this correction separately after C11 and before C12 documentation. This adds one focused implementation commit to the original twelve-step plan.
+
+## 20. Final acceptance evidence
+
+- Final code: `9827ff9`; 914 tests across 60 files, unchanged coverage thresholds. Coverage: statements 82.69%, branches 79.60%, functions 79.30%, lines 84.36%.
+- Packed and locally installed package: 8 files, 164,688 bytes compressed / 784,489 bytes unpacked. `main.js` 352,137 bytes; `cli.js` 395,702 bytes. Plugin bundle external import remains only `obsidian`; Markdown/YAML parsers are bundled.
+- Installed CLI: actual Node 18.20.8 and Node 24.16.0 pass encoded-space/Wiki collision, balanced parentheses, encoded-hash heading, block/same-note links, fail-on priority, YAML equivalence and sanitized setup-error checks.
+- Serial 400-note benchmark: same 552 files and 246 issues as baseline; load median 117ms versus 56ms baseline, scan median 54ms versus 75ms. Parsing adds load cost; this is not a performance improvement claim. A concurrent coverage run distorted timing and was excluded; retained serial scan samples are 63/54/51ms. Shared AST parsing avoids per-link full-note reparsing; C02 large-note parser measurement was 208ms median for 273k characters / 3,000 links.
+
+### Desktop observations (Obsidian 1.13.7)
+
+| Scenario | Actual result |
+|---|---|
+| Upgrade snapshot | Scanner behavior changed / comparison restarted shown; no false resolved items. |
+| PDF page embed, existing block and same-note heading | Isolated source references resolve; referenced PDF is not orphaned; missing heading and block have specific diagnostics. |
+| Source-preserving fix | Actual confirm/apply flow changes only the real Markdown link; indented code and escaped copies remain byte-for-byte intact. Disk assertions passed. |
+| New findings | Four new findings across warning/info and confirmed/candidate/unverifiable classes; CTA shows exactly four. Repeated CTA remains in New mode; Clear filters exits. Prior-filter clearing is additionally covered by persistent wiring tests. |
+| Comma duplicate paths | Two intact paths shown; clicking `a,one.svg` opens that exact image. CLI-to-Markdown export paths are covered by persistent tests; desktop export command not yet manually exercised. |
+| Duplicate safety | Malformed Canvas disables duplicate trash fixes. After coverage restoration, explicit keep selection is required; only disposable `b.svg` is trashed and the report shows Fixed 1. Batch-exclusion and preflight race branches remain automated-test coverage rather than manual timing tests. |
+| Resolved badge | Dark and light default themes, narrow right sidebar: green outline and readable RESOLVED text; no solid empty green bar. |
+
+### Remaining runtime observations and acceptance boundaries
+
+- The immediate verification scan after a successful source edit displayed Still present 1 once; a later manual scan correctly marked it resolved. Disk content was correct. This indicates a native metadata-refresh timing boundary and is recorded for follow-up; do not claim immediate desktop verification is always synchronized.
+- Native Obsidian normalizes an unresolved Markdown `.md` destination in its unresolved-link map; the original `.md` fixture was reported without an automatic fix action. An extensionless equivalent exposed the fix action and was used for source-preservation acceptance. This pre-existing conservative fallback was not expanded by this plan.
+- Desktop export and manual preflight-race/batch-exclusion walkthroughs are not claimed complete; their persistent integration tests pass. No PR or release has been created in this execution.
+- Test environment restoration: pending manual unlock after the host automatically locked during restoration. Original assets/preferences backup is `/private/tmp/vi-audit-ui-backup`; isolated fixture directory is `99-Vault Inspector Audit 2026-09-08`.
