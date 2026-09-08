@@ -29,6 +29,37 @@ describe("runCli", () => {
 		vi.restoreAllMocks();
 	});
 
+	it.each([
+		["absent", "delete globalThis.crypto;\n"],
+		["already available", "Object.defineProperty(globalThis, 'crypto', { value: require('node:crypto').webcrypto, configurable: false });\n"],
+	])("hashes scan profiles and duplicate files when global Web Crypto is %s", async (_state, preload) => {
+		await withVault({ "A.md": "Same content", "B.md": "Same content" }, async (vaultPath) => {
+			const preloadDir = await mkdtemp(join(tmpdir(), "vault-inspector-preload-"));
+			try {
+				const preloadPath = join(preloadDir, "preload.cjs");
+				await writeFile(preloadPath, preload, "utf8");
+				const result = spawnSync(process.execPath, [
+					"--require", preloadPath, join(process.cwd(), "cli.js"), vaultPath,
+					"--format", "json", "--scanner", "duplicate-files", "--fail-on", "none",
+				], { encoding: "utf8" });
+				expect(result.stderr).toBe("");
+				expect(result.status).toBe(0);
+				const payload = JSON.parse(result.stdout);
+				expect(payload.comparison.scanProfile).toMatch(/^[a-f0-9]{64}$/);
+				expect(payload.issues).toEqual([
+					expect.objectContaining({
+						scannerId: "duplicate-files",
+						severity: "warning",
+						relatedPaths: ["A.md", "B.md"],
+						evidence: expect.objectContaining({ hashState: "hash-confirmed" }),
+					}),
+				]);
+			} finally {
+				await rm(preloadDir, { recursive: true, force: true });
+			}
+		});
+	});
+
 	it("treats equivalent YAML syntax equally through the actual CLI bundle", async () => {
 		await withVault({
 			"A.md": "---\nflag: true # comment\ntags:\n- alpha\n- beta\n---\nBody",
