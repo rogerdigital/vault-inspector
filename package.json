@@ -44,11 +44,13 @@
 		"url": "git+https://github.com/rogerdigital/vault-inspector.git"
 	},
 	"devDependencies": {
+		"@types/js-yaml": "^4.0.9",
 		"@types/node": "^22.0.0",
 		"@typescript-eslint/parser": "^8.59.3",
 		"@vitest/coverage-v8": "^4.1.9",
 		"esbuild": "^0.28.1",
 		"eslint-plugin-obsidianmd": "^0.4.1",
+		"js-yaml": "^4.2.0",
 		"mdast-util-from-markdown": "^2.0.3",
 		"obsidian": "^1.13.1",
 		"typescript": "^5.8.0",

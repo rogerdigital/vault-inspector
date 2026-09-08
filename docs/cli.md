@@ -6,6 +6,13 @@ as the Obsidian plugin in a separate runtime: the plugin uses Obsidian
 metadata and UI actions, while the CLI uses a local filesystem adapter for
 terminal, CI, and automation workflows.
 
+Frontmatter is parsed as YAML using core scalar types; dates remain strings.
+The top level must be a mapping (empty or null headers become empty mappings).
+Invalid YAML, duplicate keys, unsupported tags, or a non-mapping header abort
+setup with exit code `2`, even with `--fail-on none`. No report is written to
+stdout. Errors identify the vault-relative note and line/column without
+printing property values. Correct the indicated header and rerun the scan.
+
 ## Installation
 
 Run it without a global install:

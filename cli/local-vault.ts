@@ -1,5 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, extname, join, posix, relative, sep } from "node:path";
+import { CORE_SCHEMA, load, YAMLException } from "js-yaml";
 import type { App, MetadataCache, TFile, Vault } from "obsidian";
 import { extractBareUrls } from "../src/scanner/scanners/external-links";
 import type { LinkReference } from "../src/scanner/link-reference";
@@ -50,7 +51,7 @@ export async function createLocalApp(vaultPath: string): Promise<App> {
 
 	for (const file of files.filter((item) => item.path.endsWith(".md"))) {
 		const content = await readFile(join(vaultPath, file.path), "utf8");
-		const metadata = parseMarkdownMetadata(content);
+		const metadata = parseMarkdownMetadata(content, file.path);
 		metadataByPath.set(file.path, metadata);
 
 		for (const link of [...metadata.links ?? [], ...metadata.embeds ?? [], ...metadata.frontmatterLinks ?? []]) {
@@ -151,8 +152,8 @@ async function collectFiles(vaultPath: string): Promise<LocalFile[]> {
 	}
 }
 
-function parseMarkdownMetadata(content: string): LocalMetadata {
-	const frontmatter = parseFrontmatter(content);
+function parseMarkdownMetadata(content: string, filePath: string): LocalMetadata {
+	const frontmatter = parseFrontmatter(content, filePath);
 	const source = parseMarkdownSource(content);
 	const body = stripIgnoredMarkdownRegions(stripFrontmatter(content));
 	const links: LinkCacheEntry[] = [];
@@ -211,52 +212,24 @@ function extractFrontmatterWikiLinks(content: string): LinkCacheEntry[] {
 	}));
 }
 
-function parseFrontmatter(content: string): Record<string, unknown> | undefined {
+function parseFrontmatter(content: string, filePath: string): Record<string, unknown> | undefined {
 	const section = splitFrontmatter(content);
 	if (section.frontmatter === undefined) return undefined;
 
-	const parsed: Record<string, unknown> = {};
-	const lines = section.frontmatter.split(/\r?\n/);
-	for (let index = 0; index < lines.length; index++) {
-		const line = lines[index];
-		const separator = line.indexOf(":");
-		if (separator <= 0) continue;
-		const key = line.slice(0, separator).trim();
-		const value = line.slice(separator + 1).trim();
-		if (value === "") {
-			const items: unknown[] = [];
-			while (index + 1 < lines.length) {
-				const itemMatch = /^\s+-\s+(.+?)\s*$/.exec(lines[index + 1]);
-				if (!itemMatch) break;
-				items.push(parseFrontmatterValue(itemMatch[1]));
-				index++;
-			}
-			parsed[key] = items.length > 0 ? items : "";
-			continue;
-		}
-		parsed[key] = parseFrontmatterValue(value);
+	let value: unknown;
+	try {
+		value = load(section.frontmatter, { schema: CORE_SCHEMA });
+	} catch (error) {
+		// Parser messages/reasons/snippets can contain private property values.
+		// YAML marks are zero-based; frontmatter starts on the note's second line.
+		const mark = error instanceof YAMLException ? error.mark : undefined;
+		throw new Error(`${filePath}:${(mark?.line ?? 0) + 2}:${(mark?.column ?? 0) + 1}: Invalid frontmatter YAML`);
 	}
-	return parsed;
-}
-
-function parseFrontmatterValue(value: string): unknown {
-	if (value === "") return "";
-	if (value === "true") return true;
-	if (value === "false") return false;
-	if (value === "null") return null;
-	if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value);
-	if (value.startsWith("[") && value.endsWith("]")) {
-		return value
-			.slice(1, -1)
-			.split(",")
-			.map((item) => stripQuotes(item.trim()))
-			.filter(Boolean);
+	if (value === undefined || value === null) return {};
+	if (typeof value !== "object" || Array.isArray(value)) {
+		throw new Error(`${filePath}:2:1: Invalid frontmatter: expected a mapping`);
 	}
-	return stripQuotes(value);
-}
-
-function stripQuotes(value: string): string {
-	return value.replace(/^["']|["']$/g, "");
+	return value as Record<string, unknown>;
 }
 
 function stripFrontmatter(content: string): string {
@@ -323,7 +296,7 @@ function splitFrontmatter(content: string): {
 	frontmatter?: string;
 	body: string;
 } {
-	const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(content);
+	const match = /^\uFEFF?---\r?\n((?:[\s\S]*?\r?\n)?)---(?:\r?\n|$)/.exec(content);
 	if (!match) return { body: content };
 	return {
 		frontmatter: match[1],

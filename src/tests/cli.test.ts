@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
@@ -27,6 +27,38 @@ async function withVault(
 describe("runCli", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
+	});
+
+	it("treats equivalent YAML syntax equally through the actual CLI bundle", async () => {
+		await withVault({
+			"A.md": "---\nflag: true # comment\ntags:\n- alpha\n- beta\n---\nBody",
+			"B.md": "---\nflag: true\ntags: [alpha, beta]\n---\nBody",
+		}, async (vaultPath) => {
+			const result = spawnSync(process.execPath, [join(process.cwd(), "cli.js"), vaultPath,
+				"--format", "json", "--scanner", "frontmatter-types"], { encoding: "utf8" });
+			expect(result.status).toBe(0);
+			expect(result.stderr).toBe("");
+			expect(JSON.parse(result.stdout).issues).toEqual([]);
+		});
+	});
+
+	it.each([
+		"key: [SENSITIVE_SENTINEL", "key: first\nkey: SENSITIVE_SENTINEL",
+		"key: !SENSITIVE_SENTINEL value", "- SENSITIVE_SENTINEL", "SENSITIVE_SENTINEL",
+	])("rejects invalid/non-mapping YAML without leaking note content: %j", async (yaml) => {
+		await withVault({ "Note.md": `---\n${yaml}\n---\nBody` }, async (vaultPath) => {
+			const args = [vaultPath, "--format", "json", "--scanner", "frontmatter-types", "--fail-on", "none"];
+			const result = await runCli(args);
+			expect(result.exitCode).toBe(2);
+			expect(result.stdout).toBe("");
+			expect(result.stderr).toMatch(/Note\.md:\d+:\d+: Invalid frontmatter/);
+			expect(result.stderr).not.toContain("SENSITIVE_SENTINEL");
+			if (yaml.startsWith("key: first")) expect(result.stderr).toContain("Note.md:3:1:");
+			const actual = spawnSync(process.execPath, [join(process.cwd(), "cli.js"), ...args], { encoding: "utf8" });
+			expect(actual.status).toBe(2);
+			expect(actual.stdout).toBe("");
+			expect(actual.stderr).toBe(result.stderr);
+		});
 	});
 
 	it("preserves valid block links in the actual CLI bundle", async () => {
