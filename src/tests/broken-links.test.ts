@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { brokenLinksScanner } from "../scanner/scanners/broken-links";
 import type { ScanContext } from "../scanner/ScanContext";
 import { makeScanContext } from "./helpers/scan-context";
@@ -827,6 +827,58 @@ describe("brokenLinksScanner", () => {
 	});
 });
 
+
+describe("same-note fragments", () => {
+	it.each([
+		["[[#Missing]]", "#Missing", "#Missing", "heading"],
+		["[[#Missing|Alias]]", "#Missing", "Alias", "heading"],
+		["[jump](#Missing)", "#Missing", "jump", "markdown-link"],
+		["![[#Missing]]", "#Missing", "", "embed"],
+		["[[#^missing|Block alias]]", "#^missing", "Block alias", "heading"],
+		["![block](#^missing)", "#^missing", "", "embed"],
+	])("reports %s against the source note with exact fix metadata", async (original, link, replacement, linkKind) => {
+		const ctx = makeScanContext({
+			files: [{ path: "nested/Source.md" }],
+			metadataByPath: {
+				"nested/Source.md": {
+					[original.startsWith("!") ? "embeds" : "links"]: [{ original, link }],
+				} as any,
+			},
+			overrides: { ignoreUnresolvedNoteLinks: true },
+		});
+		const resolver = vi.fn(() => null);
+		ctx.metadataCache.getFirstLinkpathDest = resolver;
+		const issues = await brokenLinksScanner.scan(ctx);
+		expect(issues).toHaveLength(1);
+		expect(issues[0]).toMatchObject({
+			severity: "warning",
+			message: `${link.startsWith("#^") ? "Block" : "Heading"} "${link}" not found in nested/Source.md`,
+			primaryPath: "nested/Source.md",
+			relatedPaths: ["nested/Source.md"],
+			evidence: { link, target: "nested/Source.md", linkKind },
+			fixAction: { original, replacement, targetPaths: ["nested/Source.md"] },
+		});
+		expect(resolver).not.toHaveBeenCalled();
+	});
+
+	it.each(["#Existing", "#^VALID-block", "#", "", "https://example.com/#Missing", "obsidian://open#Missing"])("leaves valid or excluded target %s alone", async (link) => {
+		const ctx = makeScanContext({
+			files: [{ path: "nested/Source.md" }],
+			metadataByPath: {
+				"nested/Source.md": {
+					links: [{ link, original: `[[${link}]]` }],
+					headings: [{ heading: "Existing" }],
+					blocks: { "valid-block": { id: "valid-block" } },
+				} as any,
+			},
+			unresolvedLinks: { "nested/Source.md": { [link]: 1 } },
+		});
+		const resolver = vi.fn(() => null);
+		ctx.metadataCache.getFirstLinkpathDest = resolver;
+		expect(await brokenLinksScanner.scan(ctx)).toEqual([]);
+		expect(resolver).not.toHaveBeenCalled();
+	});
+});
 
 describe("block references", () => {
 	it.each([

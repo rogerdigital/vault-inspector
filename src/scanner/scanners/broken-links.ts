@@ -127,8 +127,13 @@ function resolveLinkIssues(
 	const linkText = candidate.linkText;
 
 	const rawTarget = getLinkTarget(linkText);
+	const linkDestination = linkText.split("|")[0];
+	const headingPart = linkDestination.includes("#")
+		? linkDestination.split("#").slice(1).join("#")
+		: null;
+	const sameNote = rawTarget === "" && linkDestination.startsWith("#") && Boolean(headingPart);
 
-	if (!rawTarget || hasUriScheme(rawTarget)) return issues;
+	if ((!rawTarget && !sameNote) || hasUriScheme(rawTarget)) return issues;
 
 	// Attachment link (has a known non-md extension)
 	if (isAttachmentLink(rawTarget)) {
@@ -148,12 +153,7 @@ function resolveLinkIssues(
 	}
 
 	// Markdown or heading link
-	const linkDestination = linkText.split("|")[0];
-	const headingPart = linkDestination.includes("#")
-		? linkDestination.split("#").slice(1).join("#")
-		: null;
-
-	const resolvedPath = findMarkdownPath(ctx, rawTarget, sourcePath);
+	const resolvedPath = sameNote ? sourcePath : findMarkdownPath(ctx, rawTarget, sourcePath);
 
 	if (!resolvedPath) {
 		if (ctx.ignoreUnresolvedNoteLinks && candidate.ignorableUnresolvedNote) {

@@ -45,6 +45,32 @@ describe("runCli", () => {
 		});
 	});
 
+	it("validates same-note headings and blocks through the CLI", async () => {
+		await withVault({
+			"nested/Source.md": [
+				"# Existing", "Body ^valid-block", "[[#Existing]]", "[valid](#Existing)",
+				"[[#^valid-block]]", "[[#]]", "[external](https://example.com/#Missing)",
+				"[[#Missing|Alias]]", "[jump](#MissingMarkdown)", "![[#MissingEmbed]]",
+				"[[#^missing-block]]",
+			].join("\n\n"),
+		}, async (vaultPath) => {
+			const result = await runCli([
+				vaultPath, "--format", "json", "--scanner", "broken-links",
+				"--ignore-unresolved-note-links",
+			]);
+			expect(result.exitCode).toBe(1);
+			expect(result.stderr).toBe("");
+			const payload = JSON.parse(result.stdout);
+			expect(payload.issues).toHaveLength(4);
+			expect(payload.issues.map((issue: { message: string }) => issue.message).sort()).toEqual([
+				'Heading "#Missing" not found in nested/Source.md',
+				'Heading "#MissingMarkdown" not found in nested/Source.md',
+				'Heading "#MissingEmbed" not found in nested/Source.md',
+				'Block "#^missing-block" not found in nested/Source.md',
+			].sort());
+		});
+	});
+
 	it("shows the short command alias in usage output", async () => {
 		const result = await runCli([]);
 
@@ -1531,4 +1557,3 @@ describe("runCli", () => {
 		});
 	});
 });
-
