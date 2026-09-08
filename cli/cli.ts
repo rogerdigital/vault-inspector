@@ -112,7 +112,7 @@ type CliOptions = {
 	ignoredProperties?: string[];
 };
 
-type ParsedArgs = CliOptions & { configPath?: string };
+type ParsedArgs = CliOptions & { configPath?: string; failOnExplicit: boolean };
 
 type CliRuntime = {
 	writeStderr?: (text: string) => void;
@@ -248,6 +248,7 @@ function parseArgs(args: string[]): ParsedArgs | { error: string } {
 		ignoredFoldersByScanner: createEmptyIgnoredFoldersByScanner(),
 		ignoreUnresolvedNoteLinks: false,
 		failOn: "any",
+		failOnExplicit: false,
 		fix: false,
 		progress: false,
 	};
@@ -304,6 +305,7 @@ function parseArgs(args: string[]): ParsedArgs | { error: string } {
 			const value = args[++index];
 			if (!isFailOn(value)) return { error: usage(`Unsupported --fail-on value: ${value ?? ""}`) };
 			options.failOn = value;
+			options.failOnExplicit = true;
 		} else if (arg === "--progress") {
 			options.progress = true;
 		} else if (arg === "--fix") {
@@ -366,7 +368,7 @@ async function loadConfig(args: ParsedArgs): Promise<CliOptions | { error: strin
 				args.ignoreUnresolvedNoteLinks ||
 				(config.ignoreUnresolvedNoteLinks ?? false),
 			baselinePath: args.baselinePath ?? config.baselinePath,
-			failOn: args.failOn !== "any" ? args.failOn : config.failOn ?? args.failOn,
+			failOn: args.failOnExplicit ? args.failOn : config.failOn ?? args.failOn,
 			largeMarkdownBytes: args.largeMarkdownBytes ?? config.largeMarkdownBytes,
 			largeAttachmentBytes: args.largeAttachmentBytes ?? config.largeAttachmentBytes,
 			ignoredLargeMarkdownFrontmatterKeys:

@@ -542,6 +542,38 @@ describe("runCli", () => {
 			});
 		});
 
+	it.each([
+		{ configured: "none", explicit: "any", scanner: "broken-links", content: "[[missing]]", severity: "errors", exitCode: 1 },
+		{ configured: "error", explicit: "any", scanner: "empty-notes", content: "", severity: "warnings", exitCode: 1 },
+		{ configured: "none", explicit: undefined, scanner: "broken-links", content: "[[missing]]", severity: "errors", exitCode: 0 },
+		{ configured: "error", explicit: undefined, scanner: "empty-notes", content: "", severity: "warnings", exitCode: 0 },
+		{ configured: undefined, explicit: undefined, scanner: "empty-notes", content: "", severity: "warnings", exitCode: 1 },
+		{ configured: "any", explicit: "none", scanner: "broken-links", content: "[[missing]]", severity: "errors", exitCode: 0 },
+	])("resolves fail-on config $configured and explicit $explicit for $severity", async ({
+		configured, explicit, scanner, content, severity, exitCode,
+	}) => {
+		await withVault({ "note.md": content }, async (vaultPath) => {
+			const args = [vaultPath, "--scanner", scanner];
+			if (configured !== undefined) {
+				const configPath = join(vaultPath, "config.json");
+				await writeFile(configPath, JSON.stringify({ failOn: configured }), "utf8");
+				args.push("--config", configPath);
+			}
+			if (explicit !== undefined) args.push("--fail-on", explicit);
+
+			const result = await runCli(args);
+			expect(result.stderr).toBe("");
+			expect(JSON.parse(result.stdout).summary[severity]).toBe(1);
+			expect(result.exitCode).toBe(exitCode);
+			expect(result.stdout).not.toContain("failOnExplicit");
+
+			const defaultResult = await runCli([vaultPath, "--scanner", scanner]);
+			expect(JSON.parse(result.stdout).comparison.scanProfile).toBe(
+				JSON.parse(defaultResult.stdout).comparison.scanProfile,
+			);
+		});
+	});
+
 	it("uses fail-on to control exit status", async () => {
 		await withVault({ "empty.md": "" }, async (vaultPath) => {
 			const belowThreshold = await runCli([
