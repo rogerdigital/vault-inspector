@@ -49,6 +49,7 @@
 		"@vitest/coverage-v8": "^4.1.9",
 		"esbuild": "^0.28.1",
 		"eslint-plugin-obsidianmd": "^0.4.1",
+		"mdast-util-from-markdown": "^2.0.3",
 		"obsidian": "^1.13.1",
 		"typescript": "^5.8.0",
 		"vitest": "^4.1.9"
