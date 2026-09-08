@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Issue } from "../scanner/Issue";
 import type { CurrentFindingStatus } from "../scanner/result-diff";
 import { renderFindingEvidence } from "../report/render-evidence";
 import { renderIssueList } from "../report/render-issues";
+import { duplicatePathCases, scanDuplicatePaths } from "./helpers/duplicate-report";
 
 type ElementOptions = {
 	cls?: string;
@@ -206,6 +207,31 @@ describe("renderFindingEvidence", () => {
 });
 
 describe("renderIssueList finding metadata", () => {
+	beforeEach(() => vi.stubGlobal("window", { getSelection: () => null }));
+	afterEach(() => vi.unstubAllGlobals());
+
+	it.each(duplicatePathCases.map((paths) => [paths]))("preserves duplicate file tokens and click targets for %j", async (paths) => {
+		const issue = await scanDuplicatePaths(paths);
+		const original = JSON.stringify(issue);
+		const container = new FakeElement();
+		const onOpenIssue = vi.fn();
+		renderIssueList(container as unknown as HTMLElement, {
+			issues: [issue], scannersRun: ["duplicate-files"], selectionMode: false,
+			selectedFingerprints: new Set(), onOpenIssue, onToggleSelect: () => {},
+		});
+		const tokens = findByClass(container, "vi-issue-path-token");
+		expect(tokens.map((token) => token.text)).toEqual(issue.relatedPaths);
+		for (const [index, token] of tokens.entries()) {
+			token.click();
+			expect(onOpenIssue).toHaveBeenNthCalledWith(index + 1, {
+				...issue, primaryPath: issue.relatedPaths[index],
+				relatedPaths: issue.relatedPaths.filter((_, pathIndex) => pathIndex !== index),
+			});
+		}
+		expect(onOpenIssue).toHaveBeenCalledTimes(paths.length);
+		expect(JSON.stringify(issue)).toBe(original);
+	});
+
 	function render(statuses?: ReadonlyMap<string, CurrentFindingStatus>): FakeElement {
 		const container = new FakeElement();
 		renderIssueList(container as unknown as HTMLElement, {

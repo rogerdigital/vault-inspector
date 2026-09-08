@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { generateMarkdownReport } from "../report/markdown-export";
 import type { ScanResult } from "../scanner/Issue";
+import { duplicatePathCases, scanDuplicatePaths } from "./helpers/duplicate-report";
 
 function makeResult(overrides: Partial<ScanResult> = {}): ScanResult {
 	return {
@@ -15,6 +16,14 @@ function makeResult(overrides: Partial<ScanResult> = {}): ScanResult {
 }
 
 describe("generateMarkdownReport", () => {
+	it.each(duplicatePathCases.map((paths) => [paths]))("preserves duplicate paths and ordering in Markdown for %j", async (paths) => {
+		const issue = await scanDuplicatePaths(paths);
+		const original = JSON.stringify(issue);
+		const report = generateMarkdownReport(makeResult({ issues: [issue], scannersRun: ["duplicate-files"] }));
+		expect(report.match(/^  - `.*`$/gm)).toEqual(issue.relatedPaths.map((path) => `  - \`${path}\``));
+		expect(JSON.stringify(issue)).toBe(original);
+	});
+
 	it("renders compact summaries without finding details", () => {
 		const markers = [
 			"ACTIVE_TITLE_MARKER",
