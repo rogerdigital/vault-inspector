@@ -31,6 +31,19 @@ describe("createLocalApp adapter semantics", () => {
 	const buildApp = async () =>
 		(await createLocalApp(vaultDir)) as unknown as LocalApp;
 
+	it("indexes only real body block markers without fabricated positions", async () => {
+		await writeFile(join(vaultDir, "Target.md"), [
+			"---", "property: text ^metadata", "---", "Body ^Known-id", "",
+			"^standalone", "", "    code ^indent", "", "```", "code ^fenced", "```",
+			"<!-- comment ^comment -->", "`code ^inline`", "# same-name", "",
+		].join("\n"));
+		const app = await createLocalApp(vaultDir);
+		const target = app.vault.getMarkdownFiles()[0];
+		expect(app.metadataCache.getFileCache(target)?.blocks).toEqual({
+			"Known-id": { id: "Known-id" }, standalone: { id: "standalone" },
+		});
+	});
+
 	it("never collects dot-prefixed files or directories as vault files", async () => {
 		await writeFile(join(vaultDir, "Target.md"), "# Target\n");
 		await writeFile(join(vaultDir, ".hidden.cfg"), "config");

@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
@@ -26,6 +27,22 @@ async function withVault(
 describe("runCli", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
+	});
+
+	it("preserves valid block links in the actual CLI bundle", async () => {
+		await withVault({
+			"Source.md": "[[Target#^KNOWN-ID|Alias]]\n![[Target#^Known-id]]\n[[Target#^missing]]\n",
+			"Target.md": "Body ^Known-id\n\n# missing\n",
+		}, async (vaultPath) => {
+			const stdout = execFileSync(process.execPath, [
+				join(process.cwd(), "cli.js"), vaultPath, "--format", "json",
+				"--scanner", "broken-links", "--fail-on", "none",
+			], { encoding: "utf8" });
+			const payload = JSON.parse(stdout);
+			expect(payload.issues).toHaveLength(1);
+			expect(payload.issues[0].message).toBe('Block "#^missing" not found in Target.md');
+			expect(payload.issues[0].evidence.link).toBe("Target#^missing");
+		});
 	});
 
 	it("shows the short command alias in usage output", async () => {

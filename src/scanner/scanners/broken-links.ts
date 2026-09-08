@@ -177,14 +177,17 @@ function resolveLinkIssues(
 	}
 
 	if (headingPart) {
-		const headingCache = ctx.metadataCache.getFileCache(
+		const targetCache = ctx.metadataCache.getFileCache(
 			ctx.markdownFiles.find((file) => file.path === resolvedPath)!,
 		);
-		const headings = headingCache?.headings ?? [];
-		const headingSlug = slugifyHeading(headingPart);
-		const found = headings.some(
-			(heading) => slugifyHeading(heading.heading) === headingSlug,
-		);
+		const isBlock = headingPart.startsWith("^");
+		const found = isBlock
+			? Object.keys(targetCache?.blocks ?? {}).some(
+				(id) => id.toLowerCase() === headingPart.slice(1).toLowerCase(),
+			)
+			: (targetCache?.headings ?? []).some(
+				(heading) => slugifyHeading(heading.heading) === slugifyHeading(headingPart),
+			);
 		if (!found) {
 			issues.push(
 				makeIssue(
@@ -192,12 +195,13 @@ function resolveLinkIssues(
 					candidate,
 					resolvedPath,
 					"warning",
-					`Heading "#${headingPart}" not found in ${resolvedPath}`,
+					`${isBlock ? "Block" : "Heading"} "#${headingPart}" not found in ${resolvedPath}`,
 					candidate.isEmbed
 						? "embed"
 						: candidate.isMarkdown
 							? "markdown-link"
 							: "heading",
+					isBlock ? "block" : "heading",
 				),
 			);
 		}
@@ -304,6 +308,7 @@ function makeIssue(
 	severity: "error" | "warning" | "info",
 	message: string,
 	linkKind: "note-link" | "markdown-link" | "attachment" | "heading" | "embed",
+	referenceKind: "block" | "heading" = "heading",
 ): Issue {
 	const issue: Issue = {
 		scannerId: "broken-links",
@@ -317,10 +322,10 @@ function makeIssue(
 			"confirmed",
 			severity === "error"
 				? "The link target could not be resolved in the vault."
-				: "The target note exists, but the referenced heading was not found.",
+				: `The target note exists, but the referenced ${referenceKind} was not found.`,
 			severity === "error"
 				? "Correct the target or remove the link from the source note."
-				: "Correct the heading reference or remove it from the source note.",
+				: `Correct the ${referenceKind} reference or remove it from the source note.`,
 		),
 		fingerprint: generateFingerprint("broken-links", sourcePath, {
 			link: candidate.linkText,

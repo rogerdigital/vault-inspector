@@ -826,3 +826,46 @@ describe("brokenLinksScanner", () => {
 		expect(issues[0].severity).toBe("error");
 	});
 });
+
+
+describe("block references", () => {
+	it.each([
+		["[[Target#^Known-id]]", "Target#^Known-id", false],
+		["[[Target#^KNOWN-ID|Alias]]", "Target#^KNOWN-ID", false],
+		["![[Target#^known-ID]]", "Target#^known-ID", true],
+		["[Block](Target.md#^Known-id)", "Target.md#^Known-id", false],
+	])("keeps valid block reference %s without a removal action", async (original, link, embed) => {
+		const ctx = makeScanContext({
+			files: [{ path: "Source.md" }, { path: "Target.md" }],
+			metadataByPath: {
+				"Source.md": { [embed ? "embeds" : "links"]: [{ link, original }] } as any,
+				"Target.md": { blocks: { "Known-id": { id: "Known-id" } } } as any,
+			},
+		});
+		expect(await brokenLinksScanner.scan(ctx)).toEqual([]);
+	});
+
+	it.each(["missing", "same-name", "Known_id"])("reports missing block %s without heading normalization", async (id) => {
+		const ctx = makeScanContext({
+			files: [{ path: "Source.md" }, { path: "Target.md" }],
+			metadataByPath: {
+				"Source.md": { links: [{ link: `Target#^${id}`, original: `[[Target#^${id}|Alias]]` }] } as any,
+				"Target.md": {
+					headings: [{ heading: "same-name" }],
+					blocks: { "Known-id": { id: "Known-id" } },
+				} as any,
+			},
+		});
+		const issues = await brokenLinksScanner.scan(ctx);
+		expect(issues).toHaveLength(1);
+		expect(issues[0]).toMatchObject({
+			severity: "warning",
+			message: `Block "#^${id}" not found in Target.md`,
+			explanation: {
+				why: "The target note exists, but the referenced block was not found.",
+				nextStep: "Correct the block reference or remove it from the source note.",
+			},
+			fixAction: { replacement: "Alias" },
+		});
+	});
+});

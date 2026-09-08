@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, extname, join, posix, relative, sep } from "node:path";
 import type { App, MetadataCache, TFile, Vault } from "obsidian";
 import { extractBareUrls } from "../src/scanner/scanners/external-links";
+import { blockIds } from "../src/utils/markdown-source";
 
 type LocalFile = TFile & {
 	path: string;
@@ -25,6 +26,7 @@ type LocalMetadata = {
 	embeds?: LinkCacheEntry[];
 	frontmatterLinks?: LinkCacheEntry[];
 	headings?: HeadingCacheEntry[];
+	blocks?: Record<string, { id: string }>;
 	tags?: TagCacheEntry[];
 	frontmatter?: Record<string, unknown>;
 };
@@ -198,6 +200,7 @@ function parseMarkdownMetadata(content: string): LocalMetadata {
 		embeds,
 		frontmatterLinks,
 		headings,
+		blocks: Object.fromEntries(blockIds(content).map((id) => [id, { id }])),
 		tags,
 		frontmatter,
 	};
