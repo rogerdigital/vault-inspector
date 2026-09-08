@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, extname, join, posix, relative, sep } from "node:path";
 import type { App, MetadataCache, TFile, Vault } from "obsidian";
 import { extractBareUrls } from "../src/scanner/scanners/external-links";
+import type { LinkReference } from "../src/scanner/link-reference";
 import { blockIds } from "../src/utils/markdown-source";
 
 type LocalFile = TFile & {
@@ -13,11 +14,7 @@ type LocalFile = TFile & {
 	};
 };
 
-type LinkCacheEntry = {
-	link: string;
-	original?: string;
-	sourceRelative?: boolean;
-};
+type LinkCacheEntry = LinkReference & { sourceRelative?: boolean };
 type HeadingCacheEntry = { heading: string };
 type TagCacheEntry = { tag: string };
 
@@ -49,7 +46,6 @@ export async function createLocalApp(vaultPath: string): Promise<App> {
 	const filesByPath = new Map(files.map((file) => [file.path, file]));
 	const metadataByPath = new Map<string, LocalMetadata>();
 	const resolvedLinks: Record<string, Record<string, number>> = {};
-	const resolvedDestinations: Record<string, Record<string, string>> = {};
 	const unresolvedLinks: Record<string, Record<string, number>> = {};
 
 	for (const file of files.filter((item) => item.path.endsWith(".md"))) {
@@ -57,10 +53,21 @@ export async function createLocalApp(vaultPath: string): Promise<App> {
 		const metadata = parseMarkdownMetadata(content);
 		metadataByPath.set(file.path, metadata);
 
-		for (const link of [...metadata.links ?? [], ...metadata.embeds ?? []]) {
+		for (const link of [...metadata.links ?? [], ...metadata.embeds ?? [], ...metadata.frontmatterLinks ?? []]) {
 			if (hasUriScheme(link.link)) continue;
-			const target = normalizeLinkTarget(link.link);
-			if (!target) continue;
+			const fragmentAt = link.link.indexOf("#");
+			const path = fragmentAt === -1 ? link.link : link.link.slice(0, fragmentAt);
+			const fragment = fragmentAt === -1 ? null : link.link.slice(fragmentAt + 1);
+			const target = link.sourceRelative ? decodeDestination(path) : path.trim();
+			link.destination = {
+				path: target,
+				fragment: fragment !== null && link.sourceRelative ? decodeDestination(fragment) : fragment,
+				resolvedPath: null,
+			};
+			if (!target) {
+				if (fragment !== null) link.destination.resolvedPath = file.path;
+				continue;
+			}
 
 			const resolved = resolveVaultPath(
 				target,
@@ -68,15 +75,11 @@ export async function createLocalApp(vaultPath: string): Promise<App> {
 				file.path,
 				link.sourceRelative ?? false,
 			);
+			link.destination.resolvedPath = resolved;
 			if (resolved) {
 				resolvedLinks[file.path] = {
 					...resolvedLinks[file.path],
 					[resolved]: (resolvedLinks[file.path]?.[resolved] ?? 0) + 1,
-				};
-				resolvedDestinations[file.path] = {
-					...resolvedDestinations[file.path],
-					[link.link]: resolved,
-					[target]: resolved,
 				};
 			} else {
 				unresolvedLinks[file.path] = {
@@ -102,17 +105,10 @@ export async function createLocalApp(vaultPath: string): Promise<App> {
 		unresolvedLinks,
 		getFileCache: (file: TFile) => metadataByPath.get(file.path) ?? null,
 		getFirstLinkpathDest: (linkPath: string, sourcePath: string) => {
-			const target = normalizeLinkTarget(linkPath);
-			if (!target || hasUriScheme(target)) return null;
-			const resolved =
-				resolvedDestinations[sourcePath]?.[linkPath] ??
-				resolvedDestinations[sourcePath]?.[target] ??
-				resolveVaultPath(
-					target,
-					filePathIndex,
-					sourcePath,
-					/^\.{1,2}\//.test(target),
-				);
+			if (!linkPath || hasUriScheme(linkPath)) return null;
+			const resolved = resolveVaultPath(
+				linkPath, filePathIndex, sourcePath, /^\.{1,2}\//.test(linkPath),
+			);
 			return resolved ? filesByPath.get(resolved) ?? null : null;
 		},
 	} as LocalMetadataCache;
@@ -210,8 +206,7 @@ function extractFrontmatterWikiLinks(content: string): LinkCacheEntry[] {
 	const section = splitFrontmatter(content);
 	if (!section.frontmatter) return [];
 
-	// Aliases are stripped here for symmetry with the body parser; frontmatterLinks
-	// are not consumed by link resolution today.
+	// Wiki aliases are display text, including in frontmatter.
 	return [...section.frontmatter.matchAll(/\[\[([^\]]+)\]\]/g)].map((match) => ({
 		link: match[1].split("|")[0],
 	}));
@@ -269,10 +264,13 @@ function stripFrontmatter(content: string): string {
 	return splitFrontmatter(content).body;
 }
 
-function normalizeLinkTarget(link: string): string {
-	// The alias strip is defensive for non-adapter callers; the adapter already
-	// strips aliases at parse time.
-	return link.split("|")[0].split("#")[0].trim();
+function decodeDestination(value: string): string {
+	try {
+		return decodeURIComponent(value);
+	} catch {
+		// Invalid percent escapes remain literal filenames instead of aborting scans.
+		return value;
+	}
 }
 
 function resolveVaultPath(

@@ -1,3 +1,4 @@
+import type { LinkReference } from "./link-reference";
 import type { ScanContext } from "./ScanContext";
 import { hasUriScheme, resolveVaultLinkTargets } from "../utils/vault-links";
 
@@ -112,6 +113,9 @@ export async function buildReferenceIndex(
 		return resolveVaultLinkTargets(ctx, link, sourcePath)[0] ?? null;
 	};
 
+	const resolveReference = (reference: LinkReference, sourcePath: string): string | null =>
+		reference.destination ? reference.destination.resolvedPath : resolveTarget(reference.link, sourcePath);
+
 	for (const file of ctx.markdownFiles) {
 		const cache = ctx.metadataCache.getFileCache(file);
 		if (!cache) {
@@ -122,15 +126,15 @@ export async function buildReferenceIndex(
 			continue;
 		}
 		for (const link of cache.links ?? []) {
-			const resolved = resolveTarget(link.link, file.path);
+			const resolved = resolveReference(link, file.path);
 			if (resolved) addReference(resolved, file.path, "note-link");
 		}
 		for (const embed of cache.embeds ?? []) {
-			const resolved = resolveTarget(embed.link, file.path);
+			const resolved = resolveReference(embed, file.path);
 			if (resolved) addReference(resolved, file.path, "embed");
 		}
 		for (const link of cache.frontmatterLinks ?? []) {
-			const resolved = resolveTarget(link.link, file.path);
+			const resolved = resolveReference(link, file.path);
 			if (resolved) addReference(resolved, file.path, "frontmatter");
 		}
 	}
