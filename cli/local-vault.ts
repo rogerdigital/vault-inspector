@@ -5,6 +5,7 @@ import type { App, MetadataCache, TFile, Vault } from "obsidian";
 import { extractBareUrls } from "../src/scanner/scanners/external-links";
 import type { LinkReference } from "../src/scanner/link-reference";
 import { parseMarkdownSource } from "../src/utils/markdown-source";
+import { splitFrontmatter } from "../src/utils/frontmatter-section";
 
 type LocalFile = TFile & {
 	path: string;
@@ -290,18 +291,6 @@ function resolveVaultPath(
 
 function hasUriScheme(text: string): boolean {
 	return /^[a-z][a-z\d+.-]*:/i.test(text);
-}
-
-function splitFrontmatter(content: string): {
-	frontmatter?: string;
-	body: string;
-} {
-	const match = /^\uFEFF?---\r?\n((?:[\s\S]*?\r?\n)?)---(?:\r?\n|$)/.exec(content);
-	if (!match) return { body: content };
-	return {
-		frontmatter: match[1],
-		body: content.slice(match[0].length),
-	};
 }
 
 function stripIgnoredMarkdownRegions(content: string): string {

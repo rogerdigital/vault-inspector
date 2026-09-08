@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { blockIds, markdownLinks, wikiLinkRanges } from "../utils/markdown-source";
 
 describe("Markdown source ranges", () => {
+	it.each(["---\n---\n", "\uFEFF---\r\n---\r\n", "---\nkey: value\n---\n"])("ends metadata at the first closing delimiter: %j", (header) => {
+		const content = header + "\n[missing](missing.md) [[Target]]\n\nBody ^known\n\n---\n\nTail";
+		const start = content.indexOf("[missing]");
+		expect(markdownLinks(content)).toEqual([{ kind: "link", original: "[missing](missing.md)", destination: "missing.md", start, end: start + "[missing](missing.md)".length }]);
+		expect(wikiLinkRanges(content)).toEqual([{ start: content.indexOf("[[Target]]"), end: content.indexOf("[[Target]]") + 10 }]);
+		expect(blockIds(content)).toEqual(["known"]);
+	});
+
 	it("returns complete balanced links and images with exact offsets", () => {
 		const content = '\uFEFF---\r\nref: "[hidden](x)"\r\n---\r\n[x](Note(1).md "title") ![a](<a b.png>) [e](a\\(b\\).md)';
 		const links = markdownLinks(content);

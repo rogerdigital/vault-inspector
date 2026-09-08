@@ -1,5 +1,6 @@
 import { fromMarkdown } from "mdast-util-from-markdown";
 import type { Nodes } from "mdast";
+import { splitFrontmatter } from "./frontmatter-section";
 
 export type SourceRange = { start: number; end: number };
 export type MarkdownSourceLink = SourceRange & {
@@ -10,8 +11,7 @@ export type MarkdownSourceLink = SourceRange & {
 
 /** Mask file metadata without shifting UTF-16 offsets or changing line endings. */
 function parseBody(content: string) {
-	const frontmatter = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(content);
-	const end = frontmatter?.[0].length ?? (content.startsWith("\uFEFF") ? 1 : 0);
+	const end = splitFrontmatter(content).bodyStart || (content.startsWith("\uFEFF") ? 1 : 0);
 	return fromMarkdown(content.slice(0, end).replace(/[^\r\n]/g, " ") + content.slice(end));
 }
 

@@ -73,6 +73,23 @@ describe("runCli", () => {
 		});
 	});
 
+	it.each(["---\n---\n", "\uFEFF---\r\n---\r\n", "---\nkey: value\n---\n"])("preserves body references after the first frontmatter closing delimiter: %j", async (header) => {
+		const content = header + "\n[missing](missing.md)\n\n![image](image.png)\n\nBody ^known\n\n---\n\nTail";
+		await withVault({ "Note.md": content, "Source.md": "[[Note#^known]]", "image.png": "image" }, async (vaultPath) => {
+			const args = [vaultPath, "--format", "json", "--scanner", "broken-links,orphan-attachments", "--fail-on", "none"];
+			const result = await runCli(args);
+			expect(result.stderr).toBe("");
+			expect(result.exitCode).toBe(0);
+			const issues = JSON.parse(result.stdout).issues;
+			expect(issues).toHaveLength(1);
+			expect(issues[0].fixAction).toMatchObject({ kind: "remove-link-text", original: "[missing](missing.md)", replacement: "missing" });
+			const actual = spawnSync(process.execPath, [join(process.cwd(), "cli.js"), ...args], { encoding: "utf8" });
+			expect(actual.stderr).toBe("");
+			expect(actual.status).toBe(0);
+			expect(JSON.parse(actual.stdout).issues).toEqual(issues);
+		});
+	});
+
 	it.each([
 		"key: [SENSITIVE_SENTINEL", "key: first\nkey: SENSITIVE_SENTINEL",
 		"key: !SENSITIVE_SENTINEL value", "- SENSITIVE_SENTINEL", "SENSITIVE_SENTINEL",
