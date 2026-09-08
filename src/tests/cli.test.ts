@@ -92,7 +92,7 @@ describe("runCli", () => {
 				persistingIssues: 0,
 				resolvedIssues: 0,
 				scanProfile: expect.any(String),
-				comparisonVersion: 2,
+				comparisonVersion: 3,
 				fingerprints: expect.any(Array),
 			});
 			// The identity set is the complete unfiltered set, not just the
@@ -451,7 +451,7 @@ describe("runCli", () => {
 					persistingIssues: 0,
 					resolvedIssues: 0,
 					scanProfile: expect.any(String),
-					comparisonVersion: 2,
+					comparisonVersion: 3,
 					fingerprints: expect.any(Array),
 				});
 			});
@@ -1206,7 +1206,7 @@ describe("runCli", () => {
 				persistingIssues: 1,
 				resolvedIssues: 0,
 				scanProfile: expect.any(String),
-				comparisonVersion: 2,
+				comparisonVersion: 3,
 				fingerprints: expect.any(Array),
 			});
 			// The identity set is the complete unfiltered set.
@@ -1253,7 +1253,7 @@ describe("runCli", () => {
 				persistingIssues: 1,
 				resolvedIssues: 1,
 				scanProfile: expect.any(String),
-				comparisonVersion: 2,
+				comparisonVersion: 3,
 				fingerprints: expect.any(Array),
 			});
 			// The identity set is the complete unfiltered set: sorted and unique.
@@ -1313,7 +1313,7 @@ describe("runCli", () => {
 				persistingIssues: 1,
 				resolvedIssues: 1,
 				scanProfile: expect.any(String),
-				comparisonVersion: 2,
+				comparisonVersion: 3,
 				fingerprints: expect.any(Array),
 			});
 			expect(payload.issues.find(
@@ -1426,7 +1426,7 @@ describe("runCli", () => {
 				persistingIssues: 0,
 				resolvedIssues: 0,
 				scanProfile: expect.any(String),
-				comparisonVersion: 2,
+				comparisonVersion: 3,
 				fingerprints: expect.any(Array),
 			});
 			// No lifecycle annotations are fabricated from an incompatible baseline.
@@ -1447,7 +1447,7 @@ describe("runCli", () => {
 				"none",
 			]);
 			const baseline = JSON.parse(first.stdout);
-			baseline.comparison.comparisonVersion = 3;
+			baseline.comparison.comparisonVersion = 2;
 			const baselinePath = join(vaultPath, "baseline.json");
 			await writeFile(baselinePath, JSON.stringify(baseline), "utf8");
 
@@ -1473,7 +1473,7 @@ describe("runCli", () => {
 				persistingIssues: 0,
 				resolvedIssues: 0,
 				scanProfile: expect.any(String),
-				comparisonVersion: 2,
+				comparisonVersion: 3,
 				fingerprints: expect.any(Array),
 			});
 			expect(payload.issues.every(

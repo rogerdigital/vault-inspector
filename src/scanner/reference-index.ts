@@ -103,8 +103,11 @@ export async function buildReferenceIndex(
 		// Guard the getFirstLinkpathDest branch; the fallback path re-checks
 		// internally via hasUriScheme.
 		if (!link || hasUriScheme(link)) return null;
+		const linkPath = link.split("#", 1)[0];
+		// Same-note headings and blocks refer to the source file itself.
+		if (!linkPath) return sourcePath;
 		if (typeof ctx.metadataCache.getFirstLinkpathDest === "function") {
-			return ctx.metadataCache.getFirstLinkpathDest(link, sourcePath)?.path ?? null;
+			return ctx.metadataCache.getFirstLinkpathDest(linkPath, sourcePath)?.path ?? null;
 		}
 		return resolveVaultLinkTargets(ctx, link, sourcePath)[0] ?? null;
 	};

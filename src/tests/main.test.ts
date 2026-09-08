@@ -257,7 +257,7 @@ describe("VaultInspectorPlugin", () => {
 		const result = makeScanResult([makeLifecycleIssue("current")]);
 		const { plugin, view } = makeScanSubject(result);
 		const previous = createScanSnapshot(result, "current-profile", "0.4.13", 100);
-		previous.comparisonVersion++;
+		previous.comparisonVersion = 2;
 		plugin.lastSuccessfulSnapshot = previous;
 
 		await (plugin as any).scanAndRender(view);
