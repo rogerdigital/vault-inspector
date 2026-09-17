@@ -127,6 +127,17 @@ function makeApp(content: string) {
 - Modify: `src/snapshot/scan-snapshot.ts` — comparison semantics.
 - Modify: `src/tests/scan-snapshot.test.ts`, `src/tests/result-diff.test.ts`, `src/tests/cli.test.ts` — compatibility assertions for older versions.
 
+> **Execution note (2026-09-18):** This plan was authored against baseline `fdcc77d`. Since then, link-scanner fixes landed on main and changed the A2 target area:
+>
+> - PR #174 (issue #170) restructured the `!found` branch in `resolveLinkIssues`: block-id misses are now unconditionally `unverified`/`info` with no fix action (Obsidian's implicit block ids are not in metadata, so a miss is not evidence), reported under the title "Unverified block reference"; heading misses remain `confirmed`/`warning`. `makeIssue` gained an eighth `unverified` presentation parameter that suppresses the fix action.
+> - PR #176 (issue #173) replaced `slugifyHeading` with a replace-with-space normalization matching Obsidian heading anchors.
+>
+> Consequences when executing A2:
+>
+> - A2.2's instruction to "leave the subsequent existing `isBlock`/`found` branches unchanged" no longer matches the code. Adapt the null-cache guard to the two-branch structure instead of applying the snippet verbatim.
+> - A2.1's `^block-id` case now passes except for `evidence.reason` and the message: with a null target cache the current code still says "not found among explicit block ids", which misdescribes an unindexed target. The null-cache vs id-not-declared distinction (including the "wait for indexing" guidance) remains open A2 work; the heading null-cache case is untouched.
+> - A2.3's `COMPARISON_VERSION` bump must cover both semantics changes in its comment — block-id misses became unverified (#174) and missing target metadata will no longer confirm a link (A2) — per the master plan's increment-once rule for the unreleased series.
+
 ### A2.1 — Fix the fixture blind spot and write the RED test
 
 - [ ] Do not let `getFileCache` in `makeScanContext` erase null through `?? {}`; replace it with:
