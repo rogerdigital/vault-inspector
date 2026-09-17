@@ -880,6 +880,28 @@ describe("same-note fragments", () => {
 	});
 });
 
+describe("heading anchors", () => {
+	it.each([
+		[
+			"[Open Sans](https://fonts.google.com/specimen/Open+Sans)",
+			"Open Sans https fonts google com specimen Open Sans",
+		],
+		["[[Some Note|Alias]]", "Some Note Alias"],
+		["**Bold** statement", "Bold statement"],
+	])("accepts fragment %j normalized from heading %j", async (heading, fragment) => {
+		const ctx = makeScanContext({
+			files: [{ path: "Source.md" }, { path: "fonts.md" }],
+			metadataByPath: {
+				"Source.md": {
+					links: [{ link: `fonts#${fragment}`, original: `[[fonts#${fragment}|alias]]` }],
+				} as any,
+				"fonts.md": { headings: [{ heading }] } as any,
+			},
+		});
+		expect(await brokenLinksScanner.scan(ctx)).toEqual([]);
+	});
+});
+
 describe("block references", () => {
 	it.each([
 		["[[Target#^Known-id]]", "Target#^Known-id", false],
