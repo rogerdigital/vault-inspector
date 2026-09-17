@@ -392,19 +392,23 @@ describe("runFixBatch", () => {
 });
 
 
-it("verifies a parsed link fix without changing identical code examples", async () => {
-	const original = "[Missing](missing.md)";
-	let content = `${original}\n\n    ${original}\n\n\\${original}`;
-	const file = Object.assign(new TFile(), { path: "Source.md" });
-	const modify = vi.fn(async (_file: TFile, updated: string) => { content = updated; });
-	const app = { vault: { getAbstractFileByPath: () => file, read: async () => content, modify } };
-	const requested = issue("link", action("Source.md", { kind: "remove-link-text", original, replacement: "Missing" }));
-	const scan = vi.fn().mockResolvedValueOnce(result([requested])).mockResolvedValueOnce(result([]));
-	const batch = await runFixBatch([requested], [{ fingerprint: "link" }], {
-		settings: () => DEFAULT_SETTINGS, scan, execute: (fix) => executeFixAction(app as any, fix),
+	it("verifies a parsed link fix without changing identical code examples", async () => {
+		const original = "[Missing](missing.md)";
+		let content = `${original}\n\n    ${original}\n\n\\${original}`;
+		const file = Object.assign(new TFile(), { path: "Source.md" });
+		const modify = vi.fn(async (_file: TFile, updated: string) => { content = updated; });
+		const process = vi.fn(async (_file: TFile, transform: (text: string) => string) => {
+			content = transform(content);
+			return content;
+		});
+		const app = { vault: { getAbstractFileByPath: () => file, read: async () => content, modify, process } };
+		const requested = issue("link", action("Source.md", { kind: "remove-link-text", original, replacement: "Missing" }));
+		const scan = vi.fn().mockResolvedValueOnce(result([requested])).mockResolvedValueOnce(result([]));
+		const batch = await runFixBatch([requested], [{ fingerprint: "link" }], {
+			settings: () => DEFAULT_SETTINGS, scan, execute: (fix) => executeFixAction(app as any, fix),
+		});
+		expect(content).toBe(`Missing\n\n    ${original}\n\n\\${original}`);
+		expect(batch.outcomes[0].outcome).toBe("fixed");
+		expect(scan).toHaveBeenCalledTimes(2);
+		expect(process).toHaveBeenCalledTimes(1);
 	});
-	expect(content).toBe(`Missing\n\n    ${original}\n\n\\${original}`);
-	expect(batch.outcomes[0].outcome).toBe("fixed");
-	expect(scan).toHaveBeenCalledTimes(2);
-	expect(modify).toHaveBeenCalledTimes(1);
-});

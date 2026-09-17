@@ -44,23 +44,27 @@ async function replaceLinkText(
 ): Promise<number> {
 	const file = app.vault.getAbstractFileByPath(sourcePath);
 	if (!(file instanceof TFile)) return 0;
-	const content = await app.vault.read(file);
-	const wiki = original === undefined || /^!?\[\[/.test(original);
-	const ranges = (wiki ? wikiLinkRanges(content) : markdownLinks(content)).filter(({ start, end }) => {
-		const source = content.slice(start, end);
-		return original !== undefined
-			? source === original
-			: source === `[[${legacyLinkText}]]` || source === `![[${legacyLinkText}]]`;
-	}).sort((left, right) => left.start - right.start);
-	let cursor = 0;
-	let updated = "";
-	for (const { start, end } of ranges) {
-		if (start < cursor) continue;
-		updated += content.slice(cursor, start) + replacement;
-		cursor = end;
-	}
-	updated += content.slice(cursor);
-	if (updated === content) return 0;
-	await app.vault.modify(file, updated);
-	return 1;
+	let changed = false;
+	await app.vault.process(file, (content) => {
+		const wiki = original === undefined || /^!?\[\[/.test(original);
+		const ranges = (wiki ? wikiLinkRanges(content) : markdownLinks(content))
+			.filter(({ start, end }) => {
+				const source = content.slice(start, end);
+				return original !== undefined
+					? source === original
+					: source === `[[${legacyLinkText}]]` || source === `![[${legacyLinkText}]]`;
+			})
+			.sort((left, right) => left.start - right.start);
+		let cursor = 0;
+		let updated = "";
+		for (const { start, end } of ranges) {
+			if (start < cursor) continue;
+			updated += content.slice(cursor, start) + replacement;
+			cursor = end;
+		}
+		updated += content.slice(cursor);
+		changed = updated !== content;
+		return updated;
+	});
+	return changed ? 1 : 0;
 }

@@ -49,15 +49,22 @@ async function makeAliasedHeadingFixAction(): Promise<FixAction> {
 
 function makeApp(content: string) {
 	const file = Object.assign(new TFile(), { path: "Source.md" });
-	const modify = vi.fn(async () => {});
+	let disk = content;
+	const process = vi.fn(async (_file: TFile, transform: (text: string) => string) => {
+		disk = transform(disk);
+		return disk;
+	});
+	const read = vi.fn(async () => disk);
+	const modify = vi.fn(async (_file: TFile, text: string) => { disk = text; });
 	const app = {
 		vault: {
 			getAbstractFileByPath: vi.fn(() => file),
-			read: vi.fn(async () => content),
+			read,
 			modify,
+			process,
 		},
 	};
-	return { app, file, modify };
+	return { app, file, process, modify, getContent: () => disk };
 }
 
 describe("executeFixAction", () => {
@@ -69,7 +76,7 @@ describe("executeFixAction", () => {
 			"[[Target|plain]]",
 			"![[Target#Missing heading|missing]]",
 		].join("\n");
-		const { app, file, modify } = makeApp(content);
+		const { app, file, getContent } = makeApp(content);
 
 		const fixed = await executeFixAction(app as any, action);
 
@@ -77,8 +84,7 @@ describe("executeFixAction", () => {
 		expect(action.linkText).toBe("Target#Missing heading|missing");
 		expect(action.original).toBe("[[Target#Missing heading|missing]]");
 		expect(action.replacement).toBe("missing");
-		expect(modify).toHaveBeenCalledWith(
-			file,
+		expect(getContent()).toBe(
 			[
 				"missing",
 				"[[Target#Other heading|other]]",
@@ -102,13 +108,12 @@ describe("executeFixAction", () => {
 			"Prefix [Readable Markdown](missing-target.md) suffix.",
 			"![Readable Markdown](missing-target.md)",
 		].join("\n");
-		const { app, file, modify } = makeApp(content);
+		const { app, file, getContent } = makeApp(content);
 
 		const fixed = await executeFixAction(app as any, action);
 
 		expect(fixed).toBe(1);
-		expect(modify).toHaveBeenCalledWith(
-			file,
+		expect(getContent()).toBe(
 			[
 				"Prefix Readable Markdown suffix.",
 				"![Readable Markdown](missing-target.md)",
@@ -126,12 +131,12 @@ describe("executeFixAction", () => {
 			replacement: "",
 		};
 		const content = "Before ![[missing-embed.png]] after";
-		const { app, file, modify } = makeApp(content);
+		const { app, file, getContent } = makeApp(content);
 
 		const fixed = await executeFixAction(app as any, action);
 
 		expect(fixed).toBe(1);
-		expect(modify).toHaveBeenCalledWith(file, "Before  after");
+		expect(getContent()).toBe("Before  after");
 	});
 
 	it("still supports the legacy linkText wiki path", async () => {
@@ -143,12 +148,12 @@ describe("executeFixAction", () => {
 			linkText: "Legacy|Alias",
 		};
 		const content = "Keep [[Legacy|Alias]] here";
-		const { app, file, modify } = makeApp(content);
+		const { app, file, getContent } = makeApp(content);
 
 		const fixed = await executeFixAction(app as any, action);
 
 		expect(fixed).toBe(1);
-		expect(modify).toHaveBeenCalledWith(file, "Keep  here");
+		expect(getContent()).toBe("Keep  here");
 	});
 
 	it("returns 0 when the original syntax is no longer present", async () => {
@@ -160,11 +165,38 @@ describe("executeFixAction", () => {
 			original: "[[Gone]]",
 			replacement: "Gone",
 		};
-		const { app, modify } = makeApp("Nothing to see");
+		const { app, getContent } = makeApp("Nothing to see");
 
 		const fixed = await executeFixAction(app as any, action);
 
 		expect(fixed).toBe(0);
+		expect(getContent()).toBe("Nothing to see");
+	});
+
+	it("preserves an edit committed before the atomic transformation", async () => {
+		const file = Object.assign(new TFile(), { path: "Source.md" });
+		let disk = "[label](missing)\nOriginal paragraph";
+		const appended = "\nConcurrent user edit";
+		const read = vi.fn(async () => {
+			const stale = disk;
+			disk += appended;
+			return stale;
+		});
+		const modify = vi.fn(async (_file: TFile, text: string) => { disk = text; });
+		const process = vi.fn(async (_file: TFile, transform: (text: string) => string) => {
+			disk += appended;
+			disk = transform(disk);
+			return disk;
+		});
+		const app = { vault: { getAbstractFileByPath: () => file, read, modify, process } };
+		const count = await executeFixAction(app as any, {
+			kind: "remove-link-text", label: "Remove link", description: "",
+			targetPaths: [file.path], original: "[label](missing)", replacement: "label",
+		});
+		expect(count).toBe(1);
+		expect(disk).toBe("label\nOriginal paragraph\nConcurrent user edit");
+		expect(process).toHaveBeenCalledTimes(1);
+		expect(read).not.toHaveBeenCalled();
 		expect(modify).not.toHaveBeenCalled();
 	});
 
@@ -179,13 +211,12 @@ describe("executeFixAction", () => {
 			"```",
 			"<!-- [[Target#Missing heading|missing]] -->",
 		].join("\n");
-		const { app, file, modify } = makeApp(content);
+		const { app, file, getContent } = makeApp(content);
 
 		const fixed = await executeFixAction(app as any, action);
 
 		expect(fixed).toBe(1);
-		expect(modify).toHaveBeenCalledWith(
-			file,
+		expect(getContent()).toBe(
 			[
 				"Before missing after",
 				"`[[Target#Missing heading|missing]]`",
@@ -210,37 +241,58 @@ describe("parsed source safety", () => {
 		].join("\n\n");
 		const prefix = `\uFEFF---\r\nref: '${original}'\r\n---\r\n`;
 		const content = prefix + original + "\n\n" + protectedText + "\n\n" + original;
-		const { app, file, modify } = makeApp(content);
+		const { app, file, getContent } = makeApp(content);
 		expect(await executeFixAction(app as any, {
 			kind: "remove-link-text", label: "Remove", description: "", targetPaths: ["Source.md"], original, replacement: "Shown",
 		})).toBe(1);
-		expect(modify).toHaveBeenCalledWith(file, prefix + "Shown\n\n" + protectedText + "\n\nShown");
+		expect(getContent()).toBe(prefix + "Shown\n\n" + protectedText + "\n\nShown");
 	});
 
 	it("restricts legacy wiki removal to parsed ranges", async () => {
 		const content = "[[Missing]]\n\n    [[Missing]]\n\n\\[[Missing]]";
-		const { app, file, modify } = makeApp(content);
+		const { app, file, getContent } = makeApp(content);
 		expect(await executeFixAction(app as any, {
 			kind: "remove-link-text", label: "Remove", description: "", targetPaths: ["Source.md"], linkText: "Missing",
 		})).toBe(1);
-		expect(modify).toHaveBeenCalledWith(file, "\n\n    [[Missing]]\n\n\\[[Missing]]");
+		expect(getContent()).toBe("\n\n    [[Missing]]\n\n\\[[Missing]]");
 	});
 });
 
 
 it.each(["[Missing](missing.md)", "[[Missing]]"])("replaces links after even backslashes: %s", async (original) => {
 	const content = "\\\\" + original + "\r\n";
-	const { app, file, modify } = makeApp(content);
+	const { app, file, getContent } = makeApp(content);
 	expect(await executeFixAction(app as any, {
 		kind: "remove-link-text", label: "Remove", description: "", targetPaths: ["Source.md"], original, replacement: "Shown",
 	})).toBe(1);
-	expect(modify).toHaveBeenCalledWith(file, "\\\\Shown\r\n");
+	expect(getContent()).toBe("\\\\Shown\r\n");
 });
 
 it.each(["[[Missing|**bold**]]", "plain text", "    [[Missing]]"])("fails closed for unsupported or non-link source: %s", async (content) => {
-	const { app, modify } = makeApp(content);
+	const { app, getContent } = makeApp(content);
 	expect(await executeFixAction(app as any, {
 		kind: "remove-link-text", label: "Remove", description: "", targetPaths: ["Source.md"], original: content.trim(), replacement: "Shown",
 	})).toBe(0);
-	expect(modify).not.toHaveBeenCalled();
+	expect(getContent()).toBe(content);
+});
+
+it("propagates a failed write instead of returning a false success", async () => {
+	const { app, process } = makeApp("[[Missing]]");
+	process.mockRejectedValueOnce(new Error("write failed"));
+	await expect(executeFixAction(app as any, {
+		kind: "remove-link-text", label: "Remove", description: "", targetPaths: ["Source.md"],
+		original: "[[Missing]]", replacement: "Shown",
+	})).rejects.toThrow("write failed");
+});
+
+it("returns 0 without restoring old text when the link vanished from latest content", async () => {
+	const { app, getContent } = makeApp("[[Kept]] and [[Missing]]");
+	const process = (app as any).vault.process;
+	process.mockImplementationOnce(async (_file: unknown, transform: (text: string) => string) =>
+		transform("[[Kept]]"));
+	expect(await executeFixAction(app as any, {
+		kind: "remove-link-text", label: "Remove", description: "", targetPaths: ["Source.md"],
+		original: "[[Missing]]", replacement: "Shown",
+	})).toBe(0);
+	expect(getContent()).toBe("[[Kept]] and [[Missing]]");
 });
