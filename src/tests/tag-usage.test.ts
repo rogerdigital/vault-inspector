@@ -211,3 +211,82 @@ describe("tagUsageScanner", () => {
 		expect(issues).toHaveLength(0);
 	});
 });
+
+describe("hierarchical tags", () => {
+	it("does not flag a parent tag when a descendant meets the threshold", async () => {
+		const file = { path: "notes/a.md" } as any;
+		const ctx = makeCtx({
+			markdownFiles: [file],
+			allFiles: [file],
+			metadataCache: {
+				getFileCache: () => ({
+					tags: [
+						{ tag: "#parent" },
+						{ tag: "#parent/child" },
+						{ tag: "#parent/child" },
+						{ tag: "#dead" },
+					],
+					frontmatter: {},
+				}),
+			} as any,
+		});
+		const issues = await tagUsageScanner.scan(ctx);
+		expect(issues.map((i) => i.evidence.tag)).toEqual(["dead"]);
+	});
+
+	it("exempts ancestors at any depth when a deep descendant is active", async () => {
+		const file = { path: "notes/a.md" } as any;
+		const ctx = makeCtx({
+			markdownFiles: [file],
+			allFiles: [file],
+			metadataCache: {
+				getFileCache: () => ({
+					tags: [
+						{ tag: "#a" },
+						{ tag: "#a/b" },
+						{ tag: "#a/b/c" },
+						{ tag: "#a/b/c" },
+						{ tag: "#a/b/c" },
+					],
+					frontmatter: {},
+				}),
+			} as any,
+		});
+		const issues = await tagUsageScanner.scan(ctx);
+		expect(issues).toEqual([]);
+	});
+
+	it("still flags parents when the whole branch is below the threshold", async () => {
+		const file = { path: "notes/a.md" } as any;
+		const ctx = makeCtx({
+			markdownFiles: [file],
+			allFiles: [file],
+			metadataCache: {
+				getFileCache: () => ({
+					tags: [{ tag: "#dead" }, { tag: "#dead/sub" }],
+					frontmatter: {},
+				}),
+			} as any,
+		});
+		const issues = await tagUsageScanner.scan(ctx);
+		expect(issues.map((i) => i.evidence.tag).sort()).toEqual(["dead", "dead/sub"]);
+	});
+
+	it("does not report a watched parent tag as missing when children appear", async () => {
+		const file = { path: "notes/a.md" } as any;
+		const ctx = makeCtx({
+			markdownFiles: [file],
+			allFiles: [file],
+			watchedTags: ["parent", "gone"],
+			metadataCache: {
+				getFileCache: () => ({
+					tags: [{ tag: "#parent/child" }, { tag: "#parent/child" }],
+					frontmatter: {},
+				}),
+			} as any,
+		});
+		const issues = await tagUsageScanner.scan(ctx);
+		const missing = issues.filter((i) => i.title === "Missing watched tag");
+		expect(missing.map((i) => i.evidence.tag)).toEqual(["gone"]);
+	});
+});
