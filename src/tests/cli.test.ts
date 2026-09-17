@@ -110,6 +110,53 @@ describe("runCli", () => {
 		});
 	});
 
+	it.each([
+		["[]", "Config must be a JSON object"],
+		["null", "Config must be a JSON object"],
+		["true", "Config must be a JSON object"],
+		['"config"', "Config must be a JSON object"],
+		['{"largeMarkdownBytes":"garbage"}', "largeMarkdownBytes must be a finite non-negative integer"],
+		['{"largeMarkdownBytes":"10"}', "largeMarkdownBytes must be a finite non-negative integer"],
+		['{"largeMarkdownBytes":1e999}', "largeMarkdownBytes must be a finite non-negative integer"],
+		['{"largeAttachmentBytes":-1}', "largeAttachmentBytes must be a finite non-negative integer"],
+		['{"duplicateHashMaxBytes":null}', "duplicateHashMaxBytes must be a finite non-negative integer"],
+		['{"lowUsageTagThreshold":1.5}', "lowUsageTagThreshold must be a finite non-negative integer"],
+		['{"emptyNoteWordThreshold":false}', "emptyNoteWordThreshold must be a finite non-negative integer"],
+		['{"scanners":"large-files"}', "scanners must be an array of strings"],
+		['{"severity":[0]}', "severity must be an array of strings"],
+		['{"include":null}', "include must be an array of strings"],
+		['{"exclude":[1]}', "exclude must be an array of strings"],
+		['{"watchedTags":{}}', "watchedTags must be an array of strings"],
+		['{"baselinePath":false}', "baselinePath must be a string"],
+		['{"failOn":""}', "Unsupported failOn value: "],
+	])("rejects invalid config %s before scanning", async (raw, message) => {
+		const dir = await mkdtemp(join(tmpdir(), "vi-invalid-config-"));
+		try {
+			const config = join(dir, "config.json");
+			await writeFile(config, raw, "utf8");
+			// This vault deliberately does not exist. Config validation must win.
+			const result = await runCli([join(dir, "missing-vault"), "--config", config]);
+			expect(result).toEqual({ exitCode: 2, stdout: "", stderr: `${message}\n` });
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
+	it.each([0, 10])("accepts integer config threshold %s without losing findings", async (threshold) => {
+		await withVault({ "Note.md": "x".repeat(30) }, async (vaultPath) => {
+			const config = join(vaultPath, "config.json");
+			await writeFile(config, JSON.stringify({
+				scanners: ["large-files"], largeMarkdownBytes: threshold, failOn: "none",
+			}), "utf8");
+			const result = await runCli([vaultPath, "--config", config, "--format", "json"]);
+			expect(result.exitCode).toBe(0);
+			expect(result.stderr).toBe("");
+			expect(JSON.parse(result.stdout).issues).toEqual(expect.arrayContaining([
+				expect.objectContaining({ scannerId: "large-files", primaryPath: "Note.md" }),
+			]));
+		});
+	});
+
 	it("preserves valid block links in the actual CLI bundle", async () => {
 		await withVault({
 			"Source.md": "[[Target#^KNOWN-ID|Alias]]\n![[Target#^Known-id]]\n[[Target#^missing]]\n",
