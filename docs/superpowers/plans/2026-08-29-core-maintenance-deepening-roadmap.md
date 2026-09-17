@@ -2,6 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Delivery status:** This umbrella roadmap is historical. Current 1.0.0
+> release readiness work — core reliability fixes, CLI configuration validation,
+> release gates, and native runtime acceptance — is tracked in
+> [2026-09-13-v1-release-readiness.md](2026-09-13-v1-release-readiness.md) and
+> `docs/validation/1.0.0-readiness.md`. Do not mark items complete here without
+> renewed acceptance evidence.
+
 **Goal:** Deepen Vault Inspector's existing eight-scanner maintenance workflow by reducing false positives, making destructive actions safer, strengthening repeat-scan value, and aligning CLI lifecycle semantics without expanding the product into new scanner categories.
 
 **Architecture:** Preserve `ScanRunner`, `ScanContext`, deterministic issue fingerprints, the report view, verified fix pipeline, and read-only CLI as the primary boundaries. Deliver the roadmap as five independently releasable milestones: establish measurable precision fixtures, build a shared reference model and refine current scanners, add action-impact policy, add bounded history and conservative automatic scans, then bring compatible lifecycle comparison to the CLI.

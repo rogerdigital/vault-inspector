@@ -225,8 +225,9 @@ CLI baseline comparison is separate from the Obsidian plugin lifecycle. CLI
 output does not include plugin scan snapshots or the plugin's
 resolved-history view.
 
-The corrected reference, link, and YAML handling uses comparison semantics
-version `3`; the JSON schema remains version `1`. Regenerate older profile
+The corrected reference, link, and YAML handling, unverified link findings for
+unavailable target metadata, and Obsidian-compatible heading-anchor matching use
+comparison semantics version `4`; the JSON schema remains version `1`. Regenerate older profile
 baselines with the current command and the same detection settings, without
 passing `--baseline` to that regeneration run. `--fail-on none` does not bypass
 an incompatible baseline error.
