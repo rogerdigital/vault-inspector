@@ -137,13 +137,20 @@ function stripIgnoredMarkdownRegions(content: string): string {
 		.replace(/(`+)[^\r\n]*?\1/g, "");
 }
 
+// Markdown emphasis markers and sentence punctuation can directly follow a
+// URL in prose; a URL regex swallows them, so they are trimmed back here.
+const TRAILING_URL_PUNCTUATION = new Set(".,:;!?*~_");
+
 function trimUrlBoundary(url: string): string {
 	let trimmed = url;
-	while (/[),.;:!?]$/.test(trimmed)) {
-		if (trimmed.endsWith(")")) {
+	while (trimmed.length > 0) {
+		const last = trimmed[trimmed.length - 1];
+		if (last === ")") {
 			const opens = (trimmed.match(/\(/g) ?? []).length;
 			const closes = (trimmed.match(/\)/g) ?? []).length;
 			if (closes <= opens) break;
+		} else if (!TRAILING_URL_PUNCTUATION.has(last)) {
+			break;
 		}
 		trimmed = trimmed.slice(0, -1);
 	}

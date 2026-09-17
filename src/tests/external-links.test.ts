@@ -66,6 +66,35 @@ describe("externalLinksScanner", () => {
 		expect(extractBareUrls(body)).toEqual([expected]);
 	});
 
+	it.each([
+		["*[Empis tessellata](https://en.wikipedia.org/wiki/Empis_tessellata)*", "https://en.wikipedia.org/wiki/Empis_tessellata"],
+		["**[note](https://example.com/a)**", "https://example.com/a"],
+		["_https://example.com/a_", "https://example.com/a"],
+		["~~https://example.com/a~~", "https://example.com/a"],
+		["[t](https://example.com/a_(b))*", "https://example.com/a_(b)"],
+		["https://example.com/a_", "https://example.com/a"],
+	])("trims markdown emphasis markers after a URL: %s", (body, expected) => {
+		expect(extractBareUrls(body)).toEqual([expected]);
+	});
+
+	it("checks an italic-wrapped markdown link as a single clean URL", async () => {
+		const url = "https://en.wikipedia.org/wiki/Empis_tessellata";
+		const request = vi.fn(async (_url: string, method: "HEAD" | "GET") => ({ status: 200, method }));
+		const file = { path: "a.md", stat: { size: 100, mtime: 1000 } } as any;
+		const ctx = makeCtx({
+			requestUrl: request,
+			markdownFiles: [file],
+			vault: { cachedRead: async () => `*[Empis tessellata](${url})*\n` } as any,
+			metadataCache: { getFileCache: () => ({ links: [{ link: url }] }) } as any,
+		});
+
+		const issues = await externalLinksScanner.scan(ctx);
+
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(request.mock.calls[0]?.slice(0, 2)).toEqual([url, "HEAD"]);
+		expect(issues).toEqual([]);
+	});
+
 	it("checks the complete URL once when metadata and body contain balanced parentheses", async () => {
 		const url = "https://en.wikipedia.org/wiki/Function_(mathematics)";
 		const request = vi.fn(async (_url: string, method: "HEAD" | "GET") => ({ status: 404, method }));
