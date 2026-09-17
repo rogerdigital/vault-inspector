@@ -183,36 +183,62 @@ function resolveLinkIssues(
 		return issues;
 	}
 
-	if (headingPart) {
-		const targetCache = ctx.metadataCache.getFileCache(
-			ctx.markdownFiles.find((file) => file.path === resolvedPath)!,
-		);
-		const isBlock = headingPart.startsWith("^");
-		const found = isBlock
-			? Object.keys(targetCache?.blocks ?? {}).some(
-				(id) => id.toLowerCase() === headingPart.slice(1).toLowerCase(),
-			)
-			: (targetCache?.headings ?? []).some(
-				(heading) => slugifyHeading(heading.heading) === slugifyHeading(headingPart),
+		if (headingPart) {
+			const targetCache = ctx.metadataCache.getFileCache(
+				ctx.markdownFiles.find((file) => file.path === resolvedPath)!,
 			);
-		if (!found) {
-			issues.push(
-				makeIssue(
-					sourcePath,
-					candidate,
-					resolvedPath,
-					"warning",
-					`${isBlock ? "Block" : "Heading"} "#${headingPart}" not found in ${resolvedPath}`,
-					candidate.isEmbed
-						? "embed"
-						: candidate.isMarkdown
-							? "markdown-link"
-							: "heading",
-					isBlock ? "block" : "heading",
-				),
-			);
+			const isBlock = headingPart.startsWith("^");
+			const found = isBlock
+				? Object.keys(targetCache?.blocks ?? {}).some(
+					(id) => id.toLowerCase() === headingPart.slice(1).toLowerCase(),
+				)
+				: (targetCache?.headings ?? []).some(
+					(heading) => slugifyHeading(heading.heading) === slugifyHeading(headingPart),
+				);
+			if (!found && isBlock) {
+				// Obsidian resolves links to implicit block ids ("Copy link to
+				// block") that are never written to the file, and the blocks
+				// cache only indexes explicit ^ids — an id miss is evidence of
+				// nothing, so the finding stays unverified and gets no fix.
+				issues.push(
+					makeIssue(
+						sourcePath,
+						candidate,
+						resolvedPath,
+						"info",
+						`Block "#${headingPart}" not found among explicit block ids in ${resolvedPath}`,
+						candidate.isEmbed
+							? "embed"
+							: candidate.isMarkdown
+								? "markdown-link"
+								: "heading",
+						"block",
+						{
+							title: "Unverified block reference",
+							why: `The target note does not declare the block id "#${headingPart}" explicitly.`,
+							nextStep: "Open the target note and confirm the block reference works; update or remove the link if the block is gone.",
+							caveat: "Obsidian's implicit block ids are not stored in note metadata, so this reference may still resolve.",
+						},
+					),
+				);
+			} else if (!found) {
+				issues.push(
+					makeIssue(
+						sourcePath,
+						candidate,
+						resolvedPath,
+						"warning",
+						`Heading "#${headingPart}" not found in ${resolvedPath}`,
+						candidate.isEmbed
+							? "embed"
+							: candidate.isMarkdown
+								? "markdown-link"
+								: "heading",
+						"heading",
+					),
+				);
+			}
 		}
-	}
 
 	return issues;
 }
@@ -311,6 +337,14 @@ function slugifyHeading(heading: string): string {
 		.replace(/\s+/g, "-");
 }
 
+/** Replaces the default confirmed/broken presentation; always unverified. */
+type UnverifiedPresentation = {
+	title: string;
+	why: string;
+	nextStep: string;
+	caveat?: string;
+};
+
 function makeIssue(
 	sourcePath: string,
 	candidate: LinkCandidate,
@@ -319,6 +353,7 @@ function makeIssue(
 	message: string,
 	linkKind: "note-link" | "markdown-link" | "attachment" | "heading" | "embed",
 	referenceKind: "block" | "heading" = "heading",
+	unverified?: UnverifiedPresentation,
 ): Issue {
 	const fragmentAt = candidate.linkText.indexOf("#");
 	const rawFragment = fragmentAt === -1 ? null : candidate.linkText.slice(fragmentAt + 1);
@@ -330,27 +365,29 @@ function makeIssue(
 	const issue: Issue = {
 		scannerId: "broken-links",
 		severity,
-		title: "Broken link",
+		title: unverified?.title ?? "Broken link",
 		message,
 		primaryPath: sourcePath,
 		relatedPaths: [targetPath],
 		evidence: { link: candidate.linkText, target: targetPath, linkKind },
-		...describeFinding(
-			"confirmed",
-			severity === "error"
-				? "The link target could not be resolved in the vault."
-				: `The target note exists, but the referenced ${referenceKind} was not found.`,
-			severity === "error"
-				? "Correct the target or remove the link from the source note."
-				: `Correct the ${referenceKind} reference or remove it from the source note.`,
-		),
+		...(unverified
+			? describeFinding("unverified", unverified.why, unverified.nextStep, unverified.caveat)
+			: describeFinding(
+				"confirmed",
+				severity === "error"
+					? "The link target could not be resolved in the vault."
+					: `The target note exists, but the referenced ${referenceKind} was not found.`,
+				severity === "error"
+					? "Correct the target or remove the link from the source note."
+					: `Correct the ${referenceKind} reference or remove it from the source note.`,
+			)),
 		fingerprint: generateFingerprint("broken-links", sourcePath, {
 			link: candidate.linkText,
 			target: targetPath,
 			...fragmentIdentity,
 		}),
 	};
-	if (candidate.fix) {
+	if (candidate.fix && !unverified) {
 		const fix = candidate.fix;
 		issue.fixAction = {
 			kind: "remove-link-text",
