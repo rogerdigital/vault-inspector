@@ -34,9 +34,24 @@ export const tagUsageScanner = {
 			}
 		}
 
+		// A tag with an actively used descendant is a healthy branch root, not
+		// an abandoned tag: Obsidian's tag model aggregates the hierarchy, so
+		// parents are only low-usage when the whole branch is.
+		const activeAncestors = new Set<string>();
+		for (const [tag, count] of tagCounts) {
+			if (count < ctx.lowUsageTagThreshold) continue;
+			const segments = tag.split("/");
+			segments.pop();
+			while (segments.length > 0) {
+				activeAncestors.add(segments.join("/"));
+				segments.pop();
+			}
+		}
+
 		// Report low-usage tags
 		for (const [tag, count] of tagCounts) {
 			if (count >= ctx.lowUsageTagThreshold) continue;
+			if (activeAncestors.has(tag)) continue;
 			if (watchedSet.has(tag)) continue; // watched tags reported separately
 			const paths = Array.from(tagPaths.get(tag) ?? []).sort();
 
@@ -65,6 +80,9 @@ export const tagUsageScanner = {
 		for (const watchedTag of watchedTags) {
 			const count = tagCounts.get(watchedTag) ?? 0;
 			if (count > 0) continue;
+			// Nested usage counts as appearing: Obsidian's tag search for a
+			// parent also matches its child tags.
+			if (hasDescendantTag(tagCounts, watchedTag)) continue;
 			issues.push({
 				scannerId: "tag-usage",
 				severity: "info",
@@ -88,6 +106,13 @@ export const tagUsageScanner = {
 		return issues;
 	},
 };
+
+function hasDescendantTag(tagCounts: Map<string, number>, tag: string): boolean {
+	for (const knownTag of tagCounts.keys()) {
+		if (knownTag.startsWith(`${tag}/`)) return true;
+	}
+	return false;
+}
 
 function collectTags(cache: CachedMetadata): string[] {
 	const tags: string[] = [];

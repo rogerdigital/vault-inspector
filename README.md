@@ -75,6 +75,9 @@ Reports keys used with incompatible value types across notes.
 ### Tag Usage
 
 Reports watched tags not present in the vault, and tags below a usage threshold.
+Hierarchical tags are treated as a tree: a parent tag is only low-usage when its
+whole branch is below the threshold, and a watched parent counts as present when
+any child tag appears.
 
 - `info` — all tag issues
 
