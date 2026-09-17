@@ -834,8 +834,6 @@ describe("same-note fragments", () => {
 		["[[#Missing|Alias]]", "#Missing", "Alias", "heading"],
 		["[jump](#Missing)", "#Missing", "jump", "markdown-link"],
 		["![[#Missing]]", "#Missing", "", "embed"],
-		["[[#^missing|Block alias]]", "#^missing", "Block alias", "heading"],
-		["![block](#^missing)", "#^missing", "", "embed"],
 	])("reports %s against the source note with exact fix metadata", async (original, link, replacement, linkKind) => {
 		const ctx = makeScanContext({
 			files: [{ path: "nested/Source.md" }],
@@ -858,6 +856,36 @@ describe("same-note fragments", () => {
 			evidence: { link, target: "nested/Source.md", linkKind },
 			fixAction: { original, replacement, targetPaths: ["nested/Source.md"] },
 		});
+		expect(resolver).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["[[#^missing|Block alias]]", "#^missing", "Block alias", "heading"],
+		["![block](#^missing)", "#^missing", "", "embed"],
+	])("reports same-note block reference %s as unverified without a removal action", async (original, link, replacement, linkKind) => {
+		const ctx = makeScanContext({
+			files: [{ path: "nested/Source.md" }],
+			metadataByPath: {
+				"nested/Source.md": {
+					[original.startsWith("!") ? "embeds" : "links"]: [{ original, link }],
+				} as any,
+			},
+			overrides: { ignoreUnresolvedNoteLinks: true },
+		});
+		const resolver = vi.fn(() => null);
+		ctx.metadataCache.getFirstLinkpathDest = resolver;
+		const issues = await brokenLinksScanner.scan(ctx);
+		expect(issues).toHaveLength(1);
+		expect(issues[0]).toMatchObject({
+			severity: "info",
+			classification: "unverified",
+			title: "Unverified block reference",
+			message: `Block "${link}" not found among explicit block ids in nested/Source.md`,
+			primaryPath: "nested/Source.md",
+			relatedPaths: ["nested/Source.md"],
+			evidence: { link, target: "nested/Source.md", linkKind },
+		});
+		expect(issues[0].fixAction).toBeUndefined();
 		expect(resolver).not.toHaveBeenCalled();
 	});
 
@@ -897,7 +925,7 @@ describe("block references", () => {
 		expect(await brokenLinksScanner.scan(ctx)).toEqual([]);
 	});
 
-	it.each(["missing", "same-name", "Known_id"])("reports missing block %s without heading normalization", async (id) => {
+	it.each(["missing", "same-name", "Known_id"])("reports missing block %s as unverified without a removal action", async (id) => {
 		const ctx = makeScanContext({
 			files: [{ path: "Source.md" }, { path: "Target.md" }],
 			metadataByPath: {
@@ -911,13 +939,11 @@ describe("block references", () => {
 		const issues = await brokenLinksScanner.scan(ctx);
 		expect(issues).toHaveLength(1);
 		expect(issues[0]).toMatchObject({
-			severity: "warning",
-			message: `Block "#^${id}" not found in Target.md`,
-			explanation: {
-				why: "The target note exists, but the referenced block was not found.",
-				nextStep: "Correct the block reference or remove it from the source note.",
-			},
-			fixAction: { replacement: "Alias" },
+			severity: "info",
+			classification: "unverified",
+			title: "Unverified block reference",
+			message: `Block "#^${id}" not found among explicit block ids in Target.md`,
 		});
+		expect(issues[0].fixAction).toBeUndefined();
 	});
 });

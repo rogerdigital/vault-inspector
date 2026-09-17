@@ -120,8 +120,23 @@ describe("runCli", () => {
 			], { encoding: "utf8" });
 			const payload = JSON.parse(stdout);
 			expect(payload.issues).toHaveLength(1);
-			expect(payload.issues[0].message).toBe('Block "#^missing" not found in Target.md');
+			expect(payload.issues[0].severity).toBe("info");
+			expect(payload.issues[0].message).toBe('Block "#^missing" not found among explicit block ids in Target.md');
 			expect(payload.issues[0].evidence.link).toBe("Target#^missing");
+		});
+	});
+
+	it("treats hashless block links as block references in the CLI", async () => {
+		await withVault({
+			"Source.md": "[[Target^Known-id]]\n",
+			"Target.md": "Body ^Known-id\n",
+		}, async (vaultPath) => {
+			const result = await runCli([
+				vaultPath, "--format", "json", "--scanner", "broken-links", "--fail-on", "none",
+			]);
+			expect(result.stderr).toBe("");
+			expect(result.exitCode).toBe(0);
+			expect(JSON.parse(result.stdout).issues).toEqual([]);
 		});
 	});
 
@@ -146,7 +161,7 @@ describe("runCli", () => {
 				'Heading "#Missing" not found in nested/Source.md',
 				'Heading "#MissingMarkdown" not found in nested/Source.md',
 				'Heading "#MissingEmbed" not found in nested/Source.md',
-				'Block "#^missing-block" not found in nested/Source.md',
+				'Block "#^missing-block" not found among explicit block ids in nested/Source.md',
 			].sort());
 		});
 	});

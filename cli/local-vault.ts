@@ -58,8 +58,13 @@ export async function createLocalApp(vaultPath: string): Promise<App> {
 		for (const link of [...metadata.links ?? [], ...metadata.embeds ?? [], ...metadata.frontmatterLinks ?? []]) {
 			if (hasUriScheme(link.link)) continue;
 			const fragmentAt = link.link.indexOf("#");
-			const path = fragmentAt === -1 ? link.link : link.link.slice(0, fragmentAt);
-			const fragment = fragmentAt === -1 ? null : link.link.slice(fragmentAt + 1);
+			// Obsidian forbids "^" in file names, so a caret with no "#" is the
+			// hashless block-reference form ("Note^block-id") — treat it as one.
+			const blockAt = fragmentAt === -1 ? link.link.indexOf("^", 1) : -1;
+			const separatorAt = blockAt !== -1 ? blockAt : fragmentAt;
+			const path = separatorAt === -1 ? link.link : link.link.slice(0, separatorAt);
+			const rawFragment = separatorAt === -1 ? null : link.link.slice(separatorAt + 1);
+			const fragment = blockAt !== -1 ? `^${rawFragment}` : rawFragment;
 			const target = link.sourceRelative ? decodeDestination(path) : path.trim();
 			link.destination = {
 				path: target,
