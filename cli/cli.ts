@@ -347,9 +347,10 @@ async function loadConfig(args: ParsedArgs): Promise<CliOptions | { error: strin
 	if (!args.configPath) return args;
 	try {
 		const raw = await readFile(args.configPath, "utf8");
-		const config = JSON.parse(raw) as CliConfig;
-		const validationError = validateConfig(config);
+		const candidate: unknown = JSON.parse(raw);
+		const validationError = validateConfig(candidate);
 		if (validationError) return { error: validationError };
+		const config = candidate as CliConfig;
 
 		return {
 			...args,
@@ -684,40 +685,64 @@ function getExitCode(result: CliScanResult, failOn: FailOn): number {
 	return result.issues.length > 0 ? 1 : 0;
 }
 
-function validateConfig(config: CliConfig): string | null {
-	if (config.scanners) {
-		const validation = validateScanners(config.scanners);
-		if (validation) return validation;
+function validateConfig(value: unknown): string | null {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return "Config must be a JSON object";
 	}
-	if (config.severity) {
-		const invalid = config.severity.find((item) => !isSeverity(item));
-		if (invalid) return `Unknown severity: ${String(invalid)}`;
+	const config = value as Record<string, unknown>;
+	const arrayKeys = [
+		"scanners", "severity", "include", "exclude", "ignoredFolders",
+		"ignoredLargeMarkdownFrontmatterKeys", "ignoredLargeMarkdownPathPatterns",
+		"watchedTags", "ignoredProperties",
+	];
+	for (const key of arrayKeys) {
+		const field = config[key];
+		if (field !== undefined &&
+			(!Array.isArray(field) || field.some((item) => typeof item !== "string"))) {
+			return `${key} must be an array of strings`;
+		}
 	}
-	if (config.failOn && !isFailOn(config.failOn)) {
+	const numberKeys = [
+		"largeMarkdownBytes", "largeAttachmentBytes", "duplicateHashMaxBytes",
+		"lowUsageTagThreshold", "emptyNoteWordThreshold",
+	];
+	for (const key of numberKeys) {
+		const field = config[key];
+		if (field !== undefined && (typeof field !== "number" ||
+			!Number.isFinite(field) || !Number.isInteger(field) || field < 0)) {
+			return `${key} must be a finite non-negative integer`;
+		}
+	}
+	if (config.baselinePath !== undefined && typeof config.baselinePath !== "string") {
+		return "baselinePath must be a string";
+	}
+	if (config.scanners !== undefined) {
+		const error = validateScanners(config.scanners as string[]);
+		if (error) return error;
+	}
+	if (config.severity !== undefined) {
+		for (const severity of config.severity as string[]) {
+			if (!isSeverity(severity)) return `Unknown severity: ${severity}`;
+		}
+	}
+	if (config.failOn !== undefined && !isFailOn(config.failOn)) {
 		return `Unsupported failOn value: ${String(config.failOn)}`;
 	}
-	if (
-		config.ignoreUnresolvedNoteLinks !== undefined &&
-		typeof config.ignoreUnresolvedNoteLinks !== "boolean"
-	) {
+	if (config.ignoreUnresolvedNoteLinks !== undefined &&
+		typeof config.ignoreUnresolvedNoteLinks !== "boolean") {
 		return "ignoreUnresolvedNoteLinks must be a boolean";
 	}
 	if (config.ignoredFoldersByScanner !== undefined) {
-		if (
-			typeof config.ignoredFoldersByScanner !== "object" ||
-			config.ignoredFoldersByScanner === null ||
-			Array.isArray(config.ignoredFoldersByScanner)
-		) {
+		const foldersByScanner = config.ignoredFoldersByScanner;
+		if (typeof foldersByScanner !== "object" || foldersByScanner === null ||
+			Array.isArray(foldersByScanner)) {
 			return "ignoredFoldersByScanner must be an object of scanner IDs to folder arrays";
 		}
-		for (const [scannerId, folders] of Object.entries(config.ignoredFoldersByScanner)) {
+		for (const [scannerId, folders] of Object.entries(foldersByScanner)) {
 			if (!SCANNER_IDS.includes(scannerId as ScannerId)) {
 				return `Unknown scanner in ignoredFoldersByScanner: ${scannerId}`;
 			}
-			if (
-				!Array.isArray(folders) ||
-				folders.some((folder) => typeof folder !== "string")
-			) {
+			if (!Array.isArray(folders) || folders.some((folder) => typeof folder !== "string")) {
 				return `ignoredFoldersByScanner.${scannerId} must be an array of folder paths`;
 			}
 		}

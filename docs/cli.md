@@ -106,6 +106,12 @@ vinspect . --baseline .vault-inspector-baseline.json --fail-on new
 
 ## Configuration
 
+Configuration must be a JSON object. Thresholds and the duplicate hash cap must
+be finite non-negative integers; numeric strings are not accepted. List options
+must be arrays of strings. Invalid configuration exits with code 2 before the
+vault is scanned, even when a command-line option would override that field.
+Unknown configuration keys are ignored.
+
 Config files are JSON and use the same option names:
 
 ```json
