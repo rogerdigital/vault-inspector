@@ -439,3 +439,34 @@ describe("runFixBatch", () => {
 		expect(scan).toHaveBeenCalledTimes(2);
 		expect(process).toHaveBeenCalledTimes(1);
 	});
+
+describe("runFixBatch metadata readiness", () => {
+	it("reports successful writes with cache timeouts in verification phase and stops subsequent preflights", async () => {
+		const first = issue("first");
+		const second = issue("second");
+		const scan = vi.fn().mockResolvedValue(result([first, second]));
+		const execute = vi.fn().mockResolvedValue({
+			affectedCount: 1, verificationReady: false, verificationMessage: "Metadata timed out",
+		});
+		const batch = await runFixBatch([first, second], [
+			{ fingerprint: first.fingerprint }, { fingerprint: second.fingerprint },
+		], { settings: () => DEFAULT_SETTINGS, scan, execute });
+		expect(scan).toHaveBeenCalledOnce();
+		expect(execute).toHaveBeenCalledOnce();
+		expect(batch.verificationResult).toBeNull();
+		expect(batch.outcomes[0]).toMatchObject({ outcome: "failed", phase: "verification", message: "Metadata timed out" });
+		expect(batch.outcomes[1]).toMatchObject({ outcome: "skipped", phase: "preflight" });
+	});
+
+	it("does not run any preflight when this batch fence is already unavailable", async () => {
+		const requested = issue("first");
+		const scan = vi.fn();
+		const execute = vi.fn();
+		const batch = await runFixBatch([requested], [{ fingerprint: requested.fingerprint }], {
+			settings: () => DEFAULT_SETTINGS, scan, execute, canScan: () => false,
+		});
+		expect(scan).not.toHaveBeenCalled();
+		expect(execute).not.toHaveBeenCalled();
+		expect(batch.outcomes[0]).toMatchObject({ outcome: "skipped", phase: "preflight" });
+	});
+});

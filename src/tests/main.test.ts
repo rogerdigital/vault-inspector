@@ -1322,6 +1322,7 @@ describe("VaultInspectorPlugin", () => {
 			expect.objectContaining({
 				targetPaths: ["a.md", "b.md"],
 			}),
+			expect.any(MetadataWriteFence),
 		);
 		expect(view.setOperationOutcomes).toHaveBeenCalledWith([
 			expect.objectContaining({ fingerprint: "duplicates", outcome: "fixed" }),
@@ -1869,3 +1870,4 @@ describe("migrateExcalidrawFrontmatterKey", () => {
 		});
 	});
 });
+import { MetadataWriteFence } from "../fix/metadata-write-fence";

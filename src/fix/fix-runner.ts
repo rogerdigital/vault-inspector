@@ -6,13 +6,23 @@ import {
 	isBlockedFromExecution,
 	type FixDecision,
 } from "./fix-decisions";
+import { METADATA_NOT_READY } from "./metadata-write-fence";
 
 export type FixRunnerDependencies = {
 	/** Read live settings once; the batch clones and freezes the value for every scan. */
 	settings: () => InspectorSettings;
 	/** Receives a clone of the frozen settings on every call (preflights + final verification). */
 	scan: (settings: InspectorSettings) => Promise<ScanResult | null>;
-	execute: (action: FixAction) => Promise<number>;
+	/** Executors may return a number (legacy) or a result carrying verification readiness. */
+	execute: (action: FixAction) => Promise<number | FixExecutionResult>;
+	/** Optional batch-wide guard; false stops all further scans and mutations. */
+	canScan?: () => boolean;
+};
+
+export type FixExecutionResult = {
+	affectedCount: number;
+	verificationReady: boolean;
+	verificationMessage?: string;
 };
 
 export type FixBatchResult = {
@@ -33,7 +43,13 @@ export async function runFixBatch(
 	dependencies: FixRunnerDependencies,
 ): Promise<FixBatchResult> {
 	const frozenSettings = structuredClone(dependencies.settings());
-	const scanOnce = () => dependencies.scan(structuredClone(frozenSettings));
+	// Set when a write succeeded but its cache synchronization could not be
+	// confirmed: later preflights would read stale metadata and must not run.
+	let verificationProblem: string | undefined;
+	const scanOnce = () => {
+		if (verificationProblem || dependencies.canScan?.() === false) return Promise.resolve(null);
+		return dependencies.scan(structuredClone(frozenSettings));
+	};
 
 	const decisionsByFingerprint = new Map(
 		decisions.map((decision) => [decision.fingerprint, decision]),
@@ -43,6 +59,10 @@ export async function runFixBatch(
 	let scannedDuringBatch = false;
 
 	for (const [index, issue] of issues.entries()) {
+		if (verificationProblem || dependencies.canScan?.() === false) {
+			outcomes[index] = skipped(issue, METADATA_NOT_READY);
+			continue;
+		}
 		if (isBlockedFromExecution(issue)) {
 			outcomes[index] = skipped(
 				issue,
@@ -86,12 +106,19 @@ export async function runFixBatch(
 		}
 
 		try {
+			const raw = await dependencies.execute(freshAction);
+			const execution = typeof raw === "number"
+				? { affectedCount: raw, verificationReady: true }
+				: raw;
 			pending.push({
 				index,
 				fingerprint: issue.fingerprint,
 				affectedPaths: [...freshAction.targetPaths],
-				affectedCount: await dependencies.execute(freshAction),
+				affectedCount: execution.affectedCount,
 			});
+			if (!execution.verificationReady) {
+				verificationProblem = execution.verificationMessage ?? METADATA_NOT_READY;
+			}
 		} catch (error) {
 			outcomes[index] = {
 				fingerprint: issue.fingerprint,
@@ -114,7 +141,11 @@ export async function runFixBatch(
 				fingerprint: action.fingerprint,
 				outcome: "failed",
 				phase: "verification",
-				message: "The final verification scan did not complete.",
+				message: verificationProblem ?? (
+					dependencies.canScan?.() === false
+						? METADATA_NOT_READY
+						: "The final verification scan did not complete."
+				),
 				affectedPaths: action.affectedPaths,
 			};
 		}

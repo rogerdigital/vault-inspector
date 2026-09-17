@@ -296,3 +296,26 @@ it("returns 0 without restoring old text when the link vanished from latest cont
 	})).toBe(0);
 	expect(getContent()).toBe("[[Kept]] and [[Missing]]");
 });
+
+it("arms expected metadata inside the atomic process callback and preserves change count on timeout", async () => {
+	const file = Object.assign(new TFile(), { path: "Source.md" });
+	const expectContent = vi.fn();
+	const process = vi.fn(async (_file: TFile, transform: (content: string) => string) => {
+		const updated = transform("[[Missing]]");
+		expect(expectContent).toHaveBeenCalledWith(updated);
+		expect(updated).toBe("Shown");
+		return updated;
+	});
+	const app = { vault: { getAbstractFileByPath: () => file, process } };
+	const mutate = vi.fn(async (_file: unknown, _content: unknown,
+		write: (expect: (content: string) => void) => Promise<void>) => {
+		await write(expectContent);
+		return false;
+	});
+	expect(await executeFixAction(app as any, {
+		kind: "remove-link-text", label: "Remove", description: "", targetPaths: ["Source.md"],
+		original: "[[Missing]]", replacement: "Shown",
+	}, { ready: true, mutate })).toBe(1);
+	expect(mutate).toHaveBeenCalledWith(file, undefined, expect.any(Function));
+	expect(process).toHaveBeenCalledWith(file, expect.any(Function));
+});
