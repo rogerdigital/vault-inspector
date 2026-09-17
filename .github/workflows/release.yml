@@ -15,15 +15,48 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
 
-      - run: npm ci
+      - name: Verify tag version and main ancestry
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node scripts/check-release-version.mjs "$RELEASE_TAG"
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main
 
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run lint:obsidian-warnings
       - run: npm run build
+      - run: npm run test:coverage
+      - run: npm pack --dry-run
+      - name: Verify installed package
+        run: |
+          set -euo pipefail
+          mkdir release-package
+          npm pack --pack-destination release-package
+          packages=(release-package/*.tgz)
+          test "${#packages[@]}" -eq 1
+          node scripts/smoke-installed-cli.mjs "${packages[0]}"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 18
+      - name: Verify minimum Node runtime
+        run: |
+          set -euo pipefail
+          packages=(release-package/*.tgz)
+          test "${#packages[@]}" -eq 1
+          node scripts/smoke-installed-cli.mjs "${packages[0]}"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
 
       - name: Create release
         env:
