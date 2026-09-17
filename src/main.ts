@@ -15,6 +15,7 @@ import {
 	MAX_SAFE_VAULT_REPORT_BYTES,
 } from "./report/report-export";
 import { executeFixAction } from "./fix/fix-executor";
+import { METADATA_NOT_READY, MetadataWriteFence } from "./fix/metadata-write-fence";
 import { showConfirmModal } from "./fix/confirm-modal";
 import { runFixBatch } from "./fix/fix-runner";
 import type { DispositionOutcome } from "./fix/action-outcomes";
@@ -92,7 +93,12 @@ export default class VaultInspectorPlugin extends Plugin {
 		this.addRibbonIcon("shield-check", "Run scan", () => this.runScan());
 	}
 
-	onunload() {}
+	private activeMetadataFences = new Set<MetadataWriteFence>();
+
+	onunload() {
+		for (const fence of this.activeMetadataFences) fence.dispose();
+		this.activeMetadataFences.clear();
+	}
 
 	async loadSettings() {
 		const parsed = parsePluginData(await this.loadData());
@@ -240,11 +246,25 @@ export default class VaultInspectorPlugin extends Plugin {
 				await this.enqueueOperation(async () => {
 					const fixSettings = structuredClone(this.settings);
 					const scanProfile = await createScanProfile(fixSettings);
-					const batch = await runFixBatch(issues, decisions, {
-						settings: () => fixSettings,
-						scan: (batchSettings) => this.scan(view, batchSettings),
-						execute: (action) => executeFixAction(this.app, action),
-					});
+					const fence = new MetadataWriteFence(this.app);
+					this.activeMetadataFences.add(fence);
+					const batch = await (async () => {
+						try {
+							return await runFixBatch(issues, decisions, {
+								settings: () => fixSettings,
+								scan: (batchSettings) => this.scan(view, batchSettings),
+								canScan: () => fence.ready,
+								execute: async (action) => ({
+									affectedCount: await executeFixAction(this.app, action, fence),
+									verificationReady: fence.ready,
+									verificationMessage: fence.ready ? undefined : METADATA_NOT_READY,
+								}),
+							});
+						} finally {
+							fence.dispose();
+							this.activeMetadataFences.delete(fence);
+						}
+					})();
 					let acceptanceFailed = false;
 					let acceptanceError: unknown;
 					if (batch.verificationResult) {

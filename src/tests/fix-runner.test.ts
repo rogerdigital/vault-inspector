@@ -124,6 +124,33 @@ describe("runFixBatch", () => {
 		expect(execute).not.toHaveBeenCalled();
 	});
 
+	it("skips execution when preflight re-evaluates the finding as unverified without a fix", async () => {
+		const requested = issue("unverified");
+		const reEvaluated = issue("unverified");
+		// The same fingerprint resurfaces with unavailable target metadata:
+		// unverified classification and no authorizable fix action.
+		const { fixAction: _withdrawn, ...withoutFix } = reEvaluated;
+		void _withdrawn;
+		const stale = { ...withoutFix, classification: "unverified" as const };
+		const execute = vi.fn();
+		const scan = vi.fn()
+			.mockResolvedValueOnce(result([stale]))
+			.mockResolvedValueOnce(result([]));
+
+		const batch = await runFixBatch(
+			[requested],
+			[{ fingerprint: requested.fingerprint }],
+			{ settings: () => DEFAULT_SETTINGS, scan, execute },
+		);
+
+		expect(batch.outcomes[0]).toMatchObject({
+			fingerprint: "unverified",
+			outcome: "skipped",
+			phase: "preflight",
+		});
+		expect(execute).not.toHaveBeenCalled();
+	});
+
 	it("reports a missing confirmed decision in its original outcome slot", async () => {
 		const missing = issue("missing");
 		const confirmed = issue("confirmed");
@@ -392,19 +419,54 @@ describe("runFixBatch", () => {
 });
 
 
-it("verifies a parsed link fix without changing identical code examples", async () => {
-	const original = "[Missing](missing.md)";
-	let content = `${original}\n\n    ${original}\n\n\\${original}`;
-	const file = Object.assign(new TFile(), { path: "Source.md" });
-	const modify = vi.fn(async (_file: TFile, updated: string) => { content = updated; });
-	const app = { vault: { getAbstractFileByPath: () => file, read: async () => content, modify } };
-	const requested = issue("link", action("Source.md", { kind: "remove-link-text", original, replacement: "Missing" }));
-	const scan = vi.fn().mockResolvedValueOnce(result([requested])).mockResolvedValueOnce(result([]));
-	const batch = await runFixBatch([requested], [{ fingerprint: "link" }], {
-		settings: () => DEFAULT_SETTINGS, scan, execute: (fix) => executeFixAction(app as any, fix),
+	it("verifies a parsed link fix without changing identical code examples", async () => {
+		const original = "[Missing](missing.md)";
+		let content = `${original}\n\n    ${original}\n\n\\${original}`;
+		const file = Object.assign(new TFile(), { path: "Source.md" });
+		const modify = vi.fn(async (_file: TFile, updated: string) => { content = updated; });
+		const process = vi.fn(async (_file: TFile, transform: (text: string) => string) => {
+			content = transform(content);
+			return content;
+		});
+		const app = { vault: { getAbstractFileByPath: () => file, read: async () => content, modify, process } };
+		const requested = issue("link", action("Source.md", { kind: "remove-link-text", original, replacement: "Missing" }));
+		const scan = vi.fn().mockResolvedValueOnce(result([requested])).mockResolvedValueOnce(result([]));
+		const batch = await runFixBatch([requested], [{ fingerprint: "link" }], {
+			settings: () => DEFAULT_SETTINGS, scan, execute: (fix) => executeFixAction(app as any, fix),
+		});
+		expect(content).toBe(`Missing\n\n    ${original}\n\n\\${original}`);
+		expect(batch.outcomes[0].outcome).toBe("fixed");
+		expect(scan).toHaveBeenCalledTimes(2);
+		expect(process).toHaveBeenCalledTimes(1);
 	});
-	expect(content).toBe(`Missing\n\n    ${original}\n\n\\${original}`);
-	expect(batch.outcomes[0].outcome).toBe("fixed");
-	expect(scan).toHaveBeenCalledTimes(2);
-	expect(modify).toHaveBeenCalledTimes(1);
+
+describe("runFixBatch metadata readiness", () => {
+	it("reports successful writes with cache timeouts in verification phase and stops subsequent preflights", async () => {
+		const first = issue("first");
+		const second = issue("second");
+		const scan = vi.fn().mockResolvedValue(result([first, second]));
+		const execute = vi.fn().mockResolvedValue({
+			affectedCount: 1, verificationReady: false, verificationMessage: "Metadata timed out",
+		});
+		const batch = await runFixBatch([first, second], [
+			{ fingerprint: first.fingerprint }, { fingerprint: second.fingerprint },
+		], { settings: () => DEFAULT_SETTINGS, scan, execute });
+		expect(scan).toHaveBeenCalledOnce();
+		expect(execute).toHaveBeenCalledOnce();
+		expect(batch.verificationResult).toBeNull();
+		expect(batch.outcomes[0]).toMatchObject({ outcome: "failed", phase: "verification", message: "Metadata timed out" });
+		expect(batch.outcomes[1]).toMatchObject({ outcome: "skipped", phase: "preflight" });
+	});
+
+	it("does not run any preflight when this batch fence is already unavailable", async () => {
+		const requested = issue("first");
+		const scan = vi.fn();
+		const execute = vi.fn();
+		const batch = await runFixBatch([requested], [{ fingerprint: requested.fingerprint }], {
+			settings: () => DEFAULT_SETTINGS, scan, execute, canScan: () => false,
+		});
+		expect(scan).not.toHaveBeenCalled();
+		expect(execute).not.toHaveBeenCalled();
+		expect(batch.outcomes[0]).toMatchObject({ outcome: "skipped", phase: "preflight" });
+	});
 });
