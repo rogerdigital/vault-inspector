@@ -28,13 +28,18 @@ Detection uses Obsidian's metadata cache. Automatic link removal only edits pars
 
 ### Orphan Attachments
 
-Scans for attachment files not referenced by any Markdown file.
+Scans for attachment files without indexed references from Markdown links,
+embeds, frontmatter links, Canvas file nodes, or Canvas group backgrounds.
 
 - `warning` — unreferenced file older than 24 hours
 - `info` — unreferenced file modified within 24 hours
 - Supported: png, jpg, jpeg, gif, webp, svg, pdf, mp3, mp4, wav, mov, zip
 
-Orphan detection cannot account for references from CSS, Canvas, Dataview queries, or external tools.
+Orphan detection cannot account for references from CSS, dynamic Dataview
+queries, or external tools. Missing Markdown metadata and malformed or
+unreadable Canvas files reduce reference coverage; trash actions are blocked
+while reference coverage is incomplete. Orphan findings remain candidates, not
+proof that an attachment is unused.
 
 ### Empty Notes
 
@@ -46,22 +51,28 @@ Flags notes that have no content beyond frontmatter and a title heading.
 
 Opt-in scanner for checking HTTP/HTTPS URLs found in notes for availability. It is disabled by default because it makes network requests and depends on external sites, DNS, and rate limits.
 
-- `warning` — HTTP status 400 or higher
-- `info` — timed out, failed, or skipped URL checks
+- `warning` — HTTP 404/410 (and other 4xx) dead-link candidates
+- `info` — 401/403 access-restricted, 429 rate-limited, 5xx server errors, and timed-out, failed, blocked, or skipped checks
 - Checks Markdown links, frontmatter links, images/embeds, and bare HTTP/HTTPS URLs in note bodies.
 - Timeouts or blocked requests do not necessarily mean a URL is dead.
 
 ### Duplicate Files
 
-Groups files by basename + extension, then by size. Files below the hash cap are verified with SHA-256.
+Collects candidates using two independent groups: matching basename plus
+extension, and matching byte size. Candidate files at or below the hash cap are
+verified with SHA-256, so identical content can be detected across different
+filenames. Files above the cap remain unverified candidates.
 
 - `warning` — hash-identical files
 - `info` — same-name or same-size candidates without hash
 
 Deletion is offered only for files confirmed identical by content hash. By
-default, Vault Inspector asks which file to keep. Automatic mode keeps the first
-complete vault-relative path in alphabetical order. Modification time, access
-time, and file size do not choose the keep file.
+default, Vault Inspector asks which file to keep. Automatic selection prefers
+the copy with the highest indexed inbound reference count; ties use the
+lexicographically smallest vault-relative path. Groups with multiple referenced
+copies require an explicit keep choice and are excluded from bulk actions.
+References are never rewritten automatically. Modification time, access time,
+and file size do not choose the keep file.
 
 Duplicate detection above the hash cap reports candidates only (no content verification).
 
@@ -174,7 +185,7 @@ Obsidian's trash; it never permanently deletes them.
 |---|---|---|
 | Enabled Scanners | All local scanners on; External Links off | Toggle individual scanners |
 | Enable fix actions | On | Allow batch delete of fixable issues |
-| Duplicate file keep mode | Always ask | Require a keep-file choice, or automatically keep the alphabetically first vault-relative path |
+| Duplicate file keep mode | Always ask | Require a keep-file choice, or automatically keep the most-referenced copy (ties: alphabetically first) |
 | Large Markdown threshold | 100 KB | Markdown files above this size are flagged |
 | Large attachment threshold | 5 MB | Attachments above this size are flagged |
 | Ignored large Markdown frontmatter keys | excalidraw-plugin | Markdown files with these frontmatter keys are excluded from large file checks |
@@ -187,6 +198,11 @@ Obsidian's trash; it never permanently deletes them.
 | Scanner-specific ignored folders | (none) | Additional folders excluded only from the selected scanner |
 | Ignored properties | (none) | Frontmatter properties excluded from type checks |
 | Report folder | Vault Inspector Reports | Folder for exported Markdown reports |
+
+Automatic scans and network access are disabled by default: scans run only when
+you start them, and the External Links scanner is opt-in. If a fix reports that
+metadata synchronization did not complete, changes may still have been saved —
+run another scan and review the result before retrying.
 
 Global ignored folders apply to every scanner. Scanner-specific ignored folders
 are additional exclusions. For example, add `syncTrash` only to Broken Links if

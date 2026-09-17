@@ -88,20 +88,20 @@ Record actual commits, commands, and evidence links as each item completes. Ther
 
 | ID | Work | Status | Completion criterion/evidence |
 |---|---|---|---|
-| S0 | Baseline, isolation, and acceptance record | Planned | Reproducible baseline commands and HEAD |
-| A1 | Atomic link fixes | Planned | Concurrency regression and source-preservation cases |
-| A2 | Conservative handling of missing target metadata | Planned | Null/empty/populated cache matrix and old baseline invalidation |
-| A3 | Native cache synchronization after writes | Planned | Event-order tests and native C1 acceptance |
-| B1 | CLI configuration structure/field validation | Planned | Invalid input exits 2; valid zero values/empty lists remain supported |
-| B2 | CLI smoke after tarball installation | Planned | Both commands, JSON, exit codes, baseline, and read-only checks |
-| B3 | Supported runtime matrix | Planned | The same artifact passes on Node 18 and 24 |
-| B4 | Release tag/version/commit gates | Planned | Wrong tags rejected; unverified commits not published |
-| B5 | Documentation and protocol commitments | Planned | User documentation matches current behavior |
-| C1 | Native desktop safety workflow | Planned | File-level assertions, UI outcomes, and environment restoration |
-| C2 | Upgrade/minimum version | Planned | Upgrade from 0.8.1 and Obsidian 1.7.2 acceptance |
-| C3 | Mobile | Planned | iOS/Android core workflow evidence |
-| C4 | Large-vault interaction and batch operations | Planned | Recorded scale, timing, interaction, and resource evidence |
-| C5 | Release candidate review | Planned | Evidence for all hard gates; no safety/correctness blockers |
+| S0 | Baseline, isolation, and acceptance record | Passed | Baseline gates green at `69db84b`; recorded in `docs/validation/1.0.0-readiness.md` |
+| A1 | Atomic link fixes | Passed | Commit `3759a05` (PR #179); RED/GREEN concurrency regression |
+| A2 | Conservative handling of missing target metadata | Passed | Commit `1d0ad86` (PR #179); matrix + recovery; COMPARISON_VERSION=4 |
+| A3 | Native cache synchronization after writes | Passed (code) / Blocked (native C1) | Commit `3557d43` (PR #179); event-order tests pass; native event evidence pending C1 |
+| B1 | CLI configuration structure/field validation | Passed | Commit `d2d69a8` (PR #180); 18 invalid cases exit 2 pre-scan |
+| B2 | CLI smoke after tarball installation | Passed | PR #181; RED on pre-B1 tarball, GREEN on candidate; integrity recorded |
+| B3 | Supported runtime matrix | Passed | PR #181 CI: `installed-cli (18)` and `(24)` green on one tarball; ruleset updated |
+| B4 | Release tag/version/commit gates | Passed | PR #181; version script + release workflow reruns full gates + smoke |
+| B5 | Documentation and protocol commitments | Passed | docs PR; semantics=4 documented; CLAUDE.md synced |
+| C1 | Native desktop safety workflow | Blocked | No desktop Obsidian available in this session; see validation record |
+| C2 | Upgrade/minimum version | Blocked | Requires prior-version install, Obsidian 1.7.2, and a Windows device |
+| C3 | Mobile | Blocked | No mobile devices available; narrowing scope needs owner authorization |
+| C4 | Large-vault interaction and batch operations | Partially passed / Blocked (UI) | CLI benchmarks: −1.7% (10k) and −6.6% (400) vs 0.8.1, within budget; native UI rows blocked |
+| C5 | Release candidate review | In progress | Automated gates pass; native acceptance blocks readiness |
 | C6 | Formal release and channel verification | Not authorized by this plan | Run the release procedure after explicit release authorization |
 
 Allowed states: Planned, In progress, Passed, Failed, Blocked, Already satisfied. Blocked entries must name the cause, exact missing device/permission, and resumption command; do not label them Passed with caveats.
