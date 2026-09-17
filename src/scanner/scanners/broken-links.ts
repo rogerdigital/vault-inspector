@@ -330,11 +330,17 @@ function findResolvedPath(
 }
 
 function slugifyHeading(heading: string): string {
+	// Obsidian builds heading anchors by replacing each non-alphanumeric
+	// character with a space ("[Open Sans](https://x.com/a)" ->
+	// "Open Sans https x com a"), so both sides must substitute the same way —
+	// deleting the characters instead never matches anchors of headings that
+	// contain links or formatting markers.
 	return heading
 		.toLowerCase()
 		.trim()
-		.replace(/[^\p{L}\p{N}_\s-]/gu, "")
-		.replace(/\s+/g, "-");
+		.replace(/[^\p{L}\p{N}_\s-]/gu, " ")
+		.replace(/\s+/g, "-")
+		.replace(/^-+|-+$/g, "");
 }
 
 /** Replaces the default confirmed/broken presentation; always unverified. */
