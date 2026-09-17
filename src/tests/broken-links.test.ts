@@ -930,6 +930,82 @@ describe("heading anchors", () => {
 	});
 });
 
+describe("unavailable target metadata", () => {
+	it.each(["Existing", "^block-id"])("does not authorize fixes without target cache: %s", async (fragment) => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [{ path: "Source.md" }, { path: "Target.md" }],
+			metadataByPath: {
+				"Source.md": { links: [{
+					link: `Target#${fragment}`,
+					original: `[[Target#${fragment}]]`,
+					position: {} as any,
+				}] },
+				"Target.md": null,
+			},
+		});
+		expect(ctx.metadataCache.getFileCache(ctx.markdownFiles[1])).toBeNull();
+		const issues = await brokenLinksScanner.scan(ctx);
+		expect(issues).toHaveLength(1);
+		expect(issues[0]).toMatchObject({
+			classification: "unverified",
+			severity: "info",
+			evidence: { reason: "target-metadata-unavailable" },
+		});
+		expect(issues[0].fixAction).toBeUndefined();
+	});
+
+	it("recovers once the target cache becomes available", async () => {
+		const base = {
+			scanner: "broken-links" as const,
+			files: [{ path: "Source.md" }, { path: "Target.md" }],
+		};
+		const links = [{
+			link: "Target#Existing",
+			original: "[[Target#Existing]]",
+			position: {} as any,
+		}];
+		const before = makeScanContext({
+			...base,
+			metadataByPath: {
+				"Source.md": { links },
+				"Target.md": null,
+			},
+		});
+		expect(await brokenLinksScanner.scan(before)).toHaveLength(1);
+		const after = makeScanContext({
+			...base,
+			metadataByPath: {
+				"Source.md": { links },
+				"Target.md": { headings: [{ heading: "Existing", level: 1, position: {} as any }] },
+			},
+		});
+		expect(await brokenLinksScanner.scan(after)).toEqual([]);
+	});
+
+	it("treats an empty-but-present cache as available evidence", async () => {
+		const ctx = makeScanContext({
+			scanner: "broken-links",
+			files: [{ path: "Source.md" }, { path: "Target.md" }],
+			metadataByPath: {
+				"Source.md": { links: [{
+					link: "Target#Missing",
+					original: "[[Target#Missing]]",
+					position: {} as any,
+				}] },
+				"Target.md": {},
+			},
+		});
+		const issues = await brokenLinksScanner.scan(ctx);
+		expect(issues).toHaveLength(1);
+		expect(issues[0]).toMatchObject({
+			classification: "confirmed",
+			severity: "warning",
+			message: 'Heading "#Missing" not found in Target.md',
+		});
+	});
+});
+
 describe("block references", () => {
 	it.each([
 		["[[Target#^Known-id]]", "Target#^Known-id", false],

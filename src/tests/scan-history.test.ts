@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Issue, ScanResult } from "../scanner/Issue";
 import type { LifecycleComparison } from "../scanner/result-diff";
-import { createScanSnapshot } from "../snapshot/scan-snapshot";
+import { COMPARISON_VERSION, createScanSnapshot } from "../snapshot/scan-snapshot";
 import {
 	appendScanHistoryEntry,
 	createScanHistoryEntry,
@@ -116,7 +116,7 @@ describe("createScanHistoryEntry", () => {
 			createdAt: 1_725_000_000_000,
 			toolVersion: "0.7.0",
 			scanProfile: "profile-abc",
-			comparisonVersion: 3,
+			comparisonVersion: COMPARISON_VERSION,
 			trigger: "manual",
 			filesScanned: 3,
 			scannersRun: ["broken-links", "empty-notes"],

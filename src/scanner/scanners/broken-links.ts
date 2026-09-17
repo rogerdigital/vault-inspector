@@ -184,15 +184,40 @@ function resolveLinkIssues(
 	}
 
 		if (headingPart) {
-			const targetCache = ctx.metadataCache.getFileCache(
-				ctx.markdownFiles.find((file) => file.path === resolvedPath)!,
-			);
+			const targetFile = ctx.markdownFiles.find((file) => file.path === resolvedPath);
+			const targetCache = targetFile ? ctx.metadataCache.getFileCache(targetFile) : null;
 			const isBlock = headingPart.startsWith("^");
+			if (!targetCache) {
+				// A null cache means Obsidian has not indexed the target yet; a
+				// miss against no evidence at all must not authorize a fix. An
+				// empty cache object is still real evidence of a missing target.
+				const issue = makeIssue(
+					sourcePath,
+					candidate,
+					resolvedPath,
+					"info",
+					`Target metadata not available yet for "#${headingPart}" in ${resolvedPath}`,
+					candidate.isEmbed
+						? "embed"
+						: candidate.isMarkdown
+							? "markdown-link"
+							: "heading",
+					isBlock ? "block" : "heading",
+					{
+						title: "Link could not be verified",
+						why: "The target exists, but its heading and block metadata could not be read.",
+						nextStep: "Wait for indexing to finish, then run the scan again.",
+					},
+				);
+				issue.evidence.reason = "target-metadata-unavailable";
+				issues.push(issue);
+				return issues;
+			}
 			const found = isBlock
-				? Object.keys(targetCache?.blocks ?? {}).some(
+				? Object.keys(targetCache.blocks ?? {}).some(
 					(id) => id.toLowerCase() === headingPart.slice(1).toLowerCase(),
 				)
-				: (targetCache?.headings ?? []).some(
+				: (targetCache.headings ?? []).some(
 					(heading) => slugifyHeading(heading.heading) === slugifyHeading(headingPart),
 				);
 			if (!found && isBlock) {

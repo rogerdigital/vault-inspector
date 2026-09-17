@@ -10,6 +10,11 @@ import {
 
 export const SNAPSHOT_SCHEMA_VERSION = 1;
 /**
+ * 4 — Link-reference findings whose target metadata is unavailable, and
+ * block-id misses, are unverified and cannot authorize link fixes; heading
+ * anchors match Obsidian's replace-with-space normalization. Older baselines
+ * must not fabricate resolved/new findings against the changed semantics.
+ *
  * 3 — audited link, reference, and YAML detection corrections change which
  * findings exist. Older baselines must not fabricate resolved/new findings.
  *
@@ -18,7 +23,7 @@ export const SNAPSHOT_SCHEMA_VERSION = 1;
  * error). Fingerprints for the reclassified findings changed identity, so
  * pre-2 snapshots cannot be compared without false resolved/new claims.
  */
-export const COMPARISON_VERSION = 3;
+export const COMPARISON_VERSION = 4;
 
 export type SnapshotIssue = {
 	fingerprint: string;

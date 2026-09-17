@@ -57,7 +57,12 @@ export function makeScanContext(options: TestContextOptions = {}): ScanContext {
 	return {
 		app: {} as any,
 		metadataCache: {
-			getFileCache: (file: TFile) => metadataByPath[file.path] ?? {},
+			// An explicitly-null cache (metadata unavailable) must stay null; only
+			// omitted files get the empty default.
+			getFileCache: (file: TFile) =>
+				Object.prototype.hasOwnProperty.call(metadataByPath, file.path)
+					? metadataByPath[file.path]
+					: {},
 			resolvedLinks: options.resolvedLinks ?? {},
 			unresolvedLinks: options.unresolvedLinks ?? {},
 		} as any,

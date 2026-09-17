@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCli } from "../../cli/cli";
+import { COMPARISON_VERSION } from "../snapshot/scan-snapshot";
 import { createLocalApp } from "../../cli/local-vault";
 import { EXTERNAL_LINK_TIMEOUT_MS } from "../scanner/scanners/external-links";
 
@@ -230,7 +231,7 @@ describe("runCli", () => {
 				persistingIssues: 0,
 				resolvedIssues: 0,
 				scanProfile: expect.any(String),
-				comparisonVersion: 3,
+				comparisonVersion: COMPARISON_VERSION,
 				fingerprints: expect.any(Array),
 			});
 			// The identity set is the complete unfiltered set, not just the
@@ -589,7 +590,7 @@ describe("runCli", () => {
 					persistingIssues: 0,
 					resolvedIssues: 0,
 					scanProfile: expect.any(String),
-					comparisonVersion: 3,
+					comparisonVersion: COMPARISON_VERSION,
 					fingerprints: expect.any(Array),
 				});
 			});
@@ -1376,7 +1377,7 @@ describe("runCli", () => {
 				persistingIssues: 1,
 				resolvedIssues: 0,
 				scanProfile: expect.any(String),
-				comparisonVersion: 3,
+				comparisonVersion: COMPARISON_VERSION,
 				fingerprints: expect.any(Array),
 			});
 			// The identity set is the complete unfiltered set.
@@ -1423,7 +1424,7 @@ describe("runCli", () => {
 				persistingIssues: 1,
 				resolvedIssues: 1,
 				scanProfile: expect.any(String),
-				comparisonVersion: 3,
+				comparisonVersion: COMPARISON_VERSION,
 				fingerprints: expect.any(Array),
 			});
 			// The identity set is the complete unfiltered set: sorted and unique.
@@ -1483,7 +1484,7 @@ describe("runCli", () => {
 				persistingIssues: 1,
 				resolvedIssues: 1,
 				scanProfile: expect.any(String),
-				comparisonVersion: 3,
+				comparisonVersion: COMPARISON_VERSION,
 				fingerprints: expect.any(Array),
 			});
 			expect(payload.issues.find(
@@ -1596,7 +1597,7 @@ describe("runCli", () => {
 				persistingIssues: 0,
 				resolvedIssues: 0,
 				scanProfile: expect.any(String),
-				comparisonVersion: 3,
+				comparisonVersion: COMPARISON_VERSION,
 				fingerprints: expect.any(Array),
 			});
 			// No lifecycle annotations are fabricated from an incompatible baseline.
@@ -1643,7 +1644,7 @@ describe("runCli", () => {
 				persistingIssues: 0,
 				resolvedIssues: 0,
 				scanProfile: expect.any(String),
-				comparisonVersion: 3,
+				comparisonVersion: COMPARISON_VERSION,
 				fingerprints: expect.any(Array),
 			});
 			expect(payload.issues.every(

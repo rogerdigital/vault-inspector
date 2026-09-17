@@ -124,6 +124,33 @@ describe("runFixBatch", () => {
 		expect(execute).not.toHaveBeenCalled();
 	});
 
+	it("skips execution when preflight re-evaluates the finding as unverified without a fix", async () => {
+		const requested = issue("unverified");
+		const reEvaluated = issue("unverified");
+		// The same fingerprint resurfaces with unavailable target metadata:
+		// unverified classification and no authorizable fix action.
+		const { fixAction: _withdrawn, ...withoutFix } = reEvaluated;
+		void _withdrawn;
+		const stale = { ...withoutFix, classification: "unverified" as const };
+		const execute = vi.fn();
+		const scan = vi.fn()
+			.mockResolvedValueOnce(result([stale]))
+			.mockResolvedValueOnce(result([]));
+
+		const batch = await runFixBatch(
+			[requested],
+			[{ fingerprint: requested.fingerprint }],
+			{ settings: () => DEFAULT_SETTINGS, scan, execute },
+		);
+
+		expect(batch.outcomes[0]).toMatchObject({
+			fingerprint: "unverified",
+			outcome: "skipped",
+			phase: "preflight",
+		});
+		expect(execute).not.toHaveBeenCalled();
+	});
+
 	it("reports a missing confirmed decision in its original outcome slot", async () => {
 		const missing = issue("missing");
 		const confirmed = issue("confirmed");
