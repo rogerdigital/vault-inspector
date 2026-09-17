@@ -1,0 +1,15 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+const json = async (path) => JSON.parse(await readFile(path, "utf8"));
+const pkg = await json("package.json");
+const lock = await json("package-lock.json");
+const manifest = await json("manifest.json");
+const versions = await json("versions.json");
+const source = await readFile("cli/version.ts", "utf8");
+assert.equal(manifest.version, pkg.version, "manifest version mismatch");
+assert.equal(lock.version, pkg.version, "lockfile version mismatch");
+assert.equal(lock.packages[""].version, pkg.version, "lockfile root version mismatch");
+assert.equal(versions[pkg.version], manifest.minAppVersion, "versions compatibility mapping mismatch");
+assert.equal(source.trim(), `export const TOOL_VERSION = "${pkg.version}";`, "CLI version mismatch");
+if (process.argv[2] !== undefined) assert.equal(process.argv[2], pkg.version, "tag version mismatch");
+console.log(`Version metadata verified: ${pkg.version}`);

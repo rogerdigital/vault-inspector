@@ -1,62 +1,63 @@
 {
-	"name": "vault-inspector",
-	"version": "0.8.1",
-	"description": "Scan an Obsidian vault for long-term maintenance problems.",
-	"main": "main.js",
-	"engines": {
-		"node": ">=18"
-	},
-	"bin": {
-		"vault-inspector": "cli.js",
-		"vinspect": "cli.js"
-	},
-	"files": [
-		"main.js",
-		"cli.js",
-		"manifest.json",
-		"styles.css",
-		"versions.json",
-		"README.md",
-		"LICENSE"
-	],
-	"scripts": {
-		"dev": "node esbuild.config.mjs",
-		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"lint": "eslint . --max-warnings 0",
-		"lint:obsidian-warnings": "eslint \"src/**/*.ts\" --max-warnings 0",
-		"test": "vitest run",
-		"test:watch": "vitest",
-		"test:coverage": "vitest run --coverage",
-		"benchmark:scan": "node scripts/benchmark-scan.mjs",
-		"version": "node version-bump.mjs && git add manifest.json versions.json cli/version.ts"
-	},
-	"keywords": [
-		"obsidian",
-		"obsidian-plugin",
-		"vault",
-		"maintenance",
-		"lint"
-	],
-	"author": "Roger Deng",
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/rogerdigital/vault-inspector.git"
-	},
-	"devDependencies": {
-		"@types/js-yaml": "^4.0.9",
-		"@types/node": "^22.0.0",
-		"@typescript-eslint/parser": "^8.59.3",
-		"@vitest/coverage-v8": "^4.1.9",
-		"esbuild": "^0.28.1",
-		"eslint-plugin-obsidianmd": "^0.4.1",
-		"js-yaml": "^4.2.0",
-		"mdast-util-from-markdown": "^2.0.3",
-		"obsidian": "^1.13.1",
-		"typescript": "^5.8.0",
-		"vitest": "^4.1.9"
-	},
-	"overrides": {
-		"js-yaml": "^4.2.0"
-	}
+  "name": "vault-inspector",
+  "version": "0.8.1",
+  "description": "Scan an Obsidian vault for long-term maintenance problems.",
+  "main": "main.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "vault-inspector": "cli.js",
+    "vinspect": "cli.js"
+  },
+  "files": [
+    "main.js",
+    "cli.js",
+    "manifest.json",
+    "styles.css",
+    "versions.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "lint": "eslint . --max-warnings 0",
+    "lint:obsidian-warnings": "eslint \"src/**/*.ts\" --max-warnings 0",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "benchmark:scan": "node scripts/benchmark-scan.mjs",
+    "version": "node version-bump.mjs && git add manifest.json versions.json cli/version.ts",
+    "smoke:package": "node scripts/smoke-installed-cli.mjs"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "vault",
+    "maintenance",
+    "lint"
+  ],
+  "author": "Roger Deng",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rogerdigital/vault-inspector.git"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.0.0",
+    "@typescript-eslint/parser": "^8.59.3",
+    "@vitest/coverage-v8": "^4.1.9",
+    "esbuild": "^0.28.1",
+    "eslint-plugin-obsidianmd": "^0.4.1",
+    "js-yaml": "^4.2.0",
+    "mdast-util-from-markdown": "^2.0.3",
+    "obsidian": "^1.13.1",
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.9"
+  },
+  "overrides": {
+    "js-yaml": "^4.2.0"
+  }
 }

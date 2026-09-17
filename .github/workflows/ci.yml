@@ -19,6 +19,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Version metadata consistency
+        run: node scripts/check-release-version.mjs
+
       - name: Lint
         run: npm run lint
 
@@ -33,3 +36,36 @@ jobs:
 
       - name: Package dry run
         run: npm pack --dry-run
+
+      - name: Create package artifact
+        run: |
+          mkdir package-artifact
+          npm pack --pack-destination package-artifact
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: package-artifact/*.tgz
+          if-no-files-found: error
+
+  installed-cli:
+    needs: verify
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 24]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-package
+          path: package-artifact
+      - name: Verify installed CLI
+        run: |
+          set -euo pipefail
+          packages=(package-artifact/*.tgz)
+          test "${#packages[@]}" -eq 1
+          node scripts/smoke-installed-cli.mjs "${packages[0]}"
