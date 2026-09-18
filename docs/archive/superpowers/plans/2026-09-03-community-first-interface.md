@@ -1205,7 +1205,7 @@ Preserve all currently documented flags, configuration keys, stable JSON fields,
 Add a short reference line to `skills/vault-inspector/SKILL.md` without duplicating the entire protocol:
 
 ```markdown
-For the full flag, configuration, JSON protocol, baseline compatibility, and exit-code contract, read [`docs/cli.md`](../../docs/cli.md) from the repository checkout.
+For the full flag, configuration, JSON protocol, baseline compatibility, and exit-code contract, read [`docs/cli.md`](../../../../docs/cli.md) from the repository checkout.
 ```
 
 Keep the skill’s read-only rules and current command examples unchanged.
