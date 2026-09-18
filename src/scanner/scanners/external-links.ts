@@ -112,17 +112,33 @@ function isExternalUrl(text: string): boolean {
 export function extractBareUrls(content: string): string[] {
 	const urls: string[] = [];
 	const seen = new Set<string>();
-	const body = stripIgnoredMarkdownRegions(stripFrontmatter(content));
+	// Markdown link syntax is masked so anything glued to it — emphasis
+	// markers, curly quotes, possessives — never reaches the bare extractor;
+	// those URLs are already collected from link metadata.
+	const body = stripIgnoredMarkdownRegions(stripFrontmatter(content))
+		.replace(/!?\[[^\]\n]*\]\([ \t]*(?:<[^>\n]*>|[^)\s]*)[ \t]*\)/g, "");
 	const urlPattern = /https?:\/\/[^\s<>"']+/gi;
 
 	for (const match of body.matchAll(urlPattern)) {
-		const url = trimUrlBoundary(match[0]);
+		const url = trimUrlBoundary(cutAtNonUrlCharacter(match[0]));
 		if (!url || seen.has(url)) continue;
 		seen.add(url);
 		urls.push(url);
 	}
 
 	return urls;
+}
+
+// RFC 3986 URL characters plus unicode letters, numbers, and combining marks
+// (unencoded non-ASCII punctuation in a URL is always prose contamination —
+// conforming URLs must percent-encode it).
+const urlCharacter = /[A-Za-z0-9\-._~!$&'()*+,;=:/?#%[\]@\p{L}\p{N}\p{M}]/u;
+
+function cutAtNonUrlCharacter(url: string): string {
+	for (let index = 0; index < url.length; index += 1) {
+		if (!urlCharacter.test(url[index])) return url.slice(0, index);
+	}
+	return url;
 }
 
 function stripFrontmatter(content: string): string {
