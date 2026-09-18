@@ -67,14 +67,33 @@ describe("externalLinksScanner", () => {
 	});
 
 	it.each([
-		["*[Empis tessellata](https://en.wikipedia.org/wiki/Empis_tessellata)*", "https://en.wikipedia.org/wiki/Empis_tessellata"],
-		["**[note](https://example.com/a)**", "https://example.com/a"],
 		["_https://example.com/a_", "https://example.com/a"],
 		["~~https://example.com/a~~", "https://example.com/a"],
-		["[t](https://example.com/a_(b))*", "https://example.com/a_(b)"],
 		["https://example.com/a_", "https://example.com/a"],
-	])("trims markdown emphasis markers after a URL: %s", (body, expected) => {
+	])("trims markdown emphasis markers after a bare URL: %s", (body, expected) => {
 		expect(extractBareUrls(body)).toEqual([expected]);
+	});
+
+	it.each([
+		// Markdown link syntax is masked before bare extraction: those URLs are
+		// collected from link metadata, so anything glued to the syntax —
+		// emphasis, curly quotes, possessives — never reaches the extractor.
+		["*[Empis tessellata](https://en.wikipedia.org/wiki/Empis_tessellata)*", []],
+		["**[note](https://example.com/a)**", []],
+		["[t](https://example.com/a_(b))*", []],
+		["“[note](https://example.com/a)”", []],
+		["*[t](https://x.com/a)*’s habitat", []],
+		// Nested brackets break the mask; the URL falls through to bare
+		// extraction cleanly and dedupes against the metadata link.
+		["[a [b] c](https://example.com/a) leftover", ["https://example.com/a"]],
+		// Bare URLs cut at the first character that cannot appear in a URL;
+		// unicode letters/numbers (IDN paths) survive.
+		["https://x.com/a’s page", ["https://x.com/a"]],
+		["https://x.com/a”", ["https://x.com/a"]],
+		["https://x.com/a」。", ["https://x.com/a"]],
+		["https://ja.wikipedia.org/wiki/日本語", ["https://ja.wikipedia.org/wiki/日本語"]],
+	])("handles unicode and markdown boundaries around URLs: %s", (body, expected) => {
+		expect(extractBareUrls(body)).toEqual(expected);
 	});
 
 	it("checks an italic-wrapped markdown link as a single clean URL", async () => {
