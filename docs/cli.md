@@ -122,6 +122,10 @@ Config files are JSON and use the same option names:
   "exclude": ["templates/**"],
   "ignoredFolders": [".trash"],
   "ignoredFoldersByScanner": { "empty-notes": ["drafts"] },
+  "exclusionRules": [
+    { "kind": "tag", "value": "clippings", "scanners": ["broken-links"] },
+    { "kind": "folder", "value": "archive", "scanners": "all" }
+  ],
   "ignoreUnresolvedNoteLinks": true,
   "failOn": "warning",
   "largeMarkdownBytes": 102400
@@ -144,12 +148,28 @@ example, `ignoredLargeMarkdownFrontmatterKeys` already defaults to
 If your config lists the older `"excalidraw"` key, update it to
 `"excalidraw-plugin"`.
 
-`ignoredFoldersByScanner` maps scanner IDs to folders that are ignored for
-that scanner only, on top of the global `ignoredFolders`. Omitted scanner
-keys mean no per-scanner exclusions. Per-scanner folders are detection
-inputs: changing them changes `comparison.scanProfile`, so baselines
-recorded under different per-scanner folders are reported as not comparable
-instead of producing misleading new/resolved counts.
+`exclusionRules` accepts folder or tag conditions and a scope of `"all"` or a
+nonempty array of scanner IDs. Rules are additive. Tags match frontmatter and
+inline tags case-insensitively, with or without a leading `#`, including descendants separated by
+`/`. `clippings` matches `clippings/web` but not `clippings-other`. Attachments
+are not transitively excluded by the tags on notes referencing them.
+
+`--exclude-tag clippings` adds a tag rule for all checks and may be repeated.
+Use config rules for scanner-specific scopes. Flag rules are added to config
+rules; they do not remove existing exclusions.
+
+Legacy `ignoredFolders` and `ignoredFoldersByScanner` remain supported and are
+combined with the new rules. Excluded notes stay in complete link and reference
+indexes. Duplicate groups, property consistency, and tag statistics use the
+participating scan scope. Rule changes alter `comparison.scanProfile`, so
+incompatible baselines do not produce misleading new/resolved counts. Profiles
+from older versions may require a one-time baseline regeneration.
+
+JSON reports include `exclusions` entries with `scannerId`, `excludedFiles`, and
+`ruleCount` for each enabled scanner. Markdown reports show a scope table when
+rules apply. Excluded file counts are per scanner and overlap; `filesScanned`
+retains the total vault file count before exclusions. Exclusions differ from
+ignored findings and from CLI `include`/`exclude` globs that filter reported issues.
 
 ## Output formats
 
