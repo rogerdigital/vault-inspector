@@ -1,9 +1,9 @@
+import { isExcludedFile } from "../exclusions";
 import type { Issue } from "../Issue";
 import type { ScanProgressCallback } from "../Issue";
 import type { ExternalHttpMethod, ScanContext } from "../ScanContext";
 import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
-import { isIgnoredPath } from "../../utils/paths";
 import { assessExternalHttpUrl } from "../../utils/network-destination";
 
 export const externalLinksScanner = {
@@ -64,7 +64,7 @@ async function collectExternalUrls(ctx: ScanContext): Promise<UrlEntry[]> {
 	const seen = new Set<string>();
 
 	for (const file of ctx.markdownFiles) {
-		if (isIgnoredPath(file.path, ctx.ignoredFolders)) continue;
+		if (isExcludedFile(ctx, file.path)) continue;
 
 		const cache = ctx.metadataCache.getFileCache(file);
 		if (!cache) continue;
