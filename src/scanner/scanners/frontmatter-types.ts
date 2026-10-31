@@ -1,10 +1,10 @@
+import { isExcludedFile } from "../exclusions";
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
 import { inferType, typesAreCompatible } from "../../utils/frontmatter-type";
 import type { PropType } from "../../utils/frontmatter-type";
-import { isIgnoredPath } from "../../utils/paths";
 
 export const frontmatterTypesScanner = {
 	id: "frontmatter-types" as const,
@@ -15,7 +15,7 @@ export const frontmatterTypesScanner = {
 		const propertyTypes = new Map<string, Map<PropType, string[]>>();
 
 		for (const file of ctx.markdownFiles) {
-			if (isIgnoredPath(file.path, ctx.ignoredFolders)) continue;
+			if (isExcludedFile(ctx, file.path)) continue;
 
 			const cache = ctx.metadataCache.getFileCache(file);
 			const frontmatter = cache?.frontmatter;

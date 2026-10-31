@@ -1,10 +1,11 @@
+import { isExcludedFile } from "../exclusions";
 import type { TFile } from "obsidian";
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
 import { isMarkdown } from "../../utils/file-types";
-import { isIgnoredPath, matchesGlob } from "../../utils/paths";
+import { matchesGlob } from "../../utils/paths";
 import { formatSize } from "../../utils/format";
 
 export const largeFilesScanner = {
@@ -14,7 +15,7 @@ export const largeFilesScanner = {
 		const issues: Issue[] = [];
 
 		for (const file of ctx.allFiles) {
-			if (isIgnoredPath(file.path, ctx.ignoredFolders)) continue;
+			if (isExcludedFile(ctx, file.path)) continue;
 
 			const isMd = isMarkdown(file.path);
 			if (isMd && isIgnoredLargeMarkdown(file, ctx)) continue;

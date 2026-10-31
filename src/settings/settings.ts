@@ -1,9 +1,11 @@
+import type { ExclusionRule } from "../scanner/exclusions";
 import type { ScannerId } from "../scanner/Issue";
 import { SCANNER_IDS } from "../scanner/Issue";
 
 export type DuplicateKeepMode = "always-ask" | "automatic";
 
 export type InspectorSettings = {
+	exclusionRules: ExclusionRule[];
 	enabledScanners: Record<ScannerId, boolean>;
 	enableFixActions: boolean;
 	duplicateKeepMode: DuplicateKeepMode;
@@ -36,6 +38,7 @@ export function createEmptyIgnoredFoldersByScanner(): Record<ScannerId, string[]
 }
 
 export const DEFAULT_SETTINGS: InspectorSettings = {
+	exclusionRules: [],
 	enabledScanners: Object.fromEntries(
 		SCANNER_IDS.map((id) => [id, id !== "external-links"]),
 	) as Record<ScannerId, boolean>,

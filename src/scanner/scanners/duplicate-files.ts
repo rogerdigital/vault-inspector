@@ -1,9 +1,10 @@
+import { isExcludedFile } from "../exclusions";
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
 import { hashContent } from "../../utils/hash";
-import { getBasename, getExtension, isIgnoredPath } from "../../utils/paths";
+import { getBasename, getExtension } from "../../utils/paths";
 import { formatSize } from "../../utils/format";
 import { getInboundReference, type ReferenceIndex } from "../reference-index";
 
@@ -23,7 +24,7 @@ export const duplicateFilesScanner = {
 	async scan(ctx: ScanContext): Promise<Issue[]> {
 		const issues: Issue[] = [];
 		const files = ctx.allFiles.filter(
-			(f) => f.stat.size > 0 && !isIgnoredPath(f.path, ctx.ignoredFolders),
+			(f) => f.stat.size > 0 && !isExcludedFile(ctx, f.path),
 		);
 		const filesByPath = new Map(files.map((file) => [file.path, file]));
 		const index = ctx.referenceIndex;

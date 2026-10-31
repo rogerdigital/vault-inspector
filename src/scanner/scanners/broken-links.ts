@@ -1,9 +1,9 @@
+import { isExcludedFile } from "../exclusions";
 import type { LinkDestination, LinkReference as MetadataLinkReference } from "../link-reference";
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
-import { isIgnoredPath } from "../../utils/paths";
 import {
 	getLinkTarget,
 	hasUriScheme,
@@ -40,7 +40,7 @@ export const brokenLinksScanner = {
 		const { markdownFiles, metadataCache } = ctx;
 
 		for (const file of markdownFiles) {
-			if (isIgnoredPath(file.path, ctx.ignoredFolders)) continue;
+			if (isExcludedFile(ctx, file.path)) continue;
 
 			const cache = metadataCache.getFileCache(file);
 			if (!cache) continue;

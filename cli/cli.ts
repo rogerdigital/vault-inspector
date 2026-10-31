@@ -23,6 +23,8 @@ import {
 	type BaselineMismatchReason,
 } from "../src/scanner/result-diff";
 
+import { normalizeExclusionRules, type ExclusionRule } from "../src/scanner/exclusions";
+
 type OutputFormat = "json" | "markdown";
 type FailOn = "any" | "error" | "warning" | "new" | "none";
 type Severity = "error" | "warning" | "info";
@@ -94,6 +96,7 @@ type CliOptions = {
 	severity?: Severity[];
 	include: string[];
 	exclude: string[];
+	exclusionRules: ExclusionRule[];
 	ignoredFolders: string[];
 	ignoredFoldersByScanner: Record<ScannerId, string[]>;
 	ignoreUnresolvedNoteLinks: boolean;
@@ -244,6 +247,7 @@ function parseArgs(args: string[]): ParsedArgs | { error: string } {
 		format: "json",
 		include: [],
 		exclude: [],
+		exclusionRules: [],
 		ignoredFolders: [],
 		ignoredFoldersByScanner: createEmptyIgnoredFoldersByScanner(),
 		ignoreUnresolvedNoteLinks: false,
@@ -287,6 +291,10 @@ function parseArgs(args: string[]): ParsedArgs | { error: string } {
 			const value = args[++index];
 			if (!value) return { error: usage("Missing --exclude value") };
 			options.exclude.push(value);
+		} else if (arg === "--exclude-tag") {
+			const value = args[++index];
+			if (!value?.trim() || value.startsWith("--") || !normalizeExclusionRules([{ kind: "tag", value, scanners: "all" }]).length) return { error: usage("Missing --exclude-tag value") };
+			options.exclusionRules.push({ kind: "tag", value, scanners: "all" });
 		} else if (arg === "--ignore-folder") {
 			const value = args[++index];
 			if (!value) return { error: usage("Missing --ignore-folder value") };
@@ -325,6 +333,7 @@ type CliConfig = Partial<
 		| "severity"
 		| "include"
 		| "exclude"
+		| "exclusionRules"
 		| "ignoredFolders"
 		| "ignoreUnresolvedNoteLinks"
 		| "baselinePath"
@@ -354,6 +363,7 @@ async function loadConfig(args: ParsedArgs): Promise<CliOptions | { error: strin
 
 		return {
 			...args,
+			exclusionRules: [...config.exclusionRules ?? [], ...args.exclusionRules],
 			scanners: args.scanners ?? config.scanners,
 			severity: args.severity ?? config.severity,
 			include: args.include.length > 0 ? args.include : config.include ?? [],
@@ -418,6 +428,7 @@ function makeSettings(options: CliOptions): InspectorSettings {
 		emptyNoteWordThreshold:
 			options.emptyNoteWordThreshold ?? DEFAULT_SETTINGS.emptyNoteWordThreshold,
 		watchedTags: options.watchedTags ?? DEFAULT_SETTINGS.watchedTags,
+		exclusionRules: normalizeExclusionRules(options.exclusionRules),
 		ignoredFolders: options.ignoredFolders,
 		ignoredFoldersByScanner: options.ignoredFoldersByScanner,
 		ignoreUnresolvedNoteLinks: options.ignoreUnresolvedNoteLinks,
@@ -489,6 +500,7 @@ function toJsonPayload(
 			newIssues,
 			durationMs: result.finishedAt - result.startedAt,
 		},
+		exclusions: result.exclusions,
 		issues: result.issues,
 		ignoredIssues: result.ignoredIssues,
 		comparison,
@@ -690,6 +702,22 @@ function validateConfig(value: unknown): string | null {
 		return "Config must be a JSON object";
 	}
 	const config = value as Record<string, unknown>;
+	if (config.exclusionRules !== undefined) {
+		if (!Array.isArray(config.exclusionRules)) return "exclusionRules must be an array of rules";
+		for (const candidate of config.exclusionRules) {
+			if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) {
+				return "exclusionRules entries must be objects";
+			}
+			const rule = candidate as Record<string, unknown>;
+			if (rule.kind !== "folder" && rule.kind !== "tag") return "exclusionRules kind must be folder or tag";
+			if (typeof rule.value !== "string" || !rule.value.trim()) return "exclusionRules value must be a nonempty string";
+			if (rule.scanners !== "all" && (!Array.isArray(rule.scanners) || rule.scanners.length === 0 ||
+				rule.scanners.some((id) => typeof id !== "string" || !SCANNER_IDS.includes(id as ScannerId)))) {
+				return "exclusionRules scanners must be all or a nonempty array of known scanner IDs";
+			}
+			if (!normalizeExclusionRules([rule as ExclusionRule]).length) return "exclusionRules value must identify a nonempty folder or tag";
+		}
+	}
 	const arrayKeys = [
 		"scanners", "severity", "include", "exclude", "ignoredFolders",
 		"ignoredLargeMarkdownFrontmatterKeys", "ignoredLargeMarkdownPathPatterns",
@@ -784,6 +812,7 @@ Options:
   --severity <level[,level]> Include only selected severities.
   --include <glob>          Include matching issue paths. Can be repeated.
   --exclude <glob>          Exclude matching issue paths. Can be repeated.
+  --exclude-tag <tag>       Exclude tagged notes from all checks (includes child tags). Repeatable.
   --ignore-folder <path>    Ignore a vault-relative folder. Can be repeated.
   --ignore-unresolved-note-links
                             Ignore missing plain note wikilinks.

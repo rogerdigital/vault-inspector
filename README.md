@@ -125,7 +125,7 @@ The core workflow is: run a scan, review new findings, then fix or ignore each o
 3. The summary highlights how many findings are new since the last comparable scan. Click **Review new findings** to focus the list on all new findings, clearing other filters. Use **Clear filters** to return to all findings.
 4. Filter results by scanner, severity, lifecycle, or classification. Expand **Technical evidence** to inspect the raw scanner evidence behind the explanation.
 5. Click paths, URLs, targets, properties, or tags to jump to the relevant location.
-6. Open a finding's **Actions** menu to ignore it, choose **Exclude parent folder**, or open its scanner settings. Parent-folder exclusions apply only to that scanner and can be removed from **Scanner-specific ignored folders** in settings.
+6. Open a finding's **Actions** menu to ignore it, choose **Exclude parent folder**, or open its scanner settings. Parent-folder exclusions apply only to that scanner and can be edited or removed from **Scan exclusions** in settings.
 7. Expand **Filter and select**, then click **Select findings** to enter selection mode and batch delete or ignore issues.
 8. Expand **Resolved items** to review read-only rows from the previous compatible successful scan. Expand **Ignored items** to restore previously ignored issues.
 9. Run **Vault Inspector: Export report** to save results as Markdown. When a
@@ -194,8 +194,7 @@ Obsidian's trash; it never permanently deletes them.
 | Empty note word threshold | 5 | Notes with fewer words (excluding frontmatter/title) are flagged |
 | Watched tags | (none) | Tags to watch for missing usage |
 | Low usage tag threshold | 2 | Tags below this count are flagged |
-| Ignored folders | (none) | Folders excluded from every scanner |
-| Scanner-specific ignored folders | (none) | Additional folders excluded only from the selected scanner |
+| Scan exclusions | (none) | Folder or tag rules applied to all or selected scanners |
 | Ignored properties | (none) | Frontmatter properties excluded from type checks |
 | Report folder | Vault Inspector Reports | Folder for exported Markdown reports |
 
@@ -204,9 +203,28 @@ you start them, and the External Links scanner is opt-in. If a fix reports that
 metadata synchronization did not complete, changes may still have been saved —
 run another scan and review the result before retrying.
 
-Global ignored folders apply to every scanner. Scanner-specific ignored folders
-are additional exclusions. For example, add `syncTrash` only to Broken Links if
-you want Duplicate Files to inspect that folder while broken-link checks skip it.
+Use **Scan exclusions** to add a folder or tag and choose **All checks** or
+selected scanners. Matching rules are additive: any matching rule excludes a
+file from the selected checks. Existing global and scanner-specific folder
+settings appear in this list automatically; editing them preserves their scope.
+
+Tags match both frontmatter `tags` and inline `#tags`, case-insensitively. Enter them with or without
+`#`; excluding `clippings` also excludes `clippings/web`, but not
+`clippings-other`. For Web Clipper notes, apply a `clippings` rule only to Broken
+Links to retain other checks, or choose all checks to exclude the notes broadly.
+Tag rules apply to notes, not automatically to their attachments.
+
+Excluded notes remain valid link targets and reference sources. Their attachments
+are still protected from false orphan reports. Duplicate groups, frontmatter
+consistency, and tag usage are computed within each scanner's participating scope.
+Excluding notes can therefore change findings for other participating notes.
+
+After a scan, expand **Scan exclusions** in the results to see excluded file
+counts by scanner. Counts overlap between scanners and should not be added;
+**Files scanned** remains the total vault file count before exclusions. Exclusions
+change the scan scope, whereas ignoring a finding hides that specific result.
+Changing rules restarts baseline comparison, so excluded findings are not reported
+as resolved. Upgrading from an older scan-profile format may also restart comparison.
 
 ## Optional CLI automation
 

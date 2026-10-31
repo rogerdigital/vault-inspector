@@ -1,8 +1,8 @@
+import { isExcludedFile } from "../exclusions";
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
-import { isIgnoredPath } from "../../utils/paths";
 import { getInboundReference } from "../reference-index";
 
 export const emptyNotesScanner = {
@@ -13,7 +13,7 @@ export const emptyNotesScanner = {
 		const index = ctx.referenceIndex;
 
 		for (const file of ctx.markdownFiles) {
-			if (isIgnoredPath(file.path, ctx.ignoredFolders)) continue;
+			if (isExcludedFile(ctx, file.path)) continue;
 
 			const content = await ctx.vault.cachedRead(file);
 			const body = stripFrontmatterAndTitle(content);

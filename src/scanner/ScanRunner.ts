@@ -1,3 +1,5 @@
+import { isAttachment } from "../utils/file-types";
+import { collectNoteTags, getExclusionRules, matchesExclusion } from "./exclusions";
 import type { App } from "obsidian";
 import type { Issue, ScanProgressCallback, ScanResult, ScannerId } from "./Issue";
 import type { ExternalRequestAdapter, ScanContext } from "./ScanContext";
@@ -82,6 +84,10 @@ export class ScanRunner {
 			referenceIndex,
 		};
 
+		const rules = getExclusionRules(settings);
+		const tagsByPath = new Map(rules.some((rule) => rule.kind === "tag")
+			? markdownFiles.map((file) => [file.path, collectNoteTags(app.metadataCache.getFileCache?.(file))] as const) : []);
+		const exclusions: NonNullable<ScanResult["exclusions"]> = [];
 		const scannersRun: ScannerId[] = [];
 		const issues: Issue[] = [];
 		const ignoredIssues: Issue[] = [];
@@ -107,7 +113,13 @@ export class ScanRunner {
 			}
 			scannersRun.push(scanner.id);
 			emitProgress("scanner-start");
+			const scannerRules = rules.filter((rule) => rule.scanners === "all" || rule.scanners.includes(scanner.id));
+			const excludedPaths = new Set(allFiles.filter((file) => scannerRules.some((rule) => matchesExclusion(rule, file.path, tagsByPath.get(file.path) ?? []))).map((file) => file.path));
+			const subjects = scanner.id === "orphan-attachments" ? allFiles.filter((file) => isAttachment(file.path))
+				: scanner.id === "duplicate-files" || scanner.id === "large-files" ? allFiles : markdownFiles;
+			exclusions.push({ scannerId: scanner.id, excludedFiles: subjects.filter((file) => excludedPaths.has(file.path)).length, ruleCount: scannerRules.length });
 			const scannerContext: ScanContext = {
+				excludedPaths,
 				...ctx,
 				ignoredFolders: getEffectiveIgnoredFolders(
 					settings.ignoredFolders,
@@ -142,6 +154,7 @@ export class ScanRunner {
 			issues,
 			ignoredIssues,
 			filesScanned: allFiles.length,
+			exclusions,
 			scannersRun,
 		};
 	}

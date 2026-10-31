@@ -30,6 +30,65 @@ describe("runCli", () => {
 		vi.restoreAllMocks();
 	});
 
+	it("applies unified exclusions from config and tag flags without losing references", async () => {
+		await withVault({
+			"Front.md": "---\ntags: [skip/child]\n---\n[[missing-front]] ![[asset.png]]",
+			"Body.md": "#skip/child [[missing-body]]",
+			"Prefix.md": "#skipper [[missing-prefix]]",
+			"Code.md": "    #skip\n\n`#skip`\n\n```\n#skip\n```\n[[missing-code]]",
+			"asset.png": "image",
+			"Legacy/Old.md": "[[missing-legacy]]",
+		}, async (vaultPath) => {
+			const configPath = join(vaultPath, "config.json");
+			await writeFile(configPath, JSON.stringify({
+				exclusionRules: [{ kind: "tag", value: "#skip", scanners: ["broken-links"] }],
+				ignoredFolders: ["Legacy"],
+			}));
+			const result = await runCli([vaultPath, "--config", configPath, "--scanner", "broken-links,orphan-attachments", "--fail-on", "none"]);
+			expect(result.stderr).toBe("");
+			const payload = JSON.parse(result.stdout);
+			expect(payload.issues.map((issue: {primaryPath: string}) => issue.primaryPath).sort()).toEqual(["Code.md", "Prefix.md"]);
+			expect(payload.exclusions).toContainEqual({ scannerId: "broken-links", excludedFiles: 3, ruleCount: 2 });
+			const flagArgs = [vaultPath, "--exclude-tag", "skip", "--scanner", "broken-links,orphan-attachments", "--fail-on", "none"];
+			const flagged = await runCli(flagArgs);
+			expect(flagged.stderr).toBe("");
+			expect(JSON.parse(flagged.stdout).issues).toHaveLength(3);
+			const actual = spawnSync(process.execPath, [join(process.cwd(), "cli.js"), ...flagArgs], { encoding: "utf8" });
+			expect(actual.status).toBe(0);
+			expect(actual.stderr).toBe("");
+			expect(JSON.parse(actual.stdout).issues).toEqual(JSON.parse(flagged.stdout).issues);
+			const markdown = await runCli([...flagArgs, "--format", "markdown"]);
+			expect(markdown.stdout).toContain("## Scan exclusions");
+			const combined = await runCli([...flagArgs, "--config", configPath]);
+			expect(JSON.parse(combined.stdout).issues).toHaveLength(2);
+		});
+	});
+
+	it.each([{ values: [] }, { values: ["#"] }, { values: ["   "] }])("rejects empty exclude-tag arguments: %j", async ({ values }) => {
+		const result = await runCli(["/unused", "--exclude-tag", ...values]);
+		expect(result.exitCode).toBe(2);
+		expect(result.stderr).toContain("Missing --exclude-tag value");
+	});
+
+	it.each([
+		null, {}, [null],
+		[{ kind: "tag", value: "#", scanners: "all" }],
+		[{ kind: "folder", value: "/", scanners: "all" }], [{ kind: "unknown", value: "skip", scanners: "all" }],
+		[{ kind: "tag", value: " ", scanners: "all" }],
+		[{ kind: "tag", value: "skip", scanners: [] }],
+		[{ kind: "tag", value: "skip", scanners: ["unknown"] }],
+		[{ kind: "tag", value: "skip", scanners: [null] }],
+		[{ kind: "tag", value: "skip", scanners: "broken-links" }],
+	])("rejects malformed exclusionRules: %j", async (exclusionRules) => {
+		await withVault({}, async (vaultPath) => {
+			const configPath = join(vaultPath, "config.json");
+			await writeFile(configPath, JSON.stringify({ exclusionRules }));
+			const result = await runCli([vaultPath, "--config", configPath]);
+			expect(result.exitCode).toBe(2);
+			expect(result.stderr).toContain("exclusionRules");
+		});
+	});
+
 	it.each([
 		["absent", "delete globalThis.crypto;\n"],
 		["already available", "Object.defineProperty(globalThis, 'crypto', { value: require('node:crypto').webcrypto, configurable: false });\n"],

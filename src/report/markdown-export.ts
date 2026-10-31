@@ -33,6 +33,14 @@ export function generateMarkdownReport(
 	lines.push(`| Info | ${infos} |`);
 	lines.push(``);
 
+	const exclusions = result.exclusions?.filter((entry) => entry.ruleCount > 0) ?? [];
+	if (exclusions.length > 0) {
+		lines.push("## Scan exclusions", "", "| Scanner | Excluded files | Rules |", "|---|---|---|");
+		for (const entry of exclusions) {
+			lines.push(`| ${SCANNER_LABELS[entry.scannerId]} | ${entry.excludedFiles} | ${entry.ruleCount} |`);
+		}
+		lines.push("", "Excluded notes remain link targets and reference sources. Counts are per scanner, not additive.", "");
+	}
 	const grouped = groupByScanner(result.issues);
 	if (mode === "summary") {
 		lines.push("Finding details are omitted from this summary.");

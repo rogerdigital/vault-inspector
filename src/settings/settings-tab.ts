@@ -1,6 +1,7 @@
 import { PluginSettingTab, Setting } from "obsidian";
 import type { App, SettingDefinitionItem } from "obsidian";
 import type VaultInspectorPlugin from "../main";
+import { exclusionSettingsDefinition } from "./exclusion-settings";
 import { SCANNER_IDS, SCANNER_LABELS } from "../scanner/Issue";
 
 export function parseFolderList(value: string): string[] {
@@ -44,6 +45,10 @@ export class InspectorSettingTab extends PluginSettingTab {
 	}
 
 	display(): void {
+		this.renderSettings();
+	}
+
+	private renderSettings(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 		new Setting(containerEl).setName("Scanning").setHeading();
@@ -274,20 +279,6 @@ export class InspectorSettingTab extends PluginSettingTab {
 				heading: "Ignored items",
 				items: [
 					{
-						name: "Ignored folders (comma-separated)",
-						desc: "Files in these folders are excluded from every scanner.",
-						render: (setting) => {
-							setting.addText((text) =>
-								text.setValue(this.plugin.settings.ignoredFolders.join(", "))
-									.setPlaceholder("E.g. Templates, archive")
-									.onChange(async (value) => {
-										this.plugin.settings.ignoredFolders = parseFolderList(value);
-										await this.plugin.saveSettings();
-									}),
-							);
-						},
-					},
-					{
 						name: "Ignore unresolved note links",
 						desc: "Unresolved plain wikilinks such as [[Future Note]] are treated as intentional. Embeds, missing attachments, Markdown links, and missing headings are still reported. Path-like wikilinks are also ignored, so leave this off when typos must fail the scan.",
 						render: (setting) => {
@@ -318,25 +309,8 @@ export class InspectorSettingTab extends PluginSettingTab {
 				],
 			},
 			{
-				heading: "Scanner-specific ignored folders",
-				items: SCANNER_IDS.map((id) => ({
-					name: SCANNER_LABELS[id],
-					desc: `Additional folders excluded only from ${SCANNER_LABELS[id]}.`,
-					render: (setting) => {
-						setting.addText((text) =>
-							text
-								.setValue(
-									this.plugin.settings.ignoredFoldersByScanner[id].join(", "),
-								)
-								.setPlaceholder("E.g. Templates, archive")
-								.onChange(async (value) => {
-									this.plugin.settings.ignoredFoldersByScanner[id] =
-										parseFolderList(value);
-									await this.plugin.saveSettings();
-								}),
-						);
-					},
-				})),
+				heading: "Scan exclusions",
+				items: [exclusionSettingsDefinition(this.plugin)],
 			},
 			{
 				heading: "Export",

@@ -32,7 +32,7 @@ describe("InspectorSettingTab", () => {
 			"Thresholds",
 			"Tags",
 			"Ignored items",
-			"Scanner-specific ignored folders",
+			"Scan exclusions",
 			"Export",
 		]);
 
@@ -46,13 +46,10 @@ describe("InspectorSettingTab", () => {
 			SCANNER_IDS.map((id) => SCANNER_LABELS[id]),
 		);
 		expect(namesByHeading.get("Ignored items")).toEqual([
-			"Ignored folders (comma-separated)",
 			"Ignore unresolved note links",
 			"Ignored frontmatter properties (comma-separated)",
 		]);
-		expect(namesByHeading.get("Scanner-specific ignored folders")).toEqual(
-			SCANNER_IDS.map((id) => SCANNER_LABELS[id]),
-		);
+		expect(namesByHeading.get("Scan exclusions")).toEqual(["Exclusion rules"]);
 		expect(namesByHeading.get("Automatic scanning")).toEqual([
 			"Automatic scan interval (hours)",
 			"Automatic scan network checks",
