@@ -1,5 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { basename, extname, join, posix, relative, sep } from "node:path";
+import { fromMarkdown } from "mdast-util-from-markdown";
+import type { Nodes } from "mdast";
 import { CORE_SCHEMA, load, YAMLException } from "js-yaml";
 import type { App, MetadataCache, TFile, Vault } from "obsidian";
 import { extractBareUrls } from "../src/scanner/scanners/external-links";
@@ -193,9 +195,7 @@ function parseMarkdownMetadata(content: string, filePath: string): LocalMetadata
 	const headings = [...body.matchAll(/^#{1,6}\s+(.+)$/gm)].map((match) => ({
 		heading: match[1].trim(),
 	}));
-	const tags = [...body.matchAll(/(^|\s)#([\p{L}\p{N}\p{M}_/-]+)/gu)].map((match) => ({
-		tag: `#${match[2]}`,
-	}));
+	const tags = extractBodyTags(stripFrontmatter(content));
 
 	return {
 		links,
@@ -206,6 +206,27 @@ function parseMarkdownMetadata(content: string, filePath: string): LocalMetadata
 		tags,
 		frontmatter,
 	};
+}
+
+/** Tags in code/comments must never change which files a scan examines. */
+function extractBodyTags(body: string): TagCacheEntry[] {
+	const tags: TagCacheEntry[] = [];
+	function visit(node: Nodes): void {
+		if (["code", "inlineCode", "html"].includes(node.type)) return;
+		if (node.type === "text") {
+			const start = node.position?.start.offset;
+			const end = node.position?.end.offset;
+			if (start === undefined || end === undefined) return;
+			const text = body.slice(start, end);
+			for (const match of text.matchAll(/(^|\s)#([\p{L}\p{N}\p{M}_/-]+)/gu)) {
+				// Obsidian requires at least one non-numeric character in a tag.
+				if (/[^\p{N}/]/u.test(match[2])) tags.push({ tag: `#${match[2]}` });
+			}
+		}
+		if ("children" in node) for (const child of node.children) visit(child);
+	}
+	visit(fromMarkdown(body));
+	return tags;
 }
 
 function extractFrontmatterWikiLinks(content: string): LinkCacheEntry[] {
