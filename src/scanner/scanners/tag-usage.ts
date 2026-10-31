@@ -1,9 +1,9 @@
+import { isExcludedFile } from "../exclusions";
 import type { CachedMetadata } from "obsidian";
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
-import { isIgnoredPath } from "../../utils/paths";
 import { normalizeTagName } from "../../utils/tags";
 
 export const tagUsageScanner = {
@@ -20,7 +20,7 @@ export const tagUsageScanner = {
 
 		// Collect tags from metadata (tags frontmatter field and inline tags)
 		for (const file of ctx.markdownFiles) {
-			if (isIgnoredPath(file.path, ctx.ignoredFolders)) continue;
+			if (isExcludedFile(ctx, file.path)) continue;
 
 			const cache = ctx.metadataCache.getFileCache(file);
 			if (!cache) continue;
@@ -76,7 +76,7 @@ export const tagUsageScanner = {
 			});
 		}
 
-		// Report watched tags that do not appear in the vault
+		// Report watched tags that do not appear in the current scan scope
 		for (const watchedTag of watchedTags) {
 			const count = tagCounts.get(watchedTag) ?? 0;
 			if (count > 0) continue;
@@ -87,12 +87,12 @@ export const tagUsageScanner = {
 				scannerId: "tag-usage",
 				severity: "info",
 				title: "Missing watched tag",
-				message: `Watched tag "${watchedTag}" does not appear in the vault`,
+				message: `Watched tag "${watchedTag}" does not appear in the current scan scope`,
 				relatedPaths: [],
 				evidence: { tag: watchedTag, count: 0, watched: true },
 				...describeFinding(
 					"confirmed",
-					`Tag "${watchedTag}" is in the configured watchlist but does not appear in the vault.`,
+					`Tag "${watchedTag}" is in the configured watchlist but does not appear in the current scan scope.`,
 					"Add the tag where expected or remove it from the watchlist.",
 					"The tag may have been intentionally retired or renamed.",
 				),
