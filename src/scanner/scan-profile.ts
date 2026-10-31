@@ -1,7 +1,7 @@
+import { getExclusionRules } from "./exclusions";
 import { SCANNER_IDS } from "./Issue";
 import type { InspectorSettings } from "../settings/settings";
 import { hashContent } from "../utils/hash";
-import { normalizePath } from "../utils/paths";
 import { normalizeTagName } from "../utils/tags";
 
 type PresentationOnlySettingKey =
@@ -11,18 +11,13 @@ type PresentationOnlySettingKey =
 	| "reportFolderPath"
 	| "automaticScanIntervalHours"
 	| "automaticScanNetworkChecks";
-type DetectionSettingKey = Exclude<keyof InspectorSettings, PresentationOnlySettingKey>;
+// Legacy folder settings are represented by their effective exclusion rules.
+type DetectionSettingKey = Exclude<keyof InspectorSettings, PresentationOnlySettingKey | "ignoredFolders" | "ignoredFoldersByScanner">;
 
 export async function createScanProfile(settings: InspectorSettings): Promise<string> {
 	const canonical = {
 		enabledScanners: SCANNER_IDS.filter((scannerId) => settings.enabledScanners[scannerId]),
-		ignoredFolders: normalizeFolders(settings.ignoredFolders),
-		ignoredFoldersByScanner: Object.fromEntries(
-			SCANNER_IDS.map((scannerId) => [
-				scannerId,
-				normalizeFolders(settings.ignoredFoldersByScanner[scannerId] ?? []),
-			]),
-		),
+		exclusionRules: getExclusionRules(settings),
 		ignoreUnresolvedNoteLinks: settings.ignoreUnresolvedNoteLinks,
 		largeMarkdownBytes: settings.largeMarkdownBytes,
 		largeAttachmentBytes: settings.largeAttachmentBytes,
@@ -48,8 +43,4 @@ function normalizeSet(values: string[]): string[] {
 
 function normalizeWatchedTags(values: string[]): string[] {
 	return normalizeSet(values.map(normalizeTagName).filter(Boolean));
-}
-
-function normalizeFolders(values: string[]): string[] {
-	return normalizeSet(values.map(normalizePath).filter(Boolean));
 }

@@ -85,6 +85,7 @@ export type ScanResult = {
 	issues: Issue[];
 	ignoredIssues: Issue[];
 	filesScanned: number;
+	exclusions?: { scannerId: ScannerId; excludedFiles: number; ruleCount: number }[];
 	scannersRun: ScannerId[];
 };
 
