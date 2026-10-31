@@ -1,3 +1,4 @@
+import { SCANNER_LABELS } from "../scanner/Issue";
 import type { ScanResult } from "../scanner/Issue";
 import type {
 	ComparisonUnavailableReason,
@@ -24,6 +25,15 @@ export function renderSummary(container: HTMLElement, result: ScanResult, option
 	meta.createSpan({ text: duration });
 	meta.createSpan({ text: `${result.scannersRun.length} scanners` });
 	meta.createSpan({ text: `Ignored ${result.ignoredIssues.length}` });
+	const exclusions = result.exclusions?.filter((entry) => entry.ruleCount > 0) ?? [];
+	if (exclusions.length > 0) {
+		const details = summary.createEl("details");
+		details.createEl("summary", { text: "Scan exclusions" });
+		for (const entry of exclusions) {
+			details.createDiv({ text: `${SCANNER_LABELS[entry.scannerId]}: ${entry.excludedFiles} files excluded by ${entry.ruleCount} rule(s)` });
+		}
+		details.createDiv({ text: "Excluded notes still count as link targets and reference sources. Manage rules in settings." });
+	}
 }
 
 function renderChanges(
