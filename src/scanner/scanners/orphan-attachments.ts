@@ -1,9 +1,9 @@
+import { isExcludedFile } from "../exclusions";
 import type { Issue } from "../Issue";
 import type { ScanContext } from "../ScanContext";
 import { describeFinding } from "../finding-presentation";
 import { generateFingerprint } from "../issue-fingerprint";
 import { isAttachment } from "../../utils/file-types";
-import { isIgnoredPath } from "../../utils/paths";
 import {
 	isReferenced,
 	type ReferenceCoverageFailure,
@@ -17,7 +17,7 @@ export const orphanAttachmentsScanner = {
 		const index = ctx.referenceIndex;
 
 		for (const file of ctx.allFiles) {
-			if (isIgnoredPath(file.path, ctx.ignoredFolders)) continue;
+			if (isExcludedFile(ctx, file.path)) continue;
 			if (!isAttachment(file.path)) continue;
 			if (isReferenced(index, file.path)) continue;
 
