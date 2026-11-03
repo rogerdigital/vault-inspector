@@ -208,6 +208,12 @@ selected scanners. Matching rules are additive: any matching rule excludes a
 file from the selected checks. Existing global and scanner-specific folder
 settings appear in this list automatically; editing them preserves their scope.
 
+Prefer tag rules when an exclusion should follow a note, such as clipped articles
+or intentional drafts. The tag is visible in the note's frontmatter or body, and
+the rule continues to match if you move the note to another folder in the vault,
+as long as the tag remains. Use folder rules when the exclusion belongs to a
+whole directory, such as templates or an archive.
+
 Tags match both frontmatter `tags` and inline `#tags`, case-insensitively. Enter them with or without
 `#`; excluding `clippings` also excludes `clippings/web`, but not
 `clippings-other`. For Web Clipper notes, apply a `clippings` rule only to Broken
