@@ -154,6 +154,11 @@ inline tags case-insensitively, with or without a leading `#`, including descend
 `/`. `clippings` matches `clippings/web` but not `clippings-other`. Attachments
 are not transitively excluded by the tags on notes referencing them.
 
+Prefer tag rules for exclusions that should follow individual notes when they
+move between folders in the vault. Keep the tag on the note so the rule remains
+effective and the exclusion is visible in its frontmatter or body. Use folder
+rules for whole directories, such as templates or archives.
+
 `--exclude-tag clippings` adds a tag rule for all checks and may be repeated.
 Use config rules for scanner-specific scopes. Flag rules are added to config
 rules; they do not remove existing exclusions.
